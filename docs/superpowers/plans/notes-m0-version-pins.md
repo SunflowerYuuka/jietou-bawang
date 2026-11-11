@@ -49,22 +49,29 @@ $env:JAVA_TOOL_OPTIONS='-Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort=7890 -Dhtt
 
    该目录在仓库之外，不进版本库。
 
-2. **NFRT 的默认 JDK 编译器在本沙箱里写不出产物。** 沙箱让 `java.nio.file.Files.isWritable`
-   对所有路径返回 false，于是 NFRT 用 zipfs 打开输出 jar 时拿到只读文件系统，javac 报
+2. **NFRT 的默认 JDK 编译器在本沙箱里写不出产物，需要一条机器本地配置。**
+   沙箱让 `java.nio.file.Files.isWritable` 对所有路径返回 false，于是 NFRT 用 zipfs 打开输出 jar
+   时拿到只读文件系统，javac 报
    `ERROR Line: 1, error while writing net.minecraft.world.ticks.package-info: null`。
-   因此 `build.gradle` 末尾加了：
 
-   ```groovy
-   neoFormRuntime { useEclipseCompiler = true }
+   解决办法**不在仓库里**：在本机的 Gradle user home 追加一行
+
+   ```properties
+   # <GRADLE_USER_HOME>/gradle.properties —— 机器本地，不提交
+   neoForge.neoFormRuntime.useEclipseCompiler=true
    ```
 
-   ECJ 走普通 `JarOutputStream` 输出，不受影响。这是 NFRT/MDG 官方支持的开关，不是新依赖。
-   **在能正常报告可写路径的机器上可以删掉这一行。**
+   本沙箱即 `K:\AI\Minecraft\.gradle-home\gradle.properties`（该目录在仓库外）。
+   ECJ 走普通 `JarOutputStream` 输出，不受影响；这是 MDG 官方暴露的全局设置
+   （"Global Settings for NFRT"），不是新依赖。**`build.gradle` 保持模板原样，没有这行。**
+   在能正常报告可写路径的机器上不需要这条配置。
 
-## 运行目录
+## ⚠️ 客户端日志路径是 `run/logs/latest.log`
 
-MDG 2.0.142 的默认 game directory 是 **`run/`**，不是计划文档里写的 `runs/client/`。
-客户端的日志在 `run/logs/latest.log`。`.gitignore` 里 `run/` 和 `runs/` 都已忽略。
+**计划文档里写的 `runs/client/logs/latest.log` 是错的。** MDG 2.0.142 的默认 game directory 是
+**`run/`**（不是 `runs/client/`），所以客户端日志在 **`run/logs/latest.log`**，存档在 `run/saves/`。
+后续任务查日志时请用 `run/logs/latest.log`。`.gitignore` 里 `run/` 和 `runs/` 都已忽略。
+（`runs/server` 之类同理：服务端是 `run/logs/latest.log`，除非另外配了 gameDirectory。）
 
 ## Minecraft 相关版本范围
 

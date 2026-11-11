@@ -176,11 +176,3 @@ idea {
         downloadJavadoc = true
     }
 }
-
-// NOTE(environment): the DSH sandbox makes java.nio's writability check fail on every path,
-// which makes the JDK-compiler NFRT step open its output jar read-only ("error while writing
-// ...package-info: null"). The ECJ compiler writes through a plain JarOutputStream and is
-// supported by NFRT itself. Remove once the environment can report writable paths.
-neoFormRuntime {
-    useEclipseCompiler = true
-}
