@@ -161,13 +161,58 @@ public record Roster(Map<ResourceLocation, CharacterProgress> entries, int dataV
     }
 
     /**
-     * Convenience for the ordinary, readable case.
+     * Convenience for the ordinary, readable case: a live roster, no quarantine.
+     *
+     * <p>This cannot silently drop a live quarantine, because it takes no roster to copy from and a
+     * quarantined roster refuses to surrender the two values it would need ({@link #entries()} and
+     * {@link #dataVersion()} throw while quarantined). So the dangerous spelling —
+     * {@code new Roster(q.entries(), q.dataVersion())} — fails at the first call rather than
+     * producing a roster that writes an empty book over the preserved tag.
      *
      * @param entries     owned characters
      * @param dataVersion must be {@link #CURRENT_DATA_VERSION}
      */
     public Roster(Map<ResourceLocation, CharacterProgress> entries, int dataVersion) {
         this(entries, dataVersion, null);
+    }
+
+    /**
+     * {@return the owned characters}
+     *
+     * @throws IllegalStateException if this roster is {@linkplain #isQuarantined() quarantined}
+     */
+    @Override
+    public Map<ResourceLocation, CharacterProgress> entries() {
+        requireReadable("entries");
+        return entries;
+    }
+
+    /**
+     * {@return the schema version this book was read at}
+     *
+     * @throws IllegalStateException if this roster is {@linkplain #isQuarantined() quarantined}
+     */
+    @Override
+    public int dataVersion() {
+        requireReadable("dataVersion");
+        return dataVersion;
+    }
+
+    /**
+     * Guards every data accessor, so a caller that never asked {@link #isQuarantined()} fails at the
+     * call site instead of reading an empty book and believing it.
+     *
+     * <p>Documenting "check {@code isQuarantined()} first" is not enforcement: a quarantined roster
+     * reports {@link #CURRENT_DATA_VERSION} and an empty map, which is exactly what a fresh player
+     * looks like, so the mistake is invisible. Throwing makes the forgotten check impossible to
+     * ignore — the caller either handles the quarantine or gets an exception naming the fix.
+     */
+    private void requireReadable(String accessor) {
+        if (quarantine != null) {
+            throw new IllegalStateException("astrum: roster is quarantined (an unreadable save is "
+                    + "being preserved verbatim); " + accessor + "() is meaningless. Check "
+                    + "isQuarantined() and leave the tag alone.");
+        }
     }
 
     /** {@return an empty book at the current schema version} */
@@ -200,9 +245,11 @@ public record Roster(Map<ResourceLocation, CharacterProgress> entries, int dataV
      * <p>Deliberately not a {@code put}: owning a character is what the roster records, so a second
      * grant of the same character must not reset the level, exp and affection the player earned.
      *
-     * <p>A quarantined roster stays quarantined: the character is added to this in-memory view but
-     * the original tag is still what gets written, so a downgraded session cannot overwrite the
-     * newer book with a partial one.
+     * <p>A quarantined roster stays quarantined: the original tag is still what gets written, so a
+     * downgraded session cannot overwrite the newer book with a partial one. Note that the returned
+     * roster is still unreadable through {@link #entries()} — the grant is recorded in a view no
+     * caller can read, which is deliberate: the real book is on disk, unread, and pretending
+     * otherwise would invite code that trusts a book this build cannot actually parse.
      *
      * @param character the character to grant
      * @param initial   progress to use if the character is not owned yet
@@ -221,8 +268,12 @@ public record Roster(Map<ResourceLocation, CharacterProgress> entries, int dataV
      *
      * <p>Nullable on purpose: "not owned" and "owned at level 0" are different states and a
      * default value would collapse them.
+     *
+     * @throws IllegalStateException if this roster is {@linkplain #isQuarantined() quarantined},
+     *                               because "not owned" is not knowable from an unreadable save
      */
     public @Nullable CharacterProgress progressOf(ResourceLocation character) {
+        requireReadable("progressOf");
         return entries.get(character);
     }
 }

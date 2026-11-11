@@ -28,17 +28,23 @@ import org.jetbrains.annotations.ApiStatus;
  * <pre>{@code
  * DeferredRegister<AttachmentType<?>> r = DeferredRegister.create(NeoForgeRegistries.Keys.ATTACHMENT_TYPES, MOD_ID);
  * DeferredHolder<AttachmentType<?>, AttachmentType<Roster>> h =
- *         r.register("roster", () -> AttachmentType.builder(Roster::empty).serialize(Roster.CODEC).build());
+ *         r.register("roster", () -> AttachmentType.builder(Roster::empty).serialize(Roster.SERIALIZER).build());
  * }</pre>
+ *
+ * <p>Note {@code serialize(Roster.SERIALIZER)}, <b>not</b> {@code serialize(Roster.CODEC)}. The
+ * codec overload reports a decode failure by throwing, and {@code AttachmentHolder} reacts by
+ * dropping that attachment from the rebuilt persistence compound — so for a versioned structure the
+ * codec overload <b>deletes</b> a save it cannot parse. Any future persistent attachment here that
+ * carries a version field needs the same treatment; see {@link Roster#SERIALIZER}.
  *
  * <ul>
  *   <li>{@code create(ResourceKey<? extends Registry<T>>, String namespace)} is the factory; the key
  *       is {@code NeoForgeRegistries.Keys.ATTACHMENT_TYPES}, since attachments are a NeoForge
  *       registry, not a vanilla one.</li>
  *   <li>{@code AttachmentType.builder(Supplier<T>)} takes the <b>default value supplier</b>, not a
- *       serializer. The serializer is added by {@code Builder.serialize(Codec<T>)}, which exists as
- *       an overload beside {@code serialize(IAttachmentSerializer)} — the codec overload wraps
- *       itself in an {@code IAttachmentSerializer} that uses {@code provider.createSerializationContext(NbtOps.INSTANCE)},
+ *       serializer. The serializer is added by {@code Builder.serialize(IAttachmentSerializer<?, T>)}
+ *       or its {@code serialize(Codec<T>)} overload — the codec overload wraps itself in an
+ *       {@code IAttachmentSerializer} that uses {@code provider.createSerializationContext(NbtOps.INSTANCE)},
  *       i.e. the save data really is NBT.</li>
  *   <li>{@code DeferredRegister.register(String, Supplier<? extends I>)}; the holder type is
  *       {@code DeferredHolder<AttachmentType<?>, AttachmentType<Roster>>}.</li>

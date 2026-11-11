@@ -236,11 +236,43 @@ class RosterCodecTest {
 
         var r = Roster.SERIALIZER.read(null, future, RegistryAccess.EMPTY);
         assertTrue(r.isQuarantined(), "an unreadable tag must be quarantined, got " + r);
-        assertTrue(r.entries().isEmpty());
 
         // The whole point: what gets written back is the original tag, not an empty book.
         var written = Roster.SERIALIZER.write(r, RegistryAccess.EMPTY);
         assertEquals(future, written);
+    }
+
+    /**
+     * A quarantined roster must not look like an empty fresh one. Reporting "version 1, no
+     * characters" is exactly what a new player looks like, so a caller that forgets to check
+     * isQuarantined() would silently believe an empty book.
+     */
+    @Test void everyDataAccessorRefusesAQuarantinedRoster() {
+        var r = Roster.quarantined(new CompoundTag());
+        assertTrue(r.isQuarantined());
+        assertThrows(IllegalStateException.class, r::entries);
+        assertThrows(IllegalStateException.class, r::dataVersion);
+        assertThrows(IllegalStateException.class, () -> r.progressOf(InternalIds.id("djeeta")));
+    }
+
+    /**
+     * The 2-arg constructor is the natural way to write a mutator, and it produces an unquarantined
+     * roster. Round-tripping a quarantined roster through it must not be possible — that is the
+     * "write {dataVersion:1, entries:{partial}} over a version-99 tag" destruction.
+     */
+    @Test void aQuarantinedRosterCannotBeLaunderedIntoALiveOneViaItsAccessors() {
+        var r = Roster.quarantined(new CompoundTag());
+        // The tempting mutator spelling: copy the two components into a fresh roster.
+        assertThrows(IllegalStateException.class,
+                () -> new Roster(r.entries(), r.dataVersion()));
+    }
+
+    /** The live path is unaffected: the 2-arg constructor still works for ordinary rosters. */
+    @Test void theTwoArgConstructorStillBuildsALiveRoster() {
+        var r = new Roster(Map.of(InternalIds.id("djeeta"), new CharacterProgress(3, 4, 5)), 1);
+        assertFalse(r.isQuarantined());
+        assertEquals(1, r.entries().size());
+        assertEquals(1, r.dataVersion());
     }
 
     /** A readable tag is unaffected: quarantine is never applied to a version this build knows. */
