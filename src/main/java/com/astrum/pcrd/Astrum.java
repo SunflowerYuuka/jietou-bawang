@@ -1,5 +1,7 @@
 package com.astrum.pcrd;
 
+import com.astrum.pcrd.impl.config.ClientConfig;
+import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.registry.CharacterRegistry;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -17,6 +19,8 @@ public final class Astrum {
 
     public Astrum(IEventBus modBus, ModContainer container) {
         LOGGER.info("astrum loaded");
+        ServerConfig.register(container);
+        ClientConfig.register(container);
         CharacterRegistry.register(modBus);
     }
 }
