@@ -1,5 +1,6 @@
 package com.astrum.pcrd;
 
+import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.config.ClientConfig;
 import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.registry.CharacterRegistry;
@@ -22,5 +23,6 @@ public final class Astrum {
         ServerConfig.register(container);
         ClientConfig.register(container);
         CharacterRegistry.register(modBus);
+        Attachments.register(modBus);
     }
 }
