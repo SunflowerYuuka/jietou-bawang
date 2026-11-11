@@ -321,7 +321,7 @@ Expected: 编译失败（类型未定义）。
 
 - [ ] **Step 3: 实现这 10 个类型**
 
-要点（不是逐行照抄）：枚举用 `Codec.STRING.xmap` 或 `StringRepresentable.fromEnum`；每个 hook record 一个 `RecordCodecBuilder`，编号从 `"trigger"`、`"triggerParams"`、`"chance"` 开始，第四项起按 `effectParams` 里的键名用 `fieldOf`（`apply_effect` 用 `effect`/`duration`/`amplifier`，`stack` 的键名是 `stackId`/`max` 等，见规格 §4.2 注释与 §6.4）；`CharacterDef` 的图省字段（`portrait`/`model`）用 `optionalFieldOf`。`EffectHook.CODEC` 的外层 dispatch 键是同级 `"effect"`。
+要点（不是逐行照抄）：枚举用 `StringRepresentable.fromEnum`（不要用 `Codec.STRING.xmap` + `valueOf`——未知值会抛 `IllegalArgumentException` 而不是返回 `DataResult.Error`，违反 A6）；每个 hook record 一个 `RecordCodecBuilder`，前三项是 `"trigger"`、`"triggerParams"`、`"chance"`，第四项是把本效果自己的参数整体绑到 **一个** `fieldOf("effectParams")` 上：在该 record 内定义一个 private 嵌套 `Params` record（`apply_effect` 为 `effect`/`duration`/`amplifier`，`stack` 为 `stackId`/`max` 等，见规格 §4.2 注释与 §6.4），用它的 `Codec` 绑定，再在 `.apply(...)` 的 lambda 里拆开传回 hook record 的构造器。**切勿**为 `effectParams` 里的每个键各写一个 `fieldOf("effectParams")`——同名键会合并成一个，编码时只有最后一个键被写出，其余字段静默丢失（`roundTripsAllEightEffectTypes` 会因此失败，或更糟：看起来过了但数据已损）。`CharacterDef` 的图省字段（`portrait`/`model`）用 `optionalFieldOf`。`EffectHook.CODEC` 的外层 dispatch 键是同级 `"effect"`。所有 `api.v1` 类型标 `@ApiStatus.Experimental`（A5）。
 
 - [ ] **Step 4: 跑测试确认通过**
 

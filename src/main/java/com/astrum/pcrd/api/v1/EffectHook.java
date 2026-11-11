@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * One "when {@link Trigger} happens, do this {@link EffectType}" rule of a character.
@@ -13,6 +14,7 @@ import net.minecraft.resources.ResourceLocation;
  * dispatch key {@code effect} sits beside them. {@link #CODEC} encodes and decodes exactly that
  * shape.
  */
+@ApiStatus.Experimental
 public sealed interface EffectHook
         permits EffectHook.ApplyEffect,
                 EffectHook.ExtraDamage,

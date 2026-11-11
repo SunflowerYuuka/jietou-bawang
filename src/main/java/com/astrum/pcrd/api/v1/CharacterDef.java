@@ -5,6 +5,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Static definition of one character, loaded from {@code data/astrum/character/<id>.json}.
@@ -19,6 +20,7 @@ import net.minecraft.resources.ResourceLocation;
  * @param growth        experience curve
  * @param affection     affection tiers
  */
+@ApiStatus.Experimental
 public record CharacterDef(int schemaVersion, String displayName, Dimension dimension,
                            Optional<ResourceLocation> portrait, Optional<ResourceLocation> model,
                            List<EffectHook> effects, UbDef ub, GrowthDef growth, AffectionDef affection) {

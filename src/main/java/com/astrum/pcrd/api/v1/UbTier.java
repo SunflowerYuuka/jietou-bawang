@@ -4,6 +4,7 @@ import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.Optional;
 import java.util.OptionalDouble;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * One tier of a character's UB (ultimate burst).
@@ -17,6 +18,7 @@ import java.util.OptionalDouble;
  * @param teamChargeBonus charge granted to allies, empty for none
  * @param extra           free-form extra tag, e.g. {@code armor_break}
  */
+@ApiStatus.Experimental
 public record UbTier(String animation, int hits, double damage, OptionalDouble radius, OptionalDouble selfAtkBuff,
                      int buffTicks, OptionalDouble teamChargeBonus, Optional<String> extra) {
 

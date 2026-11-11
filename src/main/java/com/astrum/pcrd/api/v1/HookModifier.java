@@ -2,6 +2,7 @@ package com.astrum.pcrd.api.v1;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Multiplier applied to one hook once the character reaches affection tier 2.
@@ -9,6 +10,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
  * @param hookIndex index into {@link CharacterDef#effects()}
  * @param mult      multiplier, {@code 1.5} = +50%
  */
+@ApiStatus.Experimental
 public record HookModifier(int hookIndex, double mult) {
     public static final Codec<HookModifier> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("hookIndex").forGetter(HookModifier::hookIndex),

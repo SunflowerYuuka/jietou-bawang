@@ -3,10 +3,12 @@ package com.astrum.pcrd.api.v1;
 import com.mojang.serialization.Codec;
 import java.util.Locale;
 import net.minecraft.util.StringRepresentable;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Event that can attach an {@link EffectHook} to a character.
  */
+@ApiStatus.Experimental
 public enum Trigger implements StringRepresentable {
     MELEE_HIT,
     CRIT,

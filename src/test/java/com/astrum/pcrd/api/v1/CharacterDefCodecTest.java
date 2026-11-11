@@ -5,6 +5,7 @@ import com.mojang.serialization.JsonOps;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalDouble;
 import static org.junit.jupiter.api.Assertions.*;
 
 class CharacterDefCodecTest {
@@ -42,7 +43,7 @@ class CharacterDefCodecTest {
             "{\"trigger\":\"kill\",\"effect\":\"lifesteal\",\"effectParams\":{\"fraction\":0.2}}",
             "{\"trigger\":\"melee_hit\",\"effect\":\"gain_charge\",\"effectParams\":{\"amount\":2.0}}",
             "{\"trigger\":\"combo_n\",\"triggerParams\":{\"hits\":3},\"effect\":\"area_charge\",\"effectParams\":{\"radius\":8.0,\"amount\":3.0,\"includeSelf\":true}}",
-            "{\"trigger\":\"combo_n\",\"triggerParams\":{\"hits\":3},\"effect\":\"splash\",\"effectParams\":{\"radius\":3.0,\"damage\":4.0}}",
+            "{\"trigger\":\"combo_n\",\"triggerParams\":{\"hits\":3},\"effect\":\"splash\",\"chance\":0.5,\"effectParams\":{\"radius\":3.0,\"damage\":4.0}}",
             "{\"trigger\":\"melee_hit\",\"effect\":\"stack\",\"effectParams\":{\"stackId\":\"astrum:poison\",\"max\":5}}",
             "{\"trigger\":\"stack_full\",\"triggerParams\":{\"stackId\":\"astrum:poison\"},\"effect\":\"detonate\",\"effectParams\":{\"damagePerStack\":2.0,\"radius\":3.0}}");
         for (String h : hooks) {
@@ -70,5 +71,51 @@ class CharacterDefCodecTest {
         var p = new CharacterProgress(5, 42, 2);
         var enc = CharacterProgress.CODEC.encodeStart(JsonOps.INSTANCE, p).getOrThrow();
         assertEquals(Optional.of(p), CharacterProgress.CODEC.parse(JsonOps.INSTANCE, enc).result());
+    }
+
+    @Test
+    void nonDefaultChanceSurvivesRoundTrip() {
+        var json = JsonParser.parseString(
+                "{\"trigger\":\"combo_n\",\"triggerParams\":{\"hits\":3},\"effect\":\"splash\",\"chance\":0.5,\"effectParams\":{\"radius\":3.0,\"damage\":4.0}}");
+        var hook = EffectHook.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
+        assertEquals(0.5, hook.chance());
+        var reEncoded = EffectHook.CODEC.encodeStart(JsonOps.INSTANCE, hook).getOrThrow();
+        assertEquals(0.5, EffectHook.CODEC.parse(JsonOps.INSTANCE, reEncoded).getOrThrow().chance());
+    }
+
+    @Test
+    void ubDefRoundTripsOptionalBridges() {
+        var full = new UbTier("tempest_blade", 1, 20.0, OptionalDouble.of(4.0), OptionalDouble.of(1.3),
+                360, OptionalDouble.of(0.2), Optional.of("armor_break"));
+        var bare = new UbTier("seiga_itten", 4, 20.0, OptionalDouble.empty(), OptionalDouble.empty(),
+                0, OptionalDouble.empty(), Optional.empty());
+        var def = new UbDef(full, bare);
+
+        var enc = UbDef.CODEC.encodeStart(JsonOps.INSTANCE, def).getOrThrow();
+        assertEquals(Optional.of(def), UbDef.CODEC.parse(JsonOps.INSTANCE, enc).result(), enc.toString());
+
+        var decoded = UbDef.CODEC.parse(JsonOps.INSTANCE, enc).getOrThrow();
+        assertEquals(4.0, decoded.base().radius().getAsDouble());
+        assertEquals(1.3, decoded.base().selfAtkBuff().getAsDouble());
+        assertEquals(0.2, decoded.base().teamChargeBonus().getAsDouble());
+        assertEquals("armor_break", decoded.base().extra().orElseThrow());
+        assertTrue(decoded.enhanced().radius().isEmpty());
+        assertTrue(decoded.enhanced().selfAtkBuff().isEmpty());
+        assertTrue(decoded.enhanced().teamChargeBonus().isEmpty());
+        assertTrue(decoded.enhanced().extra().isEmpty());
+    }
+
+    @Test
+    void unknownEffectTypeIsAnErrorNotACrash() {
+        var bad = JsonParser.parseString(DJEETA.replace("\"effect\":\"gain_charge\"", "\"effect\":\"nonexistent\""));
+        var result = CharacterDef.CODEC.parse(JsonOps.INSTANCE, bad);
+        assertTrue(result.error().isPresent());
+        assertTrue(result.error().orElseThrow().message().contains("nonexistent"));
+    }
+
+    @Test
+    void unknownTriggerValueIsAnErrorNotACrash() {
+        var bad = JsonParser.parseString(DJEETA.replace("\"trigger\":\"melee_hit\"", "\"trigger\":\"nonexistent\""));
+        assertTrue(CharacterDef.CODEC.parse(JsonOps.INSTANCE, bad).error().isPresent());
     }
 }

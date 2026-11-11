@@ -2,10 +2,12 @@ package com.astrum.pcrd.api.v1;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Per-character player progress, stored in the roster attachment.
  */
+@ApiStatus.Experimental
 public record CharacterProgress(int level, int exp, int affection) {
     public static final Codec<CharacterProgress> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("level").forGetter(CharacterProgress::level),
