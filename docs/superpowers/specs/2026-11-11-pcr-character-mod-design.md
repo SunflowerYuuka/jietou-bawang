@@ -482,6 +482,12 @@ com.astrum.pcrd.impl                 ← 可 import api，反向禁止
 | A4 一个门面 | `PrincessApi.characters()` 返回 `Registry<CharacterDef>`，注册完成后填入 |
 | A5 稳定性标注 | 一期全标 `@ApiStatus.Experimental`；impl 内标 `@ApiStatus.Internal` |
 | A6 失败不外抛 | 一律 `Optional` / 空集合 / 默认值 + 日志；**单个坏 JSON 只跳过，不崩游戏** |
+
+> ⚠️ **A6 的真实边界（Task 4 实测后收紧）**：`RegistryDataLoader` 在任何 codec 之前先执行 `JsonParser.parseReader`，且把 `catch (Exception)` 的条目汇总后统一 `throw new IllegalStateException("Failed to load registries")`。因此：
+> - **语义错误**（未知枚举值、缺字段、类型不符）→ 由我们的 lenient codec 拦住 → **跳过该条 + 一条 WARN，游戏正常**。这是 A6 覆盖的范围。
+> - **语法错误**（少括号、逗号、引号不配对）→ `JsonSyntaxException` 在 codec 之前抛出 → **世界加载失败，进错误画面**。**这是数据包注册表机制的固有行为，任何 codec 都无法拦截。**
+>
+> 结论：A6 承诺的是「语义层面不崩」；作者手写 JSON 的语法错误无法被 mod 兜底。**验收必须用语义错误，不能用语法错误**（否则看起来像回归）。缓解手段：datapack 作者工具/示例文件保持完整，README 写明这一点。
 | A7 注册式优于命令式 | 加内容 = 往注册表注册；事件只用于通知/允许干预 |
 | A8 文档 + 示例 | README 给 10 行 JSON 示例；用**自举验证**替代 example-addon |
 | A9 弃用流程 | 现在只写规则：`@Deprecated` → 保留 ≥1 个 minor 版本 → 才删 |
