@@ -51,6 +51,7 @@ public sealed interface EffectHook
      * @param duration  duration in ticks
      * @param amplifier effect amplifier (0 = level I)
      */
+    @ApiStatus.Experimental
     record ApplyEffect(Trigger trigger, TriggerParams triggerParams, double chance, ResourceLocation effect,
                        int duration, int amplifier) implements EffectHook {
         @Override
@@ -80,6 +81,7 @@ public sealed interface EffectHook
      *
      * @param amount raw damage added
      */
+    @ApiStatus.Experimental
     record ExtraDamage(Trigger trigger, TriggerParams triggerParams, double chance, double amount) implements EffectHook {
         @Override
         public EffectType type() {
@@ -106,6 +108,7 @@ public sealed interface EffectHook
      *
      * @param fraction healed fraction, {@code 0.2} = 20% of the damage
      */
+    @ApiStatus.Experimental
     record Lifesteal(Trigger trigger, TriggerParams triggerParams, double chance, double fraction) implements EffectHook {
         @Override
         public EffectType type() {
@@ -132,6 +135,7 @@ public sealed interface EffectHook
      *
      * @param amount charge points granted
      */
+    @ApiStatus.Experimental
     record GainCharge(Trigger trigger, TriggerParams triggerParams, double chance, double amount) implements EffectHook {
         @Override
         public EffectType type() {
@@ -160,6 +164,7 @@ public sealed interface EffectHook
      * @param amount      charge points granted to each ally
      * @param includeSelf whether the attacker is charged as well
      */
+    @ApiStatus.Experimental
     record AreaCharge(Trigger trigger, TriggerParams triggerParams, double chance, double radius, double amount,
                       boolean includeSelf) implements EffectHook {
         @Override
@@ -190,6 +195,7 @@ public sealed interface EffectHook
      * @param radius splash radius in blocks
      * @param damage damage dealt to each splashed entity
      */
+    @ApiStatus.Experimental
     record Splash(Trigger trigger, TriggerParams triggerParams, double chance, double radius, double damage)
             implements EffectHook {
         @Override
@@ -219,6 +225,7 @@ public sealed interface EffectHook
      * @param stackId stack kind, e.g. {@code astrum:poison}
      * @param max     stack cap
      */
+    @ApiStatus.Experimental
     record Stack(Trigger trigger, TriggerParams triggerParams, double chance, ResourceLocation stackId, int max)
             implements EffectHook {
         @Override
@@ -248,6 +255,7 @@ public sealed interface EffectHook
      * @param damagePerStack damage per consumed stack
      * @param radius         radius in blocks
      */
+    @ApiStatus.Experimental
     record Detonate(Trigger trigger, TriggerParams triggerParams, double chance, double damagePerStack, double radius)
             implements EffectHook {
         @Override

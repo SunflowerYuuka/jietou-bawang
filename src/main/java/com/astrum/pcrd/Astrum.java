@@ -1,5 +1,6 @@
 package com.astrum.pcrd;
 
+import com.astrum.pcrd.impl.registry.CharacterRegistry;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -7,7 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Entry point of the Astrum mod.
+ * Entry point of the Astrum mod. Wiring only: every feature lives in {@code impl} (plan R1).
  */
 @Mod(Astrum.MOD_ID)
 public final class Astrum {
@@ -16,5 +17,6 @@ public final class Astrum {
 
     public Astrum(IEventBus modBus, ModContainer container) {
         LOGGER.info("astrum loaded");
+        CharacterRegistry.register(modBus);
     }
 }

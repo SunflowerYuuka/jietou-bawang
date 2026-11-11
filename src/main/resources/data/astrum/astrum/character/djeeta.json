@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "displayName": "姬塔",
+  "dimension": "charge",
+  "effects": [
+    { "trigger": "melee_hit", "effect": "gain_charge",
+      "effectParams": { "amount": 2.0 } },
+    { "trigger": "combo_n", "triggerParams": { "hits": 3 }, "effect": "splash",
+      "effectParams": { "radius": 3.0, "damage": 4.0 } },
+    { "trigger": "combo_n", "triggerParams": { "hits": 3 }, "effect": "area_charge",
+      "effectParams": { "radius": 8.0, "amount": 3.0, "includeSelf": true } }
+  ],
+  "ub": {
+    "base":     { "animation": "tempest_blade", "hits": 1, "damage": 20.0,
+                  "selfAtkBuff": 1.3, "buffTicks": 360 },
+    "enhanced": { "animation": "seiga_itten",   "hits": 4, "damage": 20.0,
+                  "teamChargeBonus": 0.2 }
+  },
+  "growth": { "expBase": 100, "expPerLevel": 1.15, "maxLevel": 30 },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "tier2HookModifiers": [ { "hookIndex": 1, "mult": 1.5 } ]
+  }
+}
