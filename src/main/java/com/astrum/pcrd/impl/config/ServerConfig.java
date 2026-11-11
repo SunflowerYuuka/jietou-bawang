@@ -12,9 +12,11 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Why SERVER and not COMMON</h2>
  * Everything here changes how damage, charge and ally selection are computed, and the server is the
- * only side that computes them. {@code SERVER} is also <b>per-save</b> ({@code <save>/serverconfig/}),
- * which is what the design wants: a pack author can tune one world without touching the client, and
- * the value cannot fork per dimension the way {@code SavedData} would (spec §8.1, §7).
+ * only side that computes them. {@code SERVER} is also <b>per-save-capable</b>: the file is generated
+ * in {@code config/astrum-server.toml} ({@code FMLPaths.CONFIGDIR}), and a pack author can override it
+ * for one world by placing the same-named file under {@code <save>/serverconfig/}, which the loader
+ * prefers when it already exists (spec §8.1.1). The value therefore cannot fork per dimension the way
+ * {@code SavedData} would (spec §8.1, §7).
  *
  * <h2>Config values are handles, never copies (spec §8.4 guardrail 1)</h2>
  * The fields below are {@link ModConfigSpec.ConfigValue} handles. They do not hold a number: a
@@ -66,7 +68,7 @@ public final class ServerConfig {
     /**
      * Registers this file for the given mod.
      *
-     * @param container the mod whose {@code serverconfig/astrum-server.toml} this becomes
+     * @param container the mod whose {@code config/astrum-server.toml} this becomes (spec §8.1.1)
      */
     public static void register(ModContainer container) {
         container.registerConfig(ModConfig.Type.SERVER, SPEC);
