@@ -341,7 +341,7 @@ git add -A && git commit -m "feat(api): typed character definition codec vocabul
 **Files:**
 - Create: `src/main/java/com/astrum/pcrd/api/v1/RegistryKeys.java`、`AstrumApi.java`、`src/main/java/com/astrum/pcrd/api/v1/event/UbChargeEvent.java`（其余两个事件在 Task 8/14 补）
 - Create: `src/main/java/com/astrum/pcrd/impl/registry/CharacterRegistry.java`
-- Create: `src/main/resources/data/astrum/character/djeeta.json`
+- Create: `src/main/resources/data/astrum/astrum/character/djeeta.json`（**namespace 双写**：datapack registry 的目录由 `CommonHooks.prefixNamespace` 生成，`astrum:character` → `data/<pack_ns>/astrum/character/`；写成 `data/astrum/character/` 注册表会静默为空）
 - Modify: `Astrum.java`（`register(modBus)`）
 - Test: `src/test/java/com/astrum/pcrd/impl/registry/DjeetaResourceTest.java`
 
@@ -355,7 +355,7 @@ git add -A && git commit -m "feat(api): typed character definition codec vocabul
 class DjeetaResourceTest {
     @Test
     void packagedDjeetaJsonMatchesCodec() throws Exception {
-        try (var in = DjeetaResourceTest.class.getResourceAsStream("/data/astrum/character/djeeta.json")) {
+        try (var in = DjeetaResourceTest.class.getResourceAsStream("/data/astrum/astrum/character/djeeta.json")) {
             assertNotNull(in, "djeeta.json 必须在 resources 里（自举验证：自家角色走公开路径加载）");
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
@@ -377,10 +377,12 @@ Expected: 失败（资源不存在 / `assertNotNull`）。
 
 `DataPackRegistryEvent.NewRegistry` 里 `event.dataPackRegistry(RegistryKeys.CHARACTERS, CharacterDef.CODEC, CharacterDef.CODEC)`；`ServerStartedEvent`/`ReloadListener` 里 `AstrumApi.bind(registry)`。引导代码里对每个 id 单独 `try/catch`：解析失败 **WARN + 跳过该条**，绝不外抛。
 
-- [ ] **Step 4: 跑测试 + 进游戏验证 `/reload`**
+- [ ] **Step 4: 跑测试 + 进游戏验证（注意 `/reload` 不刷新 datapack registry）**
 
 Run: `.\gradlew.bat test --tests "*DjeetaResourceTest*"` → 通过。
-Run: `.\gradlew.bat runClient` → 进世界后 `/reload`，日志出现 `astrum: character astrum:djeeta loaded`（WARN 行数为 0）；再把 `djeeta.json` 临时改坏一个枚举值重进，日志出现 1 条 WARN 且**游戏不崩**，改回。
+Run: `.\gradlew.bat runClient` → 进世界后**直接看启动日志**（不要指望 `/reload`），日志出现 `astrum: character astrum:djeeta loaded`（WARN 行数为 0）；再把 `djeeta.json` 临时改坏一个枚举值**并重进世界**，日志出现 1 条 WARN 且**游戏不崩**，改回后重进确认恢复。
+
+> ⚠️ **`/reload` 不会重读 datapack registry。** `MinecraftServer.reloadResources()` 只重放 RELOADABLE 层（战利品表等）；datapack registry 属于 WORLDGEN 层，只在 `WorldLoader.load` 时读取。`/reload` 会重新触发 `TagsUpdatedEvent`，但读到的仍是旧内容。**验证 datapack 内容改动必须退出并重进世界。**
 
 - [ ] **Step 5: 提交**
 
@@ -625,7 +627,7 @@ class DamageBatchTest {
 
 入口第一行短路：把 `DamageSource` 的伤害类型 id 取出来（`typeHolder().unwrapKey().map(ResourceKey::location)`，**方法名按 Task 1 Step 6 在源码里确认**），`OwnDamage.isOurs(id)` 为真就 `return`。命中时创建一个 `DamageBatch`，遍历 `ROSTER`×`PARTY` 的 hook，每条 `extra_damage` 往 batch 里塞（乘上 Task 7 的倍率与 Task 15 的等级/好感度系数），最后 `flush` 成**单次** `hurt()`。`hurt()` 用独立 `DamageType`（`data/astrum/damage_type/hook_damage.json`）。
 
-- [ ] **Step 5: 跑测试确认通过** + `runClient`：临时在 `data/astrum/character/` 里加 4 个测试角色（复制 djeeta.json 改 id 与 dimension，正好顺带验证自举路径），组 5 人队打一只怪，日志确认同一 tick 只有一次 batch flush、单次 `hurt`、无递归；怪物掉血不因无敌帧丢伤害。测完删掉这 4 个临时 json。
+- [ ] **Step 5: 跑测试确认通过** + `runClient`：临时在 `data/astrum/astrum/character/` 里加 4 个测试角色（复制 djeeta.json 改 id 与 dimension，正好顺带验证自举路径），组 5 人队打一只怪，日志确认同一 tick 只有一次 batch flush、单次 `hurt`、无递归；怪物掉血不因无敌帧丢伤害。测完删掉这 4 个临时 json。
 
 - [ ] **Step 6: 提交** → `git commit -m "feat(combat): damage entry with self-source short-circuit and same-hit merge"`
 

@@ -94,7 +94,10 @@
 
 ### 4.2 静态定义（`CharacterDef`，datapack JSON）
 
-存放路径：`data/astrum/character/<id>.json`（registry key = `astrum:character`）
+存放路径：`data/astrum/astrum/character/<id>.json`（registry key = `astrum:character`）
+
+> ⚠️ **路径是 namespace 双写，不是笔误。** NeoForge 的 `CommonHooks.prefixNamespace` 对非 `minecraft` 命名空间返回 `namespace + "/" + path`，`Registries.elementsDirPath` 直接返回该值，所以 `astrum:character` 的实际目录是 `data/<pack_ns>/astrum/character/`。写成 `data/astrum/character/` 会让注册表**静默为空**（size=0、零日志、零报错），M1 首测即踩过此坑。
+> 对照：普通 datapack 内容（`data/astrum/recipe/`、`data/astrum/loot_table/`、`data/astrum/damage_type/`）**不需要**双写，只有 datapack **registry** 需要。
 
 ```json
 {
@@ -514,7 +517,7 @@ K:\AI\Minecraft\PrincessConnet\
    │  │   └─ client/     UB 槽 HUD、轮盘渲染与输入、演出实体渲染
    │  └─ Astrum.java
    └─ resources/
-      ├─ data/astrum/character/*.json       ← datapack registry 路径
+      ├─ data/astrum/astrum/character/*.json ← datapack registry 路径（namespace 双写，见 §4.2）
       ├─ data/astrum/recipe/*.json
       ├─ data/astrum/loot_table/*.json
       ├─ assets/astrum/{geo,animations,textures,lang,models}/
@@ -530,7 +533,7 @@ K:\AI\Minecraft\PrincessConnet\
 | 里程碑 | 内容 | 验收标准 |
 |---|---|---|
 | **M0 能启动** | MDG 生成工程 → 改 modid → 空 mod | `runClient` 进游戏，mod 列表里有它 |
-| **M1 数据能读** | `CharacterDef` + Codec + datapack registry + 1 个角色 JSON | `/reload` 后日志打印角色名与三阶表；坏 JSON 只跳出不崩 |
+| **M1 数据能读** | `CharacterDef` + Codec + datapack registry + 1 个角色 JSON | 进世界后日志打印角色名与三阶表；坏 JSON 只跳出不崩（**注：`/reload` 不重读 datapack registry，改动需重进世界**） |
 | **M2 一条链跑通** | Attachment + 攻击触发 + 1 个 MobEffect + UB 充能 + HUD 数字 | 砍怪能看到 buff 与充能增长；**换维度不归零** |
 | **M3 完整切片** | 叠层引爆 + 轮盘 + 演出实体 + 角色卡合成 + 等级/好感度 | 从合成卡到放大招全流程可玩 |
 
