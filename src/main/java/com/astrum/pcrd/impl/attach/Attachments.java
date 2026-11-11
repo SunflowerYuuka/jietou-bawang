@@ -56,14 +56,20 @@ public final class Attachments {
 
     /**
      * Owned characters and their progress. Persisted; carries {@code dataVersion}, so a save written
-     * by a future build is rejected instead of misread ({@link Roster#CODEC}).
+     * by a future build is quarantined rather than misread or destroyed ({@link Roster#SERIALIZER}).
      *
-     * <p>{@code copyOnDeath()} is <b>required</b>, not a preference — see {@link #PARTY} for the
-     * mechanism and the measurement.
+     * <p>Uses a hand-written {@link net.neoforged.neoforge.attachment.IAttachmentSerializer} instead
+     * of {@code serialize(Codec)}: the codec overload turns a decode failure into an exception, and
+     * {@code AttachmentHolder} responds by dropping the tag and rebuilding the persistence compound
+     * without it — i.e. a plain rejecting codec <b>wipes</b> an unreadable save instead of keeping
+     * it. The wrapper captures the raw tag so a downgrade round-trips it untouched.
+     *
+     * <p>{@code copyOnDeath()} is required — see {@link #PARTY} for the mechanism and the
+     * measurement.
      */
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<Roster>> ROSTER =
             ATTACHMENT_TYPES.register("roster",
-                    () -> AttachmentType.builder(Roster::empty).serialize(Roster.CODEC)
+                    () -> AttachmentType.builder(Roster::empty).serialize(Roster.SERIALIZER)
                             .copyOnDeath().build());
 
     /**
@@ -77,17 +83,19 @@ public final class Attachments {
      * .copyEntityAttachments}, filter {@code isDeath ? type -> type.copyOnDeath : type -> true}).
      * The old entity — and with it an uncopied attachment map — is then discarded.
      *
-     * <p>Because {@code PlayerList.saveAll} runs right after, the surviving entity's <b>empty</b>
-     * map is what gets written over {@code playerdata/<uuid>.dat}. So the loss is not a one-session
-     * glitch that a reload undoes; it is persisted. Measured on a real server run: respawning
-     * without {@code copyOnDeath()} turned a roster of two characters and a party in slot 3 into
-     * {@code entries:{}} and five empty slots on disk.
+     * <p>The overwrite is persisted on the <b>next</b> save, not by the respawn itself:
+     * {@code PlayerList.respawn} never writes playerdata. What actually writes it is the periodic
+     * autosave, an explicit {@code /save-all}, or the logout save — all of which serialize the
+     * surviving entity's map. So the loss is silent for a while and then becomes permanent, which
+     * is worse than an immediate failure.
      *
      * <p>An earlier version of this class argued the opposite — that the party "travels with the
      * playerdata file" and that copying would be a competing source of truth. That premise is
-     * wrong: nothing reads the file back mid-session, the new entity never consults it, and the
-     * file is overwritten from the in-memory (empty) map before it could. There is only one source
-     * of truth, and {@code copyOnDeath()} is what carries it across the entity swap.
+     * wrong: nothing reads the file back mid-session, the surviving entity never consults it, and
+     * the file is later rewritten from the in-memory (empty) map. There is only one source of
+     * truth, and {@code copyOnDeath()} is what carries it across the entity swap. Measured on a
+     * real server run: without it, a roster of two characters and a party in slot 3 came back as
+     * {@code entries:{}} and five empty slots, and that is what got saved.
      */
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<Party>> PARTY =
             ATTACHMENT_TYPES.register("party",

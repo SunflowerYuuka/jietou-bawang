@@ -4,6 +4,7 @@ import com.astrum.pcrd.api.v1.CharacterProgress;
 import com.astrum.pcrd.impl.InternalIds;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.NbtOps;
@@ -127,13 +128,45 @@ class RosterCodecTest {
         var p = Party.of(many);
         assertEquals(5, p.slots().size());
         assertEquals(Optional.of(InternalIds.id("c4")), p.slots().get(4));
-        assertEquals(Optional.empty(), p.slots().get(4).filter(id -> id.equals(InternalIds.id("c5"))));
+        // c5 and c6 are the ones that must be gone; assert on the absent ids, not on slot 4 again.
+        assertTrue(p.equipped().stream().noneMatch(id -> id.equals(InternalIds.id("c5"))));
+        assertTrue(p.equipped().stream().noneMatch(id -> id.equals(InternalIds.id("c6"))));
+        assertEquals(5, p.equipped().size());
     }
 
-    /** A typo in a slot must not silently become an empty slot: that is silent data loss. */
-    @Test void partyRejectsAGarbageSlotInsteadOfSilentlyEmptyingIt() {
-        var json = JsonParser.parseString("[\"not a valid id\",\"\",\"\",\"\",\"\"]");
-        assertTrue(Party.CODEC.parse(JsonOps.INSTANCE, json).error().isPresent());
+    /**
+     * One unreadable slot must cost one slot, not five. A whole-list error drops the attachment,
+     * installs Party.empty() and saves five empty slots — destroying four readable characters.
+     */
+    @Test void oneGarbageSlotCostsOnlyThatSlot() {
+        var json = JsonParser.parseString(
+                "[\"astrum:a\",\"not a valid id\",\"astrum:c\",\"astrum:d\",\"astrum:e\"]");
+        var p = Party.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
+        assertEquals(Optional.of(InternalIds.id("a")), p.slots().get(0));
+        assertEquals(Optional.empty(), p.slots().get(1));
+        assertEquals(Optional.of(InternalIds.id("c")), p.slots().get(2));
+        assertEquals(Optional.of(InternalIds.id("d")), p.slots().get(3));
+        assertEquals(Optional.of(InternalIds.id("e")), p.slots().get(4));
+        assertEquals(4, p.equipped().size());
+    }
+
+    /** The record constructor is a public entry point; it may not build a duplicate-slot party. */
+    @Test void recordConstructorRefusesToHoldTheSameCharacterTwice() {
+        var d = InternalIds.id("djeeta");
+        var raw = new ArrayList<Optional<net.minecraft.resources.ResourceLocation>>();
+        raw.add(Optional.of(d));
+        raw.add(Optional.empty());
+        raw.add(Optional.of(d));
+        raw.add(Optional.empty());
+        raw.add(Optional.empty());
+        var p = new Party(raw);
+        assertEquals(1, p.slots().stream().filter(s -> s.equals(Optional.of(d))).count());
+        assertEquals(Optional.of(d), p.slots().get(0));
+    }
+
+    @Test void recordConstructorStillRefusesThreeSlots() {
+        assertThrows(IllegalArgumentException.class, () -> new Party(List.of(
+                Optional.of(InternalIds.id("a")), Optional.empty(), Optional.empty())));
     }
 
     @Test void ubStateRoundTripsThroughNbt() {
@@ -169,10 +202,14 @@ class RosterCodecTest {
                 () -> r.entries().put(InternalIds.id("x"), new CharacterProgress(1, 0, 0)));
     }
 
-    /** Writing a version this build cannot read back would be the corruption this codec exists to stop. */
-    @Test void encodingAnUnknownDataVersionFailsInsteadOfWritingIt() {
-        var r = new Roster(Map.of(), 99);
-        assertTrue(Roster.CODEC.encodeStart(JsonOps.INSTANCE, r).error().isPresent());
+    /**
+     * A roster whose version this build cannot write back must be unconstructible, not merely
+     * unencodable: the death-copy path encodes with no try/catch, so an encode throw there would
+     * propagate out of PlayerList.respawn and crash the server mid-respawn.
+     */
+    @Test void anUnwritableDataVersionCannotEvenBeConstructed() {
+        assertThrows(IllegalArgumentException.class, () -> new Roster(Map.of(), 99));
+        assertThrows(IllegalArgumentException.class, () -> new Roster(Map.of(), 0));
     }
 
     @Test void versionZeroFromThePlaceholderIsRejectedToo() {
@@ -183,5 +220,47 @@ class RosterCodecTest {
     @Test void rosterWithNoEntriesDecodes() {
         var json = JsonParser.parseString("{\"dataVersion\":1,\"entries\":{}}");
         assertEquals(Optional.of(Roster.empty()), Roster.CODEC.parse(JsonOps.INSTANCE, json).result());
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Quarantine: a save from a future build must SURVIVE, not be wiped. "Reject the parse" alone
+    // is destructive, because AttachmentHolder rebuilds the attachment compound from the in-memory
+    // map only, so an attachment that failed to read is simply absent from what gets written back.
+    // ---------------------------------------------------------------------------------------
+
+    /** A future version is refused by the schema codec, but the serializer keeps it verbatim. */
+    @Test void aFutureVersionIsQuarantinedNotDropped() {
+        var future = new CompoundTag();
+        future.putInt("dataVersion", 99);
+        future.put("entries", new CompoundTag());
+
+        var r = Roster.SERIALIZER.read(null, future, RegistryAccess.EMPTY);
+        assertTrue(r.isQuarantined(), "an unreadable tag must be quarantined, got " + r);
+        assertTrue(r.entries().isEmpty());
+
+        // The whole point: what gets written back is the original tag, not an empty book.
+        var written = Roster.SERIALIZER.write(r, RegistryAccess.EMPTY);
+        assertEquals(future, written);
+    }
+
+    /** A readable tag is unaffected: quarantine is never applied to a version this build knows. */
+    @Test void aKnownVersionIsNotQuarantined() {
+        var r = new Roster(Map.of(InternalIds.id("djeeta"), new CharacterProgress(7, 12, 2)), 1);
+        var tag = Roster.SERIALIZER.write(r, RegistryAccess.EMPTY);
+        var back = Roster.SERIALIZER.read(null, tag, RegistryAccess.EMPTY);
+        assertFalse(back.isQuarantined());
+        assertEquals(r, back);
+    }
+
+    /** Even gameplay writes during a downgraded session must not overwrite the newer book. */
+    @Test void aQuarantinedRosterKeepsWritingTheOriginalEvenAfterAddOrIgnore() {
+        var original = new CompoundTag();
+        original.putInt("dataVersion", 99);
+        original.putString("futureField", "keep me");
+
+        var r = Roster.quarantined(original);
+        var touched = r.addOrIgnore(InternalIds.id("djeeta"), new CharacterProgress(1, 0, 0));
+        assertTrue(touched.isQuarantined());
+        assertEquals(original, Roster.SERIALIZER.write(touched, RegistryAccess.EMPTY));
     }
 }

@@ -1,5 +1,6 @@
 package com.astrum.pcrd.impl.attach;
 
+import com.astrum.pcrd.Astrum;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.DataResult;
 import java.util.ArrayList;
@@ -30,10 +31,12 @@ import org.jetbrains.annotations.ApiStatus;
  * <h2>What the codec does and does not tolerate</h2>
  * A short list (an older or hand-written file) is padded with empty slots at the end — that is a
  * lossless reading of what is there. A slot that is empty in the file stays empty at its index; it
- * is never compacted away, because the index is the wheel position. A <b>malformed</b> entry is an
- * error, not an empty slot: turning a typo into "empty" would quietly unequip a character and then
- * save that opinion back over the player's data. Duplicates collapse keeping the earliest slot,
- * because the earliest slot is the one with the higher priority.
+ * is never compacted away, because the index is the wheel position. A <b>malformed</b> slot becomes
+ * an empty slot <b>for that index only</b>, with a warning; the other four slots keep their
+ * characters and their ranks. Failing the whole list is what an earlier version did, and it is
+ * strictly more destructive: the attachment is dropped, {@link #empty()} is installed, and five
+ * empty slots get saved, so one bad string destroys four readable characters. Duplicates collapse
+ * keeping the earliest slot.
  *
  * @param slots exactly {@link #SLOTS} entries; an empty optional means an unused slot
  */
@@ -56,11 +59,19 @@ public record Party(List<Optional<ResourceLocation>> slots) {
             Party::decodeSlots, Party::encodeSlots);
 
     /**
-     * Copies the list, freezes it, and refuses a list that is not exactly {@link #SLOTS} long.
+     * Copies the list, freezes it, and enforces both invariants.
      *
-     * <p>The length check lives on the record rather than only in {@link #of}, so no constructor
-     * route can produce a four-slot party; a shorter list is only ever a caller's input to
+     * <p>Length is checked first: a party that is not exactly {@link #SLOTS} long cannot express the
+     * design at all, so there is no sensible repair. A shorter list is only ever a caller's input to
      * {@link #of} or {@link #ofSlots}, both of which pad before calling this.
+     *
+     * <p>Duplicates are resolved here too, not just in the factories: "a character may not occupy two
+     * slots" is a data-layer rule (spec §4.3), and leaving it to the factory methods would mean any
+     * later {@code new Party(...)} — a codec, a command, a UI reducer — could break it. The earliest
+     * slot wins; later duplicates become empty slots. That is also what {@link #ofSlots} produces,
+     * so there is exactly one dedupe rule in the class. {@link #with} is the deliberate exception:
+     * it keeps the slot the caller *asked for* and empties the old one, which is a move, not a
+     * dedupe — both produce a duplicate-free result.
      */
     public Party {
         if (slots.size() != SLOTS) {
@@ -68,8 +79,14 @@ public record Party(List<Optional<ResourceLocation>> slots) {
                     "party must have exactly " + SLOTS + " slots, got " + slots.size());
         }
         List<Optional<ResourceLocation>> copy = new ArrayList<>(SLOTS);
+        Set<ResourceLocation> seen = new LinkedHashSet<>();
         for (Optional<ResourceLocation> slot : slots) {
-            copy.add(Objects.requireNonNull(slot, "slot"));
+            Optional<ResourceLocation> value = Objects.requireNonNull(slot, "slot");
+            if (value.isEmpty()) {
+                copy.add(Optional.empty());
+            } else {
+                copy.add(seen.add(value.get()) ? value : Optional.empty());
+            }
         }
         slots = Collections.unmodifiableList(copy);
     }
@@ -147,48 +164,52 @@ public record Party(List<Optional<ResourceLocation>> slots) {
      * difference is the whole point: slot index is wheel position and diminishing rank, so a
      * decode that re-packed would silently reorder the player's wheel every time the game loaded.
      *
-     * <p>Duplicates keep their earliest slot and later occurrences become empty, matching
-     * {@link #with}. A list shorter than {@link #SLOTS} is padded at the end and a longer one is
-     * truncated, so a hand-edited file still yields a valid party.
+     * <p>Duplicates keep their earliest slot and later occurrences become empty — the same rule the
+     * canonical constructor applies, so this method never produces something the constructor would
+     * then have to repair. ({@link #with} is a different operation: it is a <em>move</em>, so it
+     * keeps the slot the caller asked for. Both end duplicate-free; they are not the same rule and
+     * are not meant to be.)
      *
      * @param values per-slot characters, index = slot; may be shorter or longer than {@link #SLOTS}
      */
     public static Party ofSlots(List<Optional<ResourceLocation>> values) {
         List<Optional<ResourceLocation>> slots = new ArrayList<>(SLOTS);
-        Set<ResourceLocation> seen = new LinkedHashSet<>();
         for (int i = 0; i < SLOTS; i++) {
-            Optional<ResourceLocation> value = i < values.size() ? values.get(i) : Optional.empty();
-            if (value == null || value.isEmpty()) {
-                slots.add(Optional.empty());
-                continue;
-            }
-            slots.add(seen.add(value.get()) ? value : Optional.empty());
+            Optional<ResourceLocation> value = i < values.size() ? values.get(i) : null;
+            slots.add(value == null ? Optional.empty() : value);
         }
         return new Party(slots);
     }
 
     /**
-     * Decodes the slot strings, reporting a malformed one as a codec error.
+     * Decodes the slot strings, dropping a malformed slot to empty <b>per slot</b> and warning.
      *
-     * <p>{@link ResourceLocation#tryParse} returns {@code null} on garbage instead of throwing, and
-     * this is where that becomes a {@code DataResult} error rather than a crash or a silent empty
-     * slot. The whole list fails: dropping just the bad entry would save a party the player never
-     * configured.
+     * <p>{@link ResourceLocation#tryParse} returns {@code null} on garbage instead of throwing.
      *
-     * <p>An empty string means "this slot is unused", and it stays at its index: the slots are
-     * converted positionally through {@link #ofSlots}, never compacted.
+     * <p>An earlier version failed the whole list instead, reasoning that "turning a typo into empty
+     * would quietly unequip a character". That reasoning was backwards, and the failure mode is
+     * strictly worse: a whole-list error makes {@code AttachmentHolder} drop the attachment, which
+     * installs {@link #empty()} and then saves five empty slots — destroying four characters that
+     * were perfectly readable, to punish one bad string. Per-slot repair loses at most the one slot
+     * that was actually unreadable, and every other position keeps both its character and its wheel
+     * rank. The loss is not silent: each dropped slot is logged.
+     *
+     * <p>A null or empty string is just an unused slot, and stays at its index.
      */
     private static DataResult<Party> decodeSlots(List<String> strings) {
         List<Optional<ResourceLocation>> slots = new ArrayList<>(SLOTS);
-        for (String raw : strings) {
+        for (int i = 0; i < strings.size(); i++) {
+            String raw = strings.get(i);
             if (raw == null || raw.isEmpty()) {
                 slots.add(Optional.empty());
                 continue;
             }
             ResourceLocation id = ResourceLocation.tryParse(raw);
             if (id == null) {
-                return DataResult.error(() -> "astrum: not a valid character id in party slot: '"
-                        + raw + "'");
+                Astrum.LOGGER.warn("astrum: unreadable party slot {} ({}), treating it as empty; "
+                        + "the other slots are kept", i, raw);
+                slots.add(Optional.empty());
+                continue;
             }
             slots.add(Optional.of(id));
         }
