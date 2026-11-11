@@ -20,18 +20,20 @@ import org.jetbrains.annotations.ApiStatus;
  * from the front, and always exactly {@link #SLOTS} long — a shorter list would silently move every
  * character up a rank.
  *
- * <h2>Why construction goes through {@link #of}</h2>
+ * <h2>Why construction goes through {@link #of} and {@link #ofSlots}</h2>
  * The two invariants — exactly five slots, and no character in two slots — are enforced in one
  * place so the later UI cannot create a state the data layer would reject. A record constructor
- * cannot express "pad to five", so the shape is a record and the entry points are {@link #of} and
+ * cannot express "pad to five", so the shape is a record and the entry points are {@link #of}
+ * (pack characters in priority order), {@link #ofSlots} (per-slot values read off disk) and
  * {@link #empty}.
  *
  * <h2>What the codec does and does not tolerate</h2>
- * A short list (an older or hand-written file) is padded with empty slots — that is a lossless
- * reading of what is there. A <b>malformed</b> entry is an error, not an empty slot: turning a typo
- * into "empty" would quietly unequip a character and then save that opinion back over the player's
- * data. Duplicates collapse keeping the earliest slot, because the earliest slot is the one with
- * the higher priority.
+ * A short list (an older or hand-written file) is padded with empty slots at the end — that is a
+ * lossless reading of what is there. A slot that is empty in the file stays empty at its index; it
+ * is never compacted away, because the index is the wheel position. A <b>malformed</b> entry is an
+ * error, not an empty slot: turning a typo into "empty" would quietly unequip a character and then
+ * save that opinion back over the player's data. Duplicates collapse keeping the earliest slot,
+ * because the earliest slot is the one with the higher priority.
  *
  * @param slots exactly {@link #SLOTS} entries; an empty optional means an unused slot
  */
@@ -42,11 +44,13 @@ public record Party(List<Optional<ResourceLocation>> slots) {
     public static final int SLOTS = 5;
 
     /**
-     * Disk codec: five strings, {@code ""} for an unused slot, through {@link #of} on the way in.
+     * Disk codec: five strings, {@code ""} for an unused slot, positional through {@link #ofSlots}
+     * on the way in.
      *
      * <p>Encoding always emits exactly {@link #SLOTS} elements, so a written file never depends on
-     * the padding rule to stay the right length; decoding still goes through {@link #of}, so the
-     * invariants hold for anything on disk — including a file a player edited by hand.
+     * the padding rule to stay the right length. Decoding is positional, so a character keeps the
+     * slot it was saved in — the invariants hold for anything on disk, including a file a player
+     * edited by hand, without reordering what is there.
      */
     public static final Codec<Party> CODEC = Codec.STRING.listOf().comapFlatMap(
             Party::decodeSlots, Party::encodeSlots);
@@ -55,8 +59,8 @@ public record Party(List<Optional<ResourceLocation>> slots) {
      * Copies the list, freezes it, and refuses a list that is not exactly {@link #SLOTS} long.
      *
      * <p>The length check lives on the record rather than only in {@link #of}, so no constructor
-     * route can produce a four-slot party; {@code slots} is only ever shorter on the way into
-     * {@link #of}, which pads before calling this.
+     * route can produce a four-slot party; a shorter list is only ever a caller's input to
+     * {@link #of} or {@link #ofSlots}, both of which pad before calling this.
      */
     public Party {
         if (slots.size() != SLOTS) {
