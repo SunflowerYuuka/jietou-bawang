@@ -93,6 +93,16 @@ neoForge {
             sourceSet(sourceSets.main)
         }
     }
+
+    // JUnit unit tests that need the Minecraft/NeoForge classpath.
+    // MDG wires the "test" JvmTestSuite to the Minecraft artifacts, so
+    // src/test/java compiles and runs against real MC classes.
+    unitTest {
+        enable()
+        // UnitTest.testedMod is a Property<ModModel>; the mods container is a
+        // NamedDomainObjectContainer<ModModel>, so getByName() is the accessor.
+        testedMod = mods.getByName(mod_id)
+    }
 }
 
 // Sets up a dependency configuration called 'localRuntime'.
@@ -104,6 +114,10 @@ configurations {
 }
 
 dependencies {
+    // JUnit 5 for unit tests.
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
     // compileOnly "mezz.jei:jei-${mc_version}-common-api:${jei_version}"
@@ -167,6 +181,11 @@ publishing {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8' // Use the UTF-8 charset for Java compilation
+}
+
+// Run unit tests on the JUnit Platform (JUnit 5).
+tasks.named('test', Test).configure {
+    useJUnitPlatform()
 }
 
 // IDEA no longer automatically downloads sources/javadoc jars for dependencies, so we need to explicitly enable the behavior.
