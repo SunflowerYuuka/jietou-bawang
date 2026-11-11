@@ -392,7 +392,7 @@ CD 期间或槽未满时按释放键必须给明确反馈（音效 + 槽位抖�
 | **禁止用 `isDedicatedServer()` 做功能分支** | 只用 `level.isClientSide()` / `Dist` 判端。否则 LAN 主机会走进"单人分支"，加入的玩家直接不同步 |
 | **不假设"单人 = 没有其他玩家"** | 任何单人特判都改成"运行时范围内是否真的有友方玩家" |
 | **不假设"服务端一定有 OP"** | LAN 主机未开作弊时 `/astrum` 需 LV2 而不可用。调试兜底是直接改配置文件，不是靠命令 |
-| ModConfig 路径 | 集成服务的服务端配置在 `<存档目录>/serverconfig/astrum-server.toml`，与专服 `world/serverconfig/` 是同一机制；改完**建议重进世界**才稳妥 |
+| ModConfig 路径 | 服务端配置**首次生成在 `config/astrum-server.toml`**（即 `FMLPaths.CONFIGDIR`），**不是** `<存档>/serverconfig/`｜见下方 §8.1.1 的路径澄清 |
 | 存档 | 所有玩家的数据都在同一份存档的 `playerdata/` 下，Attachment 正常随档走 |
 
 **`area_charge` 在 LAN 下的两个新问题（已加护栏）：**
@@ -408,7 +408,23 @@ CD 期间或槽未满时按释放键必须给明确反馈（音效 + 槽位抖�
 
 ### 8.1 为什么用 ModConfig（不用命令 + SavedData）
 
-用户决策。补充理由：`ModConfig.Type.SERVER` 是 **per-save**（`<存档>/serverconfig/`），**不是 per-dimension**；而 SavedData 是每维度一份，会静默分叉。加上 ModConfig 是加载器原生、纯文本、整合包作者熟悉，避免第二套配置机制。
+用户决策。补充理由：`ModConfig.Type.SERVER` 是 **per-save**（**⚠️ 但落在哪里见 §8.1.1**），**不是 per-dimension**；而 SavedData 是每维度一份，会静默分叉。加上 ModConfig 是加载器原生、纯文本、整合包作者熟悉，避免第二套配置机制。
+
+#### 8.1.1 配置文件到底落在哪里（Task 5 实测修正）
+
+**首次生成的位置是 `config/astrum-server.toml`，不是 `<存档>/serverconfig/`。**
+
+NeoForge 的 `ConfigTracker.resolveBasePath` 逻辑是：
+- 若 `<world>/serverconfig/<name>.toml` **已经存在** → 用它（源码注释：`Found config file override in path`）
+- 否则 → 用 `FMLPaths.CONFIGDIR`，即游戏根目录的 `config/`
+
+所以 `<存档>/serverconfig/` 是一个**覆盖目录**，不是生成目标。NeoForge 会在那里放一个 `readme.txt` 说明这一点。
+
+**这对验收的影响**：
+- 想改服务端配置 → 改 `config/astrum-server.toml`（生成出来的那份）
+- 想给**某个存档**单独覆盖 → 手工在 `<存档>/serverconfig/` 放同名文件，它会被优先读取
+- Task 16 的 LAN 验收如果去 `<存档>/serverconfig/` 找文件会找不到
+- 首次进世界后改 `config/` 里的值：服务端配置在**下次启动**时生效
 
 ### 8.2 服务端配置
 
@@ -451,7 +467,7 @@ ubCameraPush = false                 # 演出时轻微镜头反馈，默认关
 1. **配置值必须在使用处懒读取**，不得静态缓存。否则配置未加载就取到默认值，且永久生效（NeoForge 配置经典坑）。
 2. **系数必须 clamp**（`base` → `[0.1, 1.0]`）。开放成配置项后一定有人填 0（效果全废）或 2.0（数值爆炸）或负数。
 
-> 调试期注意：默认值只在**首次生成文件**时写入。改了代码里的默认值，老存档的 toml 不会跟着变，得手动删掉 `world/serverconfig/` 下那个文件。
+> 调试期注意：默认值只在**首次生成文件**时写入。改了代码里的默认值，老的 `config/astrum-server.toml` 不会跟着变，得手动删掉它（见 §8.1.1：路径是 `config/`，不是 `world/serverconfig/`）。
 
 ---
 

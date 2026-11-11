@@ -991,6 +991,8 @@ Expected: 无 Mixin 冲突（本项目零 Mixin）、无注册表冲突、轮盘
 
 - [ ] **Step 4: LAN 联机验收（规格 §11 附加条）**
 
+> ⚠️ 服务端配置文件实际在 `run/config/astrum-server.toml`（或真实环境的 `config/` 下），**不是** `<存档>/serverconfig/`。后者是覆盖目录。见规格 §8.1.1。
+
 开单人世界 → 「开放到局域网」→ 同机再开一个 `runClient` 实例加入。
 Expected: 两端 UB 槽与队伍界面数值一致；加入方能看到主机放 UB 的演出；主机走的是 `IntegratedServer` 路径但功能正常（**没有** `isDedicatedServer()` 分支）；无队伍时 `area_charge` 对加入方生效。
 
