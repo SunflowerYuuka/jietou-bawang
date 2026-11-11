@@ -89,6 +89,45 @@ class CharacterRegistryTest {
         assertTrue(salvage.valid().isEmpty());
     }
 
+    /**
+     * Pins the A6 boundary, which this mod cannot move.
+     *
+     * <p>{@code RegistryDataLoader.loadElementFromResource} has two stages and only the second is a
+     * codec: it first does {@code JsonParser.parseReader(reader)} and only then
+     * {@code decoder.parse(...)}. A file that is not valid JSON throws {@code JsonSyntaxException}
+     * in stage 1, before {@link CharacterRegistry#LENIENT_CODEC} is ever consulted, and the loader's
+     * outer {@code catch (Exception)} turns that into {@code IllegalStateException("Failed to load
+     * registries")} — a fatal world-load abort. So: semantic errors are skipped with a WARN, syntax
+     * errors abort the world load and are outside this mod's control.
+     */
+    @Test
+    void jsonSyntaxErrorIsOutsideCodecControl() {
+        String truncated = "{\"schemaVersion\":1,";
+
+        // Stage 1 — the loader's parse. This is where a malformed file dies, and no codec is involved.
+        assertThrows(com.google.gson.JsonSyntaxException.class,
+                () -> JsonParser.parseReader(new java.io.StringReader(truncated)),
+                "解析阶段（codec 之前）必须抛 JsonSyntaxException");
+
+        // Stage 2 is never reached for that input, so the lenient codec cannot rescue it. Shown here
+        // for contrast: the same codec does succeed once a well-formed JsonElement exists.
+        assertDoesNotThrow(() -> CharacterRegistry.LENIENT_CODEC
+                .parse(JsonOps.INSTANCE, JsonParser.parseString(VALID)).getOrThrow(),
+                "语义层面的问题才归 codec 管，且已被 lenient 化");
+    }
+
+    @Test
+    void skippedEntryWarnMessageNamesTheEntryId() {
+        // The WARN text is the only diagnostic a pack author gets, so it is asserted directly
+        // rather than trusting that salvage() reported the right id somewhere.
+        var id = com.astrum.pcrd.impl.InternalIds.id("broken");
+
+        String message = CharacterRegistry.skippedMessage(id);
+
+        assertTrue(message.contains("astrum:broken"), "WARN 必须点名出问题的条目 id，实际: " + message);
+        assertTrue(message.contains("skipped"), "WARN 必须说明是被跳过，实际: " + message);
+    }
+
     @Test
     void salvageOfOnlyGoodEntriesSkipsNothing() {
         Map<ResourceKey<CharacterDef>, CharacterDef> loaded = new LinkedHashMap<>();

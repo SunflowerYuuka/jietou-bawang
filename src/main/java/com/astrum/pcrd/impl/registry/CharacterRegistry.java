@@ -29,20 +29,39 @@ import net.minecraft.resources.ResourceLocation;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.TagsUpdatedEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.neoforge.registries.DataPackRegistryEvent;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
  * Bootstrap and defensive loading of the {@code astrum:character} datapack registry.
  *
- * <h2>Why a lenient codec</h2>
- * {@code RegistryDataLoader} turns the exception of any entry that fails to decode into a fatal
- * {@code IllegalStateException("Failed to load registries due to above errors")}, which replaces
- * the world load with an error screen. It has no per-entry "skip this file" path for decode
- * failures, so resilience cannot live in a reload listener — it has to live in the codec. That is
- * what {@link #LENIENT_CODEC} is: it decodes strictly and, on failure, yields the {@link #INVALID}
- * placeholder. The registry consequently always loads; {@link #salvage} then drops placeholders,
- * reports each dropped id once, and publishes only real definitions to {@link AstrumApi}.
+ * <h2>What "resilient" does and does not cover (A6 boundary)</h2>
+ * The spec's A6 says a single bad JSON must be skipped rather than crash the game. That holds for
+ * <b>semantic</b> errors only, and the limit is inherent rather than chosen:
+ * {@code RegistryDataLoader.loadElementFromResource} has two stages — it first does
+ * {@code JsonParser.parseReader(reader)} and only then {@code decoder.parse(...)}. A file that is
+ * not valid JSON dies in stage one, where no codec (this one or any other) is consulted, and the
+ * loader's outer {@code catch (Exception)} collects it into the same map that
+ * {@code RegistryDataLoader.load} turns into a fatal
+ * {@code IllegalStateException("Failed to load registries due to above errors")}. So:
+ *
+ * <ul>
+ *   <li><b>Semantic problems</b> (unknown enum value, missing required field, wrong value type,
+ *       JSON that is valid but not an object) — handled here, skipped with one WARN.</li>
+ *   <li><b>Syntax problems</b> (truncated file, trailing garbage, bad escapes) — abort world load
+ *       before any mod code runs; outside this mod's control.</li>
+ * </ul>
+ *
+ * {@code CharacterRegistryTest.jsonSyntaxErrorIsOutsideCodecControl} pins that boundary.
+ *
+ * <h2>How semantic errors are made non-fatal</h2>
+ * Because the loader has no per-entry "skip this file" path for decode failures, resilience cannot
+ * live in a reload listener — it has to live in the codec. {@link #LENIENT_CODEC} decodes strictly
+ * and, on failure, hands back the {@link #INVALID} placeholder instead of a
+ * {@code DataResult.Error}. The registry therefore always loads; {@link #salvage} then drops the
+ * placeholders, reports each dropped id once, and publishes only real definitions to
+ * {@link AstrumApi}.
  *
  * <h2>Why the placeholder is compared by value</h2>
  * A synced datapack registry is re-encoded and sent to clients, so a client's placeholder is a
@@ -51,12 +70,23 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code schemaVersion} of {@code 0} and non-character display name make it unreachable by any real
  * definition (version 1 is the only schema this build accepts).
  *
- * <h2>Which event, and why</h2>
- * {@link TagsUpdatedEvent} is fired by {@code ReloadableServerResources.updateRegistryTags()},
- * which runs after the datapack registry layers are frozen — on both the initial world load
- * ({@code WorldLoader.load}) and every {@code /reload} ({@code MinecraftServer.reloadResources}).
- * It carries a {@code RegistryAccess}, which is exactly the handle needed to reach a datapack
- * registry. No reload listener is registered: the registry is the one loading mechanism.
+ * <h2>Which events, and why</h2>
+ * <b>Create:</b> {@link DataPackRegistryEvent.NewRegistry} on the mod bus — the only way to create
+ * the registry at all.
+ *
+ * <p><b>Bind:</b> {@link TagsUpdatedEvent}, fired by
+ * {@code ReloadableServerResources.updateRegistryTags()} after the datapack registry layers are
+ * frozen, on both the initial world load ({@code WorldLoader.load}) and every {@code /reload}
+ * ({@code MinecraftServer.reloadResources}). It carries a {@code RegistryAccess}, which is the
+ * handle needed to reach a datapack registry, and it fires on both sides, so no side check is
+ * needed. Note that {@code /reload} re-fires this event but does <em>not</em> re-read datapack
+ * registry contents — only a world re-entry picks up a changed character JSON.
+ *
+ * <p><b>Unbind:</b> {@link ServerStoppedEvent}, which per its javadoc fires "on the dedicated server
+ * … and before returning to the main menu on the client". That is exactly the moment the registry
+ * stops being valid, and it too needs no side check.
+ *
+ * <p>No reload listener is registered: the registry is the single loading mechanism.
  */
 @ApiStatus.Internal
 public final class CharacterRegistry {
@@ -89,13 +119,14 @@ public final class CharacterRegistry {
 
     /**
      * Subscribes the registry to the mod bus (registry creation) and to the game bus (per-load
-     * publishing).
+     * publishing, plus dropping the binding when the world goes away).
      *
      * @param modBus the mod-specific event bus
      */
     public static void register(IEventBus modBus) {
         modBus.addListener(DataPackRegistryEvent.NewRegistry.class, CharacterRegistry::onNewRegistry);
         NeoForge.EVENT_BUS.addListener(TagsUpdatedEvent.class, CharacterRegistry::onTagsUpdated);
+        NeoForge.EVENT_BUS.addListener(ServerStoppedEvent.class, CharacterRegistry::onServerStopped);
     }
 
     private static void onNewRegistry(DataPackRegistryEvent.NewRegistry event) {
@@ -125,13 +156,38 @@ public final class CharacterRegistry {
         });
     }
 
+    /**
+     * Drops the published registry once the world it belongs to is gone.
+     *
+     * <p>Without this, {@link AstrumApi#characters()} would keep handing out a closed world's
+     * registry, which is worse than returning nothing: a caller cannot tell stale data from live
+     * data. Fires on both sides, so single-player and a dedicated server behave the same.
+     *
+     * @param event the server-stopped notification
+     */
+    private static void onServerStopped(ServerStoppedEvent event) {
+        AstrumApi.unbind();
+    }
+
     private static void report(Salvage salvage) {
         for (ResourceLocation skipped : salvage.skipped()) {
-            Astrum.LOGGER.warn("astrum: character {} skipped: invalid definition", skipped);
+            Astrum.LOGGER.warn(skippedMessage(skipped));
         }
         for (ResourceKey<CharacterDef> key : salvage.valid().keySet()) {
             Astrum.LOGGER.info("astrum: character {} loaded", key.location());
         }
+    }
+
+    /**
+     * {@return the WARN text for one skipped entry}
+     *
+     * <p>Pack authors only ever see this line, so it is built in one place and asserted by a test
+     * instead of being formatted inline at the log call.
+     *
+     * @param skipped id of the entry that did not decode
+     */
+    public static String skippedMessage(ResourceLocation skipped) {
+        return "astrum: character " + skipped + " skipped: invalid definition";
     }
 
     /**

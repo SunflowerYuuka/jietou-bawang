@@ -8,7 +8,13 @@ import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Static definition of one character, loaded from {@code data/astrum/character/<id>.json}.
+ * Static definition of one character, loaded from
+ * {@code data/<pack namespace>/astrum/character/<id>.json}.
+ *
+ * <p>The doubled {@code astrum} is not a typo: NeoForge puts the registry key's own namespace into
+ * the directory, so the registry {@code astrum:character} is read from
+ * {@code data/<pack namespace>/astrum/character/}. A file at {@code data/astrum/character/} is
+ * never read, and the registry comes up empty with no warning.
  *
  * @param schemaVersion version of this layout, used by later migration code
  * @param displayName   name shown in the party UI
