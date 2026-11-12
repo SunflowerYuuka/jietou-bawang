@@ -97,10 +97,26 @@ class TriggerFactsTest {
         }
     }
 
+    /**
+     * {@code combo_n} is "every Nth hit"; a hook that names no {@code N} has no period and must
+     * <b>not</b> fire.
+     *
+     * <p>This test replaces one that asserted the opposite ({@code aZeroOrNegativeComboCountPaysOutEveryHit},
+     * "hits=0 means n=1"). That was the fail-open reading: {@code TriggerParams.CODEC} defaults
+     * {@code hits} to {@code 0}, {@code Math.max(1, 0)} made the period 1, {@code chain % 1 == 0} is
+     * always true, and a data author who forgot {@code triggerParams} got a permanent payout — silence
+     * of exactly the kind this whole trigger fix exists to remove. The old test pinned the bug, so it
+     * is replaced rather than kept.
+     */
     @Test
-    void aZeroOrNegativeComboCountPaysOutEveryHit() {
+    void comboNWithNonPositiveHitsNeverFires() {
         TriggerFacts facts = TriggerFacts.forHit(true, false, false, 4, false);
-        assertTrue(facts.observes(Trigger.COMBO_N, TriggerParams.NONE), "hits=0 means n=1");
+        assertFalse(facts.observes(Trigger.COMBO_N, TriggerParams.NONE),
+                "hits=0 (the codec default) must not mean 'every hit'");
+        assertFalse(facts.observes(Trigger.COMBO_N, new TriggerParams(0, Optional.empty())));
+        assertFalse(facts.observes(Trigger.COMBO_N, new TriggerParams(-3, Optional.empty())));
+        assertTrue(facts.observes(Trigger.COMBO_N, new TriggerParams(2, Optional.empty())),
+                "a real period still works: 4 % 2 == 0");
     }
 
     @Test

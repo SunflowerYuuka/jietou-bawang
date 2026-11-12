@@ -42,6 +42,13 @@ import org.jetbrains.annotations.ApiStatus;
  * hit does not break it (a deliberate, documented choice — the simpler of the two conventions the
  * brief allowed).
  *
+ * <p>A {@code hits} of zero or less is <b>not a period</b>. It cannot be clamped to 1 either: 1 is a
+ * valid period that pays out on every hit, which is the permanent-payout failure again. So
+ * {@code combo_n} with a non-positive {@code hits} never observes, and {@link HookPlan} reports the
+ * hook so the author can find it (spec §5.3's "不得 fail-open", and the {@code comboWindowTicks} note
+ * in §8.2). Note that {@code TriggerParams.CODEC} defaults {@code hits} to {@code 0}, so this is the
+ * state a data author lands in by <em>omitting</em> {@code triggerParams}, not by writing nonsense.
+ *
  * <p>{@code STACK_FULL} compares the stack id named by the hook's {@code triggerParams} with the stack
  * that just reached its cap; a hook that names no stack accepts any stack reaching its cap.
  */
@@ -119,14 +126,9 @@ public record TriggerFacts(boolean meleeHit, boolean projectileHit, boolean crit
             case KILL -> kill;
             case BLOCK -> block;
             case LOW_HEALTH -> lowHealth;
-            case COMBO_N -> comboHits > 0 && comboHits % comboLengthOf(params) == 0;
+            case COMBO_N -> params.hits() >= 1 && comboHits > 0 && comboHits % params.hits() == 0;
             case STACK_FULL -> stackReachedMax.isPresent()
                     && (params.stackId().isEmpty() || params.stackId().get().equals(stackReachedMax.get()));
         };
-    }
-
-    /** {@return the chain length a {@code combo_n} hook asks for; a missing or silly value means 1} */
-    private static int comboLengthOf(TriggerParams params) {
-        return Math.max(1, params.hits());
     }
 }
