@@ -253,11 +253,31 @@ public final class EffectExecutors {
     private static @Nullable ResourceLocation stack(EffectHook.Stack hook, HookContext ctx) {
         StackState before = StackRuntime.read(ctx.target(), ctx.attacker(), hook.stackId());
         StackState next = StackRuntime.add(ctx.target(), ctx.attacker(), hook.stackId(), 1, hook.max());
-        boolean reachedCap = hook.max() > 0 && before.stacks() < hook.max() && next.stacks() >= hook.max();
+        boolean reachedCap = reachesCap(before.stacks(), next.stacks(), hook.max());
         Astrum.LOGGER.debug("astrum: stack {} on {} for {} -> {}/{} (lastHitTick {}){}", hook.stackId(),
                 name(ctx.target()), name(ctx.attacker()), next.stacks(), hook.max(), next.lastHitTick(),
                 reachedCap ? " REACHED CAP" : "");
         return reachedCap ? hook.stackId() : null;
+    }
+
+    /**
+     * {@return whether this hit took the count <b>to</b> the cap, i.e. whether it was a fill}
+     *
+     * <p>This predicate <em>is</em> the "once per fill, not once per hit at the cap" rule: the
+     * {@code stack_full} trigger must fire on the transition, and a later hit that leaves an already
+     * full stack full is not a transition. {@code before < max} is exactly that half; {@code max <= 0}
+     * is not a cap at all and can never be filled.
+     *
+     * <p>Pure and package-private on purpose. {@link #stack} itself needs a live {@link HookContext}
+     * and an entity attachment, so without this seam the rule would have no test outside a running
+     * server — which is how it went unasserted in the first place.
+     *
+     * @param before stacks before the hit
+     * @param after  stacks after the hit, already clamped to {@code max} by {@link StackKernel#add}
+     * @param max    the hook's cap, never scaled (spec §5.2)
+     */
+    static boolean reachesCap(int before, int after, int max) {
+        return max > 0 && before < max && after >= max;
     }
 
     // ------------------------------------------------------------------ helpers

@@ -4,6 +4,8 @@ import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.api.v1.EffectHook;
 import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.function.DoublePredicate;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import org.jetbrains.annotations.ApiStatus;
@@ -58,10 +60,33 @@ public final class HookEvaluator {
      * @param facts what just happened, as the eight triggers see it
      */
     public static void evaluate(CharacterDef def, HookContext ctx, TriggerFacts facts) {
-        HookPlan.fire(def.effects(), facts,
+        evaluateHooks(def, facts,
                 chance -> roll(chance, ctx.attacker()),
                 (index, hook) -> Optional.ofNullable(EffectExecutors.run(hook, ctx)),
                 invalid -> warnInvalid(invalid, ctx));
+    }
+
+    /**
+     * The adapter's hook-list-to-effects path: {@link #evaluate} with its two game-bound seams — the
+     * chance roll and the effect runner — passed in.
+     *
+     * <p>This exists so a test can walk <b>the route production takes</b> from a {@link CharacterDef}
+     * to a chain of effects without a {@link HookContext}, which needs a server. That distinction is
+     * the point: a test calling {@link HookPlan#fire} directly would still pass if a per-trigger dedupe
+     * were re-added here, between the character and the loop — the same defect, one layer out. What
+     * stays uncovered is only the three lambdas built in {@link #evaluate} (roll, dispatch, diagnostic),
+     * each of which needs a live entity.
+     *
+     * @param def       the character whose hooks run
+     * @param facts     what just happened
+     * @param chance    the chance roll, once per hook that is about to run
+     * @param effects   runs one hook
+     * @param onInvalid receives every hook that cannot work as written
+     */
+    @ApiStatus.Internal
+    static void evaluateHooks(CharacterDef def, TriggerFacts facts, DoublePredicate chance,
+            HookPlan.EffectRun effects, Consumer<HookPlan.Invalid> onInvalid) {
+        HookPlan.fire(def.effects(), facts, chance, effects, onInvalid);
     }
 
     /**
