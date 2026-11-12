@@ -3,6 +3,7 @@ package com.astrum.pcrd.impl.item;
 import com.astrum.pcrd.impl.client.CharacterBookScreen;
 import com.astrum.pcrd.impl.party.BookText;
 import java.util.List;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResultHolder;
@@ -46,6 +47,15 @@ public class CharacterBookItem extends Item {
     private static final int COLOR_HINT = 0xAAAAAA;
 
     /**
+     * This book's theme, resolved from its own registry id the first time it is needed.
+     *
+     * <p>Lazy on purpose: an item is constructed <em>before</em> the registry that will name it is
+     * populated, so the id does not exist yet inside the constructor. By the first right-click or tooltip
+     * it does, and it never changes after that — so the answer is computed once and cached.
+     */
+    private BookTheme theme;
+
+    /**
      * @param properties item properties, supplied by {@link AstrumItems}
      */
     public CharacterBookItem(Properties properties) {
@@ -53,7 +63,32 @@ public class CharacterBookItem extends Item {
     }
 
     /**
-     * Opens the character book. Never consumes the item, and never writes anything.
+     * {@return this book's theme}
+     *
+     * <p>The item id decides it ({@link BookTheme#ofItemId}), which is the whole rule: the three books are
+     * three ids, so the icon, the name, the recipe and the panel all follow from one fact instead of two
+     * that could disagree.
+     */
+    BookTheme theme() {
+        if (theme == null) {
+            theme = BookTheme.ofItemId(BuiltInRegistries.ITEM.getKey(this));
+        }
+        return theme;
+    }
+
+    /**
+     * Opens the character book, in the theme of the item that was right-clicked.
+     *
+     * <p>The theme is read here and nowhere else. Three facts make this the right place:
+     * <ul>
+     *   <li>the <b>item id</b> decides it ({@link BookTheme#ofItemId}), so a player who owns all three
+     *       books gets three different screens from one item class, and the icon, the name, the recipe and
+     *       the panel all follow from the same id — they cannot disagree;</li>
+     *   <li>the player's hand is only available here; the screen sees neither hand nor stack, so if it
+     *       looked the theme up itself it would have to guess which of the player's books was used;</li>
+     *   <li>a book whose id this build does not recognise resolves to {@link BookTheme#DEFAULT} rather
+     *       than refusing to open.</li>
+     * </ul>
      *
      * <p>Returns {@code SUCCESS} on both sides rather than {@code sidedSuccess}: nothing was used up, and
      * a {@code CONSUME} result on the server would tell the client the stack changed when it did not.
@@ -62,7 +97,7 @@ public class CharacterBookItem extends Item {
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
         if (level.isClientSide()) {
-            CharacterBookScreen.open();
+            CharacterBookScreen.open(theme());
         }
         return InteractionResultHolder.success(stack);
     }
@@ -71,6 +106,14 @@ public class CharacterBookItem extends Item {
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip,
             TooltipFlag flag) {
+        // The theme's name is a second line, not part of the tooltip sentence: the sentence tells every
+        // player what the item does, and the name only says which of the three they are holding. Adding
+        // it as a format argument would force every language to write a sentence that reads well with
+        // three short nouns, and would put the DEFAULT theme's name on the plain book, which reads as
+        // "why does my book have a variant name".
+        if (theme() != BookTheme.DEFAULT) {
+            tooltip.add(Component.translatable(theme().nameKey()).withColor(COLOR_HINT));
+        }
         tooltip.add(Component.translatable(BookText.KEY_TOOLTIP).withColor(COLOR_HINT));
     }
 }

@@ -53,6 +53,14 @@ public final class AstrumDataComponents {
      * <p>An absent component is a card that grants nothing: {@link CharacterCardItem} refuses it with a
      * message instead of guessing, so a hand-written or datapack copy of the item cannot enrol a
      * character nobody named.
+     *
+     * <p><b>There is deliberately no {@code astrum:book_theme} component.</b> The three themes are three
+     * item ids, and {@link BookTheme#ofItemId} derives the theme from the id. The reason is that three of
+     * the four things a theme has to decide are fixed by the item id and cannot be moved by data — the
+     * recipe result, the model file, and the lang key — so a component would be a fourth, independent copy
+     * that could disagree with them: a stack patched to {@code book_theme: sakura} on the plain book would
+     * open a pink panel while the inventory still drew the blue icon. One source of truth is worth more
+     * here than datapack re-theming; the full argument is in {@code BookTheme}'s javadoc.
      */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<ResourceLocation>> CHARACTER_ID =
             DATA_COMPONENTS.registerComponentType("character_id", builder -> builder

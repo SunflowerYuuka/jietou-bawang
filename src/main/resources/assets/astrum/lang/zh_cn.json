@@ -53,6 +53,13 @@
   "astrum.configuration.maxActiveShowcaseEntities": "演出实体上限",
 
   "item.astrum.character_card": "角色卡",
+  "item.astrum.character_card_sakura": "角色卡·樱",
+  "item.astrum.character_card_forest": "角色卡·森",
+  "item.astrum.rice_bowl": "米饭",
+
+  "astrum.theme.default": "湛蓝",
+  "astrum.theme.sakura": "樱粉",
+  "astrum.theme.forest": "森绿",
 
   "astrum.card.tooltip": "可入册：%s",
   "astrum.card.enrolled": "%s 已加入你的角色册（1 级，好感 1）。",
@@ -102,6 +109,8 @@
   "astrum.command.tune.reset": "area_charge 的运行时覆盖已清除——两道护栏重新读取服务端配置。",
 
   "item.astrum.character_book": "角色册",
+  "item.astrum.character_book_sakura": "角色册·樱",
+  "item.astrum.character_book_forest": "角色册·森",
   "astrum.book.tooltip": "右键打开你的角色册：角色、编队、养成",
   "astrum.book.title": "角色册",
   "astrum.book.quarantined": "存档读取失败：这份角色册读不懂，已原样保留在磁盘上；现在不能做任何改动。",

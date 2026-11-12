@@ -51,14 +51,24 @@ class DishClickTest {
                 "a click with an empty hand keeps every vanilla behaviour");
     }
 
-    /** Every one of §6.1's four dishes is recognised by id, and nothing else is. */
+    /**
+     * The one dish this build ships is recognised by id, and nothing else is.
+     *
+     * <p>This test used to walk §6.1's four vanilla dishes. The list is now a single dedicated 料理
+     * ({@code astrum:rice_bowl}), so what is asserted is the same shape with the new content: the dish
+     * feeds, and everything else — including the vanilla ingredients that used to feed — leaves the click
+     * to vanilla.
+     */
     @Test
-    void theFourDishesAreTheOnlyFeedingItems() {
+    void theRiceBowlIsTheOnlyFeedingItem() {
         for (net.minecraft.resources.ResourceLocation dish : Dishes.DISHES) {
             assertTrue(Dishes.isDishId(dish), dish + " must feed");
         }
+        assertTrue(Dishes.isDishId(Dishes.RICE_BOWL));
         assertFalse(Dishes.isDishId(net.minecraft.resources.ResourceLocation.withDefaultNamespace("bread")),
-                "bread is food but not a 料理 of §6.1, so vanilla must keep that click");
+                "bread is food but not a 料理, so vanilla must keep that click");
+        assertFalse(Dishes.isDishId(net.minecraft.resources.ResourceLocation.withDefaultNamespace("sugar")),
+                "sugar was a dish before the rice bowl replaced the vanilla list");
         assertFalse(Dishes.isDishId(null));
     }
 
@@ -74,7 +84,7 @@ class DishClickTest {
     @Test
     void everyPlayerVisibleOutcomeIsAnsweredInWords() {
         for (DishFeed.Outcome outcome : DishFeed.Outcome.values()) {
-            Component message = DishClick.message(outcome, "Sugar", 2);
+            Component message = DishClick.message(outcome, "Rice Bowl", 2);
             assertNotNull(message, "no sentence for " + outcome);
             if (outcome == DishFeed.Outcome.NOT_A_DISH) {
                 continue;   // filtered before DishFeed runs; there is no sentence to write
@@ -85,13 +95,13 @@ class DishClickTest {
 
     /**
      * The two outcomes whose wording carries numbers keep them: "how many characters" is the whole
-     * answer to "did that work", and the dish's name is how a player learns which of four dishes is
-     * already spent today.
+     * answer to "did that work", and the dish's name is how a player learns which dish is already spent
+     * today.
      */
     @Test
     void theFedLineCarriesTheDishAndTheCharacterCount() {
-        String fed = DishClick.message(DishFeed.Outcome.FED, "Sugar", 3).getString();
-        assertTrue(fed.isEmpty() || fed.contains("Sugar") || fed.contains("astrum.growth.fed"),
+        String fed = DishClick.message(DishFeed.Outcome.FED, "Rice Bowl", 3).getString();
+        assertTrue(fed.isEmpty() || fed.contains("Rice Bowl") || fed.contains("astrum.growth.fed"),
                 "the rendering is the client's job; what matters is that the key and its arguments "
                         + "were handed over intact, got: " + fed);
     }
@@ -102,6 +112,6 @@ class DishClickTest {
      */
     @Test
     void notADishIsSilentBecauseItCannotReachAPlayer() {
-        assertEquals(Component.empty(), DishClick.message(DishFeed.Outcome.NOT_A_DISH, "Sugar", 0));
+        assertEquals(Component.empty(), DishClick.message(DishFeed.Outcome.NOT_A_DISH, "Rice Bowl", 0));
     }
 }

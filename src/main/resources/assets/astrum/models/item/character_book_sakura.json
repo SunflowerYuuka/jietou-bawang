@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "astrum:item/theme_sakura/character_book"
+  }
+}

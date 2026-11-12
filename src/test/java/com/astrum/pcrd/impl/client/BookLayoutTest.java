@@ -87,10 +87,10 @@ class BookLayoutTest {
     void everyPartOfThePanelIsInsideIt() {
         BookLayout layout = small();
         BookLayout.Box panel = layout.panel();
-        List<BookLayout.Box> parts = List.of(layout.title(), layout.rosterGrid(), layout.partyHeading(),
-                layout.partyRow(), layout.growthHeading(), layout.levelLine(), layout.expBar(),
-                layout.expLine(), layout.affectionLine(), layout.affectionBar(), layout.nextTierLine(),
-                layout.feedEntry());
+        List<BookLayout.Box> parts = List.of(layout.title(), layout.divider(), layout.rosterGrid(),
+                layout.partyHeading(), layout.partyRow(), layout.growthHeading(), layout.levelLine(),
+                layout.expBar(), layout.expLine(), layout.affectionLine(), layout.affectionBar(),
+                layout.nextTierLine(), layout.feedEntry());
         for (BookLayout.Box part : parts) {
             assertTrue(part.x() >= panel.x() && part.right() <= panel.right(),
                     "a part sticks out horizontally: " + part);
@@ -101,6 +101,69 @@ class BookLayoutTest {
         assertTrue(footer.bottom() <= panel.bottom(), "the footer must stay inside the panel");
         assertTrue(footer.y() >= layout.rosterGrid().bottom(),
                 "the footer must sit below the body, not on top of it");
+    }
+
+    /**
+     * The ornament sits between the title and the body, full body width, and <b>no content box overlaps
+     * it</b>.
+     *
+     * <p>This is the whole point of the divider row: it replaced a one-pixel flat line, and it is 16px
+     * tall, so every content box moved down by 16+2·gap. A layout that kept the old {@code bodyTop} would
+     * draw the roster grid on top of the ornament — visible as the art's centre jewel behind the first
+     * row of cells.
+     */
+    @Test
+    void theDividerSeparatesTheTitleFromTheBodyWithoutOverlappingAnything() {
+        BookLayout layout = small();
+        BookLayout.Box divider = layout.divider();
+        BookLayout.Box title = layout.title();
+        assertEquals(title.x(), divider.x(), "title and ornament align on the left");
+        assertEquals(title.width(), divider.width(), "and are the same width");
+        assertEquals(BookLayout.DIVIDER_HEIGHT, divider.height(),
+                "the box is the art's natural height, so the ornament is not squashed");
+        assertTrue(divider.y() >= title.bottom(), "the ornament sits below the title");
+        assertTrue(divider.bottom() <= layout.rosterGrid().y(),
+                "the body starts below the ornament, not under it");
+        assertTrue(divider.bottom() <= layout.partyHeading().y());
+        for (int i = 0; i < BookLayout.PAGE; i++) {
+            assertTrue(layout.cell(i).y() >= divider.bottom(), "cell " + i + " overlaps the ornament");
+        }
+    }
+
+    /**
+     * The inner padding is wider than the frame band the nine-slice draws.
+     *
+     * <p>The two numbers are independent constants — {@code NineSlice.DEFAULT_SLICE} decides how thick the
+     * drawn ornament is, {@link BookLayout#PADDING} how far the content is inset — and if the padding is
+     * the smaller of the two the title and the footer sit <em>on</em> the frame. Nothing crashes; it just
+     * looks wrong, so the relation is asserted here, next to the constants it constrains.
+     */
+    @Test
+    void theContentPaddingClearsTheNineSliceFrame() {
+        assertTrue(BookLayout.PADDING > NineSlice.DEFAULT_SLICE,
+                "PADDING (" + BookLayout.PADDING + ") must exceed the panel's slice ("
+                        + NineSlice.DEFAULT_SLICE + "), or content is drawn on the frame");
+        assertTrue(BookLayout.PADDING - NineSlice.DEFAULT_SLICE >= 2,
+                "at least two spare pixels, or the first text row touches the ornament");
+    }
+
+    /**
+     * The panel the layout asks for has a drawable nine-slice body at every GUI scale players use.
+     *
+     * <p>The panel size is fixed, so this is really an assertion about the slice: a slice larger than half
+     * the panel would leave no centre. It is the one link between the layout constants and the drawing
+     * helper, and it is arithmetic, so it belongs in a test rather than in a log line.
+     */
+    @Test
+    void thePanelHasADrawableNineSliceBody() {
+        NineSlice.Rects rects = NineSlice.rects(small().panel(), NineSlice.DEFAULT_SLICE);
+        assertTrue(rects.centreIsDrawable(),
+                "the panel's body must be drawable at slice " + NineSlice.DEFAULT_SLICE + ": "
+                        + rects.centre());
+        assertTrue(rects.centre().width() > BookLayout.GRID_WIDTH,
+                "the body must be wider than the roster grid, or the grid is drawn off the panel");
+        assertTrue(rects.centre().height() >= BookLayout.BODY_HEIGHT,
+                "the body must be at least as tall as the roster grid");
     }
 
     @Test

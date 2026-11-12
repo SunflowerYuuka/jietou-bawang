@@ -29,6 +29,34 @@ public final class BookText {
     /** The item's own name, {@code item.astrum.character_book}. */
     public static final String KEY_ITEM = "item.astrum.character_book";
 
+    /**
+     * {@return the item-name key of the {@code theme}'s book}
+     *
+     * <p>Derived from the same suffix the item id uses ({@link com.astrum.pcrd.impl.item.BookTheme}),
+     * so the name key, the item id, the model file and the texture name are one string with four uses.
+     * The plain book keeps the literal {@link #KEY_ITEM} it has always had.
+     *
+     * @param theme the book's theme
+     */
+    public static String itemKey(com.astrum.pcrd.impl.item.BookTheme theme) {
+        return "item.astrum." + theme.bookPath();
+    }
+
+    /**
+     * {@return every book item name}, one per theme, for {@code LangParityTest}
+     *
+     * <p>Derived by walking the enum rather than listed: a fourth theme gets its name key checked by the
+     * parity test without anybody remembering to add it here, which is the whole failure mode this method
+     * exists to prevent.
+     */
+    public static Set<String> itemKeys() {
+        Set<String> keys = new LinkedHashSet<>();
+        for (com.astrum.pcrd.impl.item.BookTheme theme : com.astrum.pcrd.impl.item.BookTheme.values()) {
+            keys.add(itemKey(theme));
+        }
+        return Set.copyOf(keys);
+    }
+
     /** The item's tooltip: what a right-click does. */
     public static final String KEY_TOOLTIP = "astrum.book.tooltip";
 
@@ -102,6 +130,7 @@ public final class BookText {
                 KEY_SECTION_ROSTER, KEY_SECTION_PARTY, KEY_SECTION_GROWTH, KEY_ROSTER_EMPTY, KEY_PARTY_HINT, KEY_GROWTH_NONE, KEY_GROWTH_LEVEL,
                 KEY_GROWTH_EXP, KEY_GROWTH_AFFECTION, KEY_GROWTH_NEXT, KEY_GROWTH_MAX,
                 KEY_FEED_AVAILABLE, KEY_FEED_ROUTE, KEY_UNKNOWN_CHARACTER, KEY_REFUSED));
+        keys.addAll(itemKeys());
         for (PartyRules.Reason reason : PartyRules.Reason.values()) {
             keys.add(PartyRules.reasonKey(reason));
         }

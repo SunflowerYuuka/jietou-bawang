@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import net.minecraft.core.Registry;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -61,6 +62,20 @@ public class CharacterCardItem extends Item {
 
     /** Item name, {@code item.astrum.character_card}. */
     public static final String KEY_NAME = "item.astrum.character_card";
+
+    /**
+     * {@return the item-name key of the {@code theme}'s card}
+     *
+     * <p>Derived from the same suffix the item id uses, exactly like the book's
+     * ({@link com.astrum.pcrd.impl.party.BookText#itemKey}), so the name key, the id, the model and the
+     * texture are one string with four uses. The plain card keeps the literal {@link #KEY_NAME}.
+     *
+     * @param theme the card's theme
+     */
+    public static String itemKey(BookTheme theme) {
+        return "item.astrum." + theme.cardPath();
+    }
+
     public static final String KEY_TOOLTIP = "astrum.card.tooltip";
     public static final String KEY_ENROLLED = "astrum.card.enrolled";
     public static final String KEY_ALREADY_OWNED = "astrum.card.already_owned";
@@ -69,10 +84,33 @@ public class CharacterCardItem extends Item {
     public static final String KEY_UNKNOWN_CHARACTER = "astrum.card.unknown_character";
     public static final String KEY_NO_REGISTRY = "astrum.card.no_registry";
 
-    /** Every key this item asks for, for {@code LangParityTest}. */
-    public static final Set<String> LANG_KEYS = Set.of(KEY_NAME, KEY_TOOLTIP, KEY_ENROLLED,
-            KEY_ALREADY_OWNED, KEY_QUARANTINED, KEY_NO_CHARACTER, KEY_UNKNOWN_CHARACTER,
-            KEY_NO_REGISTRY);
+    /**
+     * {@return every card item name}, derived by walking the theme enum
+     *
+     * <p>A method rather than a cached static field: three strings rebuilt on demand are cheaper than a
+     * static container the project's own {@code guard} has to warn about and a reader has to check.
+     */
+    public static Set<String> itemKeys() {
+        Set<String> keys = new java.util.LinkedHashSet<>();
+        for (BookTheme theme : BookTheme.values()) {
+            keys.add(itemKey(theme));
+        }
+        return Set.copyOf(keys);
+    }
+
+    /**
+     * {@return every key this item asks for}, for {@code LangParityTest}
+     *
+     * <p>Includes each theme's item name. A LinkedHashSet, not {@code Set.of}: a duplicated key would
+     * throw inside a static initialiser and take this class down at class-load time in a player's game.
+     */
+    public static Set<String> langKeys() {
+        Set<String> keys = new java.util.LinkedHashSet<>(Set.of(KEY_TOOLTIP, KEY_ENROLLED,
+                KEY_ALREADY_OWNED, KEY_QUARANTINED, KEY_NO_CHARACTER, KEY_UNKNOWN_CHARACTER,
+                KEY_NO_REGISTRY));
+        keys.addAll(itemKeys());
+        return Set.copyOf(keys);
+    }
 
     // Feedback colours as RGB. {@code net.minecraft.ChatFormatting} is unusable in this build: the
     // artifact's copy of that class carries a malformed parameter-annotation attribute and javac
@@ -167,11 +205,16 @@ public class CharacterCardItem extends Item {
     }
 
     /**
-     * Shows which character the card grants.
+     * Shows which character the card grants, and which theme the card is.
      *
      * <p>The name comes from the datapack ({@code displayName}, which per spec needs no lang key); the
      * registry is only bound while a world is loaded, so outside one the raw id is shown rather than
      * nothing — a card whose tooltip is blank reads as a broken item.
+     *
+     * <p>The theme's name is a second line for the same reason as on the book: it is what tells a player
+     * holding two cards apart, and the plain card deliberately shows nothing. The rule is
+     * {@link BookTheme#ofItemId}, the same one the book uses, so a book and a card of the same theme always
+     * agree about which theme that is.
      */
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip,
@@ -180,12 +223,17 @@ public class CharacterCardItem extends Item {
         if (characterId == null) {
             tooltip.add(Component.translatable(KEY_NO_CHARACTER)
                     .withColor(COLOR_HINT));
-            return;
+        } else {
+            CharacterDef def = AstrumApi.characters().map(registry -> registry.get(characterId))
+                    .orElse(null);
+            String name = def == null ? characterId.toString() : def.displayName();
+            tooltip.add(Component.translatable(KEY_TOOLTIP, name)
+                    .withColor(COLOR_HINT));
         }
-        CharacterDef def = AstrumApi.characters().map(registry -> registry.get(characterId)).orElse(null);
-        String name = def == null ? characterId.toString() : def.displayName();
-        tooltip.add(Component.translatable(KEY_TOOLTIP, name)
-                .withColor(COLOR_HINT));
+        BookTheme theme = BookTheme.ofItemId(BuiltInRegistries.ITEM.getKey(this));
+        if (theme != BookTheme.DEFAULT) {
+            tooltip.add(Component.translatable(theme.nameKey()).withColor(COLOR_HINT));
+        }
     }
 }
 

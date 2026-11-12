@@ -21,10 +21,11 @@ import org.jetbrains.annotations.ApiStatus;
  * <pre>
  *   +----------------------------------------- panel (centred) ---+
  *   | title                                                      |
- *   | +--- roster grid (4 x 3 cells) ---+  party heading         |
- *   | | cell cell cell cell              |  [1][2][3][4][5]      |
- *   | | cell cell cell cell              |  growth heading        |
- *   | | cell cell cell cell              |  level / exp bar       |
+ *   | ~~~~~~~~~~~~ ornament (theme divider) ~~~~~~~~~~~~~~~~~~~  |
+ *   | +--- roster grid (2 x 3 cells) ---+  party heading         |
+ *   | | cell cell                        |  [1][2][3][4][5]      |
+ *   | | cell cell                        |  growth heading       |
+ *   | | cell cell                        |  level / exp bar      |
  *   | +----------------------------------+  affection / bar       |
  *   |                                       feed entry           |
  *   | refusal line (only while a refusal is fresh)               |
@@ -46,13 +47,16 @@ import org.jetbrains.annotations.ApiStatus;
 public final class BookLayout {
 
     /** Outer padding inside the panel. */
-    public static final int PADDING = 8;
+    public static final int PADDING = 20;
 
     /** Height of the title row. */
     public static final int HEADER_HEIGHT = 14;
 
-    /** Vertical gap between the header and the body. */
-    public static final int HEADER_GAP = 4;
+    /** Height of the themed ornament that separates the title from the body: the divider art is 256x16. */
+    public static final int DIVIDER_HEIGHT = 16;
+
+    /** Gap above and below the ornament. */
+    public static final int DIVIDER_GAP = 4;
 
     /** Gap between the roster column and the right-hand column. */
     public static final int COLUMN_GAP = 10;
@@ -108,9 +112,9 @@ public final class BookLayout {
     /** Body height: the taller of the two columns. The right column is designed to fit inside the grid. */
     public static final int BODY_HEIGHT = GRID_HEIGHT;
 
-    /** Panel height, derived: header, body, and a footer line for a refusal. */
-    public static final int PANEL_HEIGHT =
-            PADDING + HEADER_HEIGHT + HEADER_GAP + BODY_HEIGHT + LINE_GAP + LINE_HEIGHT + PADDING;
+    /** Panel height, derived: padding, header, ornament, body, and a footer line for a refusal. */
+    public static final int PANEL_HEIGHT = PADDING + HEADER_HEIGHT + DIVIDER_GAP + DIVIDER_HEIGHT
+            + DIVIDER_GAP + BODY_HEIGHT + LINE_GAP + LINE_HEIGHT + PADDING;
 
     /**
      * A rectangle in GUI pixels.
@@ -185,9 +189,22 @@ public final class BookLayout {
         return new Box(panelX + PADDING, panelY + PADDING, PANEL_WIDTH - 2 * PADDING, HEADER_HEIGHT);
     }
 
-    /** {@return the top-left corner of the body (below the header), both columns align here} */
+    /**
+     * {@return the box the themed ornament between the title and the body is struck in}
+     *
+     * <p>Full body width, {@link #DIVIDER_HEIGHT} tall. The divider art is 256x16 with its ink in the
+     * middle ~48 columns, so the caller blits it stretched to this box rather than tiling it: stretching
+     * keeps the ornament centred and symmetric, which is what it is drawn to be, while tiling would
+     * repeat its centre jewel across the width.
+     */
+    public Box divider() {
+        return new Box(panelX + PADDING, title().bottom() + DIVIDER_GAP, PANEL_WIDTH - 2 * PADDING,
+                DIVIDER_HEIGHT);
+    }
+
+    /** {@return the top-left corner of the body (below the ornament), both columns align here} */
     private int bodyTop() {
-        return panelY + PADDING + HEADER_HEIGHT + HEADER_GAP;
+        return divider().bottom() + DIVIDER_GAP;
     }
 
     /** {@return the x of the roster column} */

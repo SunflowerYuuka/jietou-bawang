@@ -2,7 +2,9 @@ package com.astrum.pcrd.impl;
 
 import com.astrum.pcrd.impl.client.ClientKeyBindings;
 import com.astrum.pcrd.impl.command.AstrumCommand;
+import com.astrum.pcrd.impl.growth.Dishes;
 import com.astrum.pcrd.impl.growth.GrowthText;
+import com.astrum.pcrd.impl.item.BookTheme;
 import com.astrum.pcrd.impl.item.CharacterCardItem;
 import com.astrum.pcrd.impl.party.BookText;
 import com.google.gson.JsonElement;
@@ -68,9 +70,14 @@ class LangParityTest {
                 ClientKeyBindings.UB_PRESET_KEY,
                 ClientKeyBindings.CONFIG_KEY));
         keys.addAll(AstrumCommand.LANG_KEYS);
-        keys.addAll(CharacterCardItem.LANG_KEYS);
+        keys.addAll(CharacterCardItem.langKeys());
         // The 角色册 item and screen, including every astrum.party.reason.* key derived from the enum.
         keys.addAll(BookText.LANG_KEYS);
+        // The three themes' names, and the rice bowl's item name: the dish is a dedicated item now, so
+        // its name is a key this test has to see or a player reads "item.astrum.rice_bowl" in the
+        // inventory.
+        keys.addAll(BookTheme.langKeys());
+        keys.add(Dishes.DISH_NAME_KEY);
         // The growth messages: one per dish outcome plus the level-up line. Task 15b added these to the
         // lang files and to GrowthText.LANG_KEYS; before that the keys existed in neither, so a missing
         // translation could only have been found by a player reading a raw key.

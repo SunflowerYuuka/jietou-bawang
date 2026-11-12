@@ -6,6 +6,7 @@ import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.growth.DishFeedHook;
 import com.astrum.pcrd.impl.growth.GrowthFacts;
+import com.astrum.pcrd.impl.item.BookTheme;
 import com.astrum.pcrd.impl.network.PartyEditPayload;
 import com.astrum.pcrd.impl.network.RosterSyncPayload;
 import com.astrum.pcrd.impl.party.BookText;
@@ -68,19 +69,13 @@ import org.jetbrains.annotations.Nullable;
 @OnlyIn(Dist.CLIENT)
 public final class CharacterBookScreen extends Screen {
 
-    // Opaque-enough surfaces over the world (spec §5.5: 图标与文字不透明 — the panel must not let a
-    // bright sky through the text).
-    private static final int COLOR_PANEL = 0xFF0E1018;
-
-    /** Flat dim behind the panel; replaces vanilla's full-screen blur (see {@link #renderBackground}). */
+    // Flat dim behind the panel; replaces vanilla's full-screen blur (see {@link #renderBackground}).
     private static final int COLOR_DIM_BACKDROP = 0x90000000;
-    private static final int COLOR_FRAME = 0xFF2E3A58;
-    private static final int COLOR_CELL = 0xFF1B2336;
-    private static final int COLOR_CELL_HOVER = 0xFF283552;
-    private static final int COLOR_CELL_SELECTED = 0xFF3A4A72;
-    private static final int COLOR_SLOT = 0xFF141A28;
-    private static final int COLOR_SLOT_FILLED = 0xFF22304C;
-    private static final int COLOR_BAR_BACK = 0xFF141A28;
+
+    // Section headings and body text are theme-independent: they are drawn *on* the panel, and a
+    // cream heading on a dark body reads the same on all three. Everything that is part of the panel's
+    // own surface — the wells, the slots, the accent rules — comes from the theme (see the getters at
+    // the bottom of this block), so a pink panel cannot end up with a blue cell border.
     private static final int COLOR_EXP_BAR = 0xFF55C8FF;
     private static final int COLOR_AFFECTION_BAR = 0xFFFF9AD5;
     private static final int COLOR_PIP = 0xFFFFC93C;
@@ -89,6 +84,16 @@ public final class CharacterBookScreen extends Screen {
     private static final int COLOR_TEXT = 0xFFE8E8E8;
     private static final int COLOR_DIM = 0xFF9AA4B8;
     private static final int COLOR_REFUSED = 0xFFFF7070;
+
+    /** {@return the theme's accent, for the thin rules drawn on the panel (hover frames, feed entry)} */
+    private int colorAccent() {
+        return theme.accentTint();
+    }
+
+    /** {@return the theme's cut-in surface: roster cells, party slots and bar backs} */
+    private int colorSurface() {
+        return theme.surfaceTint();
+    }
 
     /** Radius of a roster portrait: the cell is 66x44, so this leaves room for the name and the level. */
     private static final double CELL_ICON_RADIUS = 10.0;
@@ -117,9 +122,28 @@ public final class CharacterBookScreen extends Screen {
     /** Absolute roster index a left-drag started on, or {@code -1} when no drag is in progress. */
     private int dragFrom = -1;
 
-    /** Opens the book: the only entry point, called from {@code CharacterBookItem.use} on the client. */
-    public CharacterBookScreen() {
+    /**
+     * The theme this screen was opened with — the theme of the item the player right-clicked.
+     *
+     * <p>Decided by {@link CharacterBookItem} from the item's registry id
+     * ({@link BookTheme#ofItemId}) and passed in at {@link #open}, never read from a static or a config:
+     * the player may own all three books, and the one they right-clicked is the one whose screen this is.
+     * A field rather than a constructor parameter only because it is read on every frame and must survive
+     * {@link #init()} (a window resize re-inits this screen; it must not lose the theme).
+     */
+    private BookTheme theme = BookTheme.DEFAULT;
+
+    /**
+     * Opens the book: the only entry point, called from {@code CharacterBookItem.use} on the client.
+     *
+     * <p>The theme is a parameter, not a lookup: the screen has no access to the hand that opened it, and
+     * the item is the only thing that knows which of the player's books was used.
+     *
+     * @param theme the theme of the book that was right-clicked; {@code null} means the blue book
+     */
+    public CharacterBookScreen(@Nullable BookTheme theme) {
         super(Component.translatable(BookText.KEY_TITLE));
+        this.theme = BookTheme.resolve(theme);
     }
 
     /**
@@ -129,8 +153,14 @@ public final class CharacterBookScreen extends Screen {
      * behind it, and {@code use} is only ever called with a player, so returning silently here would
      * hide a bug rather than prevent one — but a disconnect landing between the click and this call is
      * real, and a screen without a world would draw an empty book for nobody.
+     *
+     * <p>Re-opening while the same screen is already up is a no-op, which also means right-clicking a
+     * <em>different</em> book while one is open does not swap the theme underneath the player's cursor.
+     * The screen is modal; the next open takes the theme of the next click.
+     *
+     * @param theme the theme of the stack that was right-clicked; {@code null} means the blue book
      */
-    public static void open() {
+    public static void open(@Nullable BookTheme theme) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null || minecraft.level == null) {
             return;
@@ -138,7 +168,7 @@ public final class CharacterBookScreen extends Screen {
         if (minecraft.screen instanceof CharacterBookScreen) {
             return;
         }
-        minecraft.setScreen(new CharacterBookScreen());
+        minecraft.setScreen(new CharacterBookScreen(theme));
     }
 
     @Override
@@ -150,9 +180,17 @@ public final class CharacterBookScreen extends Screen {
             // the growth view from describing somebody else's character.
             selected = null;
         }
-        Astrum.LOGGER.debug("astrum: character book opened ({}x{}, panel {}x{} at {},{}; {} owned, {} "
-                        + "in party{s})", width, height, BookLayout.PANEL_WIDTH, BookLayout.PANEL_HEIGHT,
-                layout.panel().x(), layout.panel().y(), ClientRosterCache.size(),
+        // What this open resolved to, and the geometry it will draw with. This line is the only evidence
+        // available for "the theme came from the item that opened the screen" and "the nine rectangles
+        // for the size this window actually has are non-degenerate": the panel size comes from the
+        // player's window and GUI scale, so neither can be asserted offline.
+        NineSlice.Rects rects = NineSlice.rects(layout.panel(), NineSlice.DEFAULT_SLICE);
+        ThemedPanel.isUsable(rects);
+        Astrum.LOGGER.debug("astrum: character book opened ({}x{}, theme {} — panel {}x{} at {},{}; "
+                        + "slice {} -> centre {}x{}; {} owned, {} in party{s})",
+                width, height, theme, BookLayout.PANEL_WIDTH, BookLayout.PANEL_HEIGHT,
+                layout.panel().x(), layout.panel().y(), NineSlice.DEFAULT_SLICE,
+                rects.centre().width(), rects.centre().height(), ClientRosterCache.size(),
                 ClientPartyCache.latest().slots().stream().filter(Optional::isPresent).count(),
                 ClientRosterCache.quarantined() ? ", quarantined save" : "");
     }
@@ -178,12 +216,11 @@ public final class CharacterBookScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics, mouseX, mouseY, partialTick);
-        BookLayout.Box panel = layout.panel();
-        graphics.fill(panel.x(), panel.y(), panel.right(), panel.bottom(), COLOR_PANEL);
-        graphics.fill(panel.x(), panel.y(), panel.right(), panel.y() + 1, COLOR_FRAME);
-        graphics.fill(panel.x(), panel.bottom() - 1, panel.right(), panel.bottom(), COLOR_FRAME);
-        graphics.fill(panel.x(), panel.y(), panel.x() + 1, panel.bottom(), COLOR_FRAME);
-        graphics.fill(panel.right() - 1, panel.y(), panel.right(), panel.bottom(), COLOR_FRAME);
+        // The panel is the theme's nine-slice art, drawn by ThemedPanel with geometry from NineSlice
+        // (both pure and unit-tested). Its own opaque body fill replaces the old flat COLOR_PANEL and
+        // the four COLOR_FRAME lines: the art carries the frame, so drawing a flat rectangle around it
+        // would put a second, square border outside the ornamented one.
+        ThemedPanel.draw(graphics, theme, layout.panel(), layout.divider());
 
         drawCentred(graphics, title, layout.title(), COLOR_TITLE);
 
@@ -234,8 +271,8 @@ public final class CharacterBookScreen extends Screen {
             RosterSyncPayload.Entry entry = entries.get(first + i);
             boolean isSelected = entry.id().equals(selected);
             boolean hovered = cell.contains(mouseX, mouseY);
-            int background = isSelected ? COLOR_CELL_SELECTED
-                    : hovered ? COLOR_CELL_HOVER : COLOR_CELL;
+            int background = isSelected ? theme.surfaceSelectedTint()
+                    : hovered ? theme.surfaceHoverTint() : colorSurface();
             graphics.fill(cell.x(), cell.y(), cell.right(), cell.bottom(), background);
 
             CharacterDef definition = definitionOf(entry.id());
@@ -287,13 +324,13 @@ public final class CharacterBookScreen extends Screen {
             }
             Optional<ResourceLocation> occupant = ClientPartyCache.slot(slot);
             boolean hovered = box.contains(mouseX, mouseY);
-            int background = occupant.isPresent() ? COLOR_SLOT_FILLED : COLOR_SLOT;
+            int background = occupant.isPresent() ? theme.slotFilledTint() : colorSurface();
             graphics.fill(box.x(), box.y(), box.right(), box.bottom(), background);
             if (hovered) {
-                graphics.fill(box.x(), box.y(), box.right(), box.y() + 1, COLOR_FRAME);
-                graphics.fill(box.x(), box.bottom() - 1, box.right(), box.bottom(), COLOR_FRAME);
-                graphics.fill(box.x(), box.y(), box.x() + 1, box.bottom(), COLOR_FRAME);
-                graphics.fill(box.right() - 1, box.y(), box.right(), box.bottom(), COLOR_FRAME);
+                graphics.fill(box.x(), box.y(), box.right(), box.y() + 1, colorAccent());
+                graphics.fill(box.x(), box.bottom() - 1, box.right(), box.bottom(), colorAccent());
+                graphics.fill(box.x(), box.y(), box.x() + 1, box.bottom(), colorAccent());
+                graphics.fill(box.right() - 1, box.y(), box.right(), box.bottom(), colorAccent());
             }
             if (occupant.isEmpty()) {
                 // The slot number doubles as the wheel position the character would occupy, so an empty
@@ -358,8 +395,8 @@ public final class CharacterBookScreen extends Screen {
         boolean feedable = DishFeedHook.available();
         BookLayout.Box feed = layout.feedEntry();
         if (feedable) {
-            graphics.fill(feed.x(), feed.y(), feed.right(), feed.bottom(), COLOR_SLOT_FILLED);
-            graphics.fill(feed.x(), feed.y(), feed.right(), feed.y() + 1, COLOR_FRAME);
+            graphics.fill(feed.x(), feed.y(), feed.right(), feed.bottom(), theme.slotFilledTint());
+            graphics.fill(feed.x(), feed.y(), feed.right(), feed.y() + 1, colorAccent());
             drawClipped(graphics, Component.translatable(BookText.KEY_FEED_AVAILABLE), feed, COLOR_TEXT);
         } else {
             drawClipped(graphics, Component.translatable(BookText.KEY_FEED_ROUTE), feed, COLOR_DIM);
@@ -555,7 +592,7 @@ public final class CharacterBookScreen extends Screen {
 
     /** Draws a filled bar: the frame, then the filled part, clamped to the frame by {@code fraction}. */
     private void drawBar(GuiGraphics graphics, BookLayout.Box box, double fraction, int colour) {
-        graphics.fill(box.x(), box.y(), box.right(), box.bottom(), COLOR_BAR_BACK);
+        graphics.fill(box.x(), box.y(), box.right(), box.bottom(), colorSurface());
         int filled = (int) Math.round(box.width() * fraction);
         if (filled > 0) {
             graphics.fill(box.x(), box.y(), box.x() + Math.min(filled, box.width()), box.bottom(),

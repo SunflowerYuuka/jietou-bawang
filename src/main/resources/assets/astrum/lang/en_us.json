@@ -53,6 +53,13 @@
   "astrum.configuration.maxActiveShowcaseEntities": "Showcase entity limit",
 
   "item.astrum.character_card": "Character Card",
+  "item.astrum.character_card_sakura": "Sakura Character Card",
+  "item.astrum.character_card_forest": "Forest Character Card",
+  "item.astrum.rice_bowl": "Rice Bowl",
+
+  "astrum.theme.default": "Blue",
+  "astrum.theme.sakura": "Sakura",
+  "astrum.theme.forest": "Forest",
 
   "astrum.card.tooltip": "Grants %s",
   "astrum.card.enrolled": "%s joined your character book (level 1, affection 1).",
@@ -102,6 +109,8 @@
   "astrum.command.tune.reset": "area_charge overrides cleared - both guards read the server config again.",
 
   "item.astrum.character_book": "Character Book",
+  "item.astrum.character_book_sakura": "Sakura Character Book",
+  "item.astrum.character_book_forest": "Forest Character Book",
   "astrum.book.tooltip": "Right-click to open your character book: roster, party, growth",
   "astrum.book.title": "Character Book",
   "astrum.book.quarantined": "Your character book cannot be read (the unreadable save is kept on disk untouched); nothing can be changed right now.",
