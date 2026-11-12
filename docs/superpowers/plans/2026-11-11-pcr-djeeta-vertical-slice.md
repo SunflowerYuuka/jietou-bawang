@@ -15,7 +15,7 @@
 - `minecraft_version=1.21.1`、`minecraft_version_range=[1.21.1,1.21.2)`、`neo_version=21.1.265`、`loader_version_range=[1,)`。
 - `mod_id=astrum`、`mod_group_id=com.astrum.pcrd`、Java toolchain 21。modid 永久不可改。
 - 参考版本：ModDevGradle `2.0.142`；GeckoLib `software.bernie.geckolib:geckolib-neoforge-1.21.1:4.9.3`（mods.toml 里声明 `versionRange="[4.7,)"`、`type="required"`、`side="BOTH"`）。
-- 命名空间只注册 `astrum:`；**不覆盖**原版任何 `data/` json；通用物品用 `c:` 标签。
+- 命名空间只注册 `astrum:`；**不覆盖**原版任何 `data/` json；通用物品用 `c:` 标签。**例外**：向原版标签**追加**条目（`"replace": false`，如 `data/minecraft/tags/damage_type/bypasses_armor.json`）是允许且必要的——标签的文件位置由标签自身命名空间决定；`replace:true` 才是禁止的覆盖。
 - **全项目禁用 Mixin**（指南 §9.3 / 规格 §7）。
 - `api.v1` 不得 import `impl`；`impl` 可以 import `api`。api 签名只允许 `ResourceLocation` / `ResourceKey` / 基本类型 / 自己的 record，**禁止** `Level`/`Entity`/`ServerPlayer`/`ItemStack` 出现在 api 签名里。
 - `net.minecraft.client.*` 只出现在 `impl/client/`。

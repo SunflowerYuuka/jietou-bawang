@@ -367,7 +367,7 @@ CD 期间或槽未满时按释放键必须给明确反馈（音效 + 槽位抖�
 |---|---|
 | 版本 | `minecraft_version_range=[1.21.1,1.21.2)`；`javaVersion="[21,)"`；只做 1.21.1，新版当新分支 |
 | 依赖 | GeckoLib `type="required"`，`versionRange="[4.7,)"`（留大区间，锁太死会拒启动），`side="BOTH"` |
-| 命名空间 | 只注册 `astrum:` 命名空间；**不覆盖**原版任何 `data/` json |
+| 命名空间 | 只注册 `astrum:` 命名空间；**不覆盖**原版任何 `data/` json。⚠️ **例外（Task 9 实测补充）**：向原版标签**追加**条目是允许且必要的——`data/minecraft/tags/damage_type/bypasses_armor.json` 这类文件只能放在 `minecraft` 命名空间（标签的命名空间由标签自身决定，不由 mod 决定），且必须写 `"replace": false`。`replace:false` 是**合并语义**，不会丢掉其他 mod 的条目；`replace:true` 才是覆盖，那是禁止的。区分标准：**改别人的文件内容 = 覆盖（禁止）；声明"我的条目也属于这个标签" = 追加（允许）** |
 | Mixin | **全项目禁用**（全部走事件/扩展点） |
 | 端隔离 | 所有 `net.minecraft.client.*` 只在 `impl/client/`，用 `Dist.CLIENT` 限定；common 侧不留客户端类 |
 | 网络 | 服务端权威，客户端只读；payload 两端都注册 + 尺寸校验 |
