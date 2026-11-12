@@ -15,10 +15,13 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Why it is not the "static mutable state" the guide forbids</h2>
  * R8's rule is about per-entity data (a map keyed by player or world in a static field): it survives
- * world reloads and outlives its entities. The keys here are derived from the <b>loaded datapack
- * only</b> — {@code <character id>#<hook index>} — so the set is bounded by the pack's content, holds
- * no entity, player or world, and cannot grow per hit. The worst case is one entry per malformed hook
- * in the pack, which is exactly the information an operator wants.
+ * world reloads and outlives its entities. What a key means is the caller's choice, and it always names
+ * the <b>thing that is broken</b>, never the event that noticed it: in the combat path it is
+ * {@code <character id>#<hook index>}, derived from the loaded datapack only, so the set is bounded by
+ * the pack's content, holds no entity, player or world, and cannot grow per hit. The worst case is one
+ * entry per malformed hook in the pack, which is exactly the information an operator wants. A caller
+ * that wants "once per player" ({@code UbService}'s quarantine warning) keys on the player id instead,
+ * which is bounded by the players of that server run.
  */
 @ApiStatus.Internal
 public final class WarnOnce {

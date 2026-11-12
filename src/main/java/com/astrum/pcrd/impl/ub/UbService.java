@@ -10,6 +10,7 @@ import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.attach.UbState;
+import com.astrum.pcrd.impl.combat.WarnOnce;
 import com.astrum.pcrd.impl.config.ServerConfig;
 import java.util.Optional;
 import net.minecraft.core.Registry;
@@ -34,19 +35,37 @@ import org.jetbrains.annotations.ApiStatus;
  * time this method accepts a cast the ultimate is committed, so a listener must not be able to cancel
  * the payment and leave the player with a free cast. The spend is therefore unconditional, and the
  * cooldown and the event follow it in the same call.
+ *
+ * <h2>Where the transaction itself lives</h2>
+ * The rule "an accepted cast empties the bar, arms the cooldown at {@code now + cooldown}, writes that
+ * state, then announces, then settles" is {@link UbTransaction}, so it is a unit-tested value rather
+ * than a sequence of statements in a method that needs a player to run. This class only gathers the
+ * facts, asks, and plugs the real player, bus and sink into it.
  */
 @ApiStatus.Internal
 public final class UbService {
 
     /**
-     * The installed showcase strategy. Defaults to damage-only so a cast always settles something.
+     * The installed showcase strategy.
+     *
+     * <p>Until Task 13 installs the real one this is {@link ShowcaseSink#NO_SHOWCASE_YET}, which
+     * settles <b>nothing</b> — no entity and no damage. A cast accepted before then therefore spends the
+     * bar and arms the cooldown without doing anything to the world, which is exactly what the
+     * placeholder's own javadoc says and the only place that claim is made.
      *
      * <p>A mutable static, which this project otherwise forbids — deliberately, and narrowly: it is one
      * process-wide strategy rather than per-entity state, and it is written once at setup by
      * {@link #installShowcase}. Routing every call site through an interface here buys nothing for a
      * single implementation.
      */
-    private static volatile ShowcaseSink showcase = ShowcaseSink.DAMAGE_ONLY;
+    private static volatile ShowcaseSink showcase = ShowcaseSink.NO_SHOWCASE_YET;
+
+    /**
+     * Players already told that their character book is quarantined, so the warning is one line per
+     * player instead of one line per cast attempt (the name of {@link #warnQuarantinedOnce} is the
+     * contract). Bounded by the players who actually have an unreadable save.
+     */
+    private static final WarnOnce QUARANTINE_WARNED = new WarnOnce();
 
     private UbService() {
     }
@@ -54,11 +73,11 @@ public final class UbService {
     /**
      * Installs the real showcase implementation. Task 13 calls this once at setup.
      *
-     * @param sink the implementation; {@code null} restores {@link ShowcaseSink#DAMAGE_ONLY}
+     * @param sink the implementation; {@code null} restores {@link ShowcaseSink#NO_SHOWCASE_YET}
      */
     @ApiStatus.Internal
     public static void installShowcase(ShowcaseSink sink) {
-        showcase = sink == null ? ShowcaseSink.DAMAGE_ONLY : sink;
+        showcase = sink == null ? ShowcaseSink.NO_SHOWCASE_YET : sink;
     }
 
     /**
@@ -90,28 +109,50 @@ public final class UbService {
                 now,
                 state.cdEndTick());
 
-        Optional<CastGate.Reason> refusal = CastGate.refusal(facts);
-        if (refusal.isPresent()) {
+        // The decision and the state it pays: a refusal means nothing is written at all.
+        UbTransaction.Outcome outcome =
+                UbTransaction.decide(facts, ServerConfig.UB.ubGlobalCooldownTicks.get());
+        if (outcome.refusal().isPresent()) {
+            CastGate.Reason reason = outcome.refusal().get();
             Astrum.LOGGER.debug("astrum: UB cast refused for {} slot {} ({})",
-                    player.getGameProfile().getName(), slot, refusal.get());
-            return refusal;
+                    player.getGameProfile().getName(), slot, reason);
+            return Optional.of(reason);
         }
+        UbState paid = outcome.paid().orElseThrow(() -> new IllegalStateException(
+                "astrum: UbTransaction decided to accept without a state to write"));
 
         boolean enhanced = isEnhanced(player, characterId, def);
         UbTier tier = enhanced ? def.ub().enhanced() : def.ub().base();
 
-        // Pay first, unconditionally: a full bar, no partial spend (spec §5.4).
-        player.setData(Attachments.UB_STATE,
-                new UbState(0.0f, slot, now + ServerConfig.UB.ubGlobalCooldownTicks.get()));
-
-        NeoForge.EVENT_BUS.post(new UbActivatedEvent(characterId, slot, enhanced));
+        // Write, announce, settle — in that order, once each, and all of it inside UbTransaction so
+        // the order is asserted by a test rather than by this comment.
+        UbTransaction.commit(paid,
+                next -> player.setData(Attachments.UB_STATE, next),
+                () -> announce(new UbActivatedEvent(characterId, slot, enhanced)),
+                () -> settle(player, def, tier, enhanced));
         Astrum.LOGGER.debug("astrum: UB {} fired by {} from slot {}{}",
                 characterId, player.getGameProfile().getName(), slot, enhanced ? " (enhanced)" : "");
 
-        // Damage is settled now, not when an animation ends (spec §5.6). Task 13 supplies the entity;
-        // the seam's default settles damage only, so the pipeline is playable before the visual half.
-        settle(player, def, tier, enhanced);
+        // Hand-off to the showcase is the third effect inside commit(): whether anything happens in
+        // the world is the sink's business, and until Task 13 installs one,
+        // ShowcaseSink.NO_SHOWCASE_YET does nothing at all.
         return Optional.empty();
+    }
+
+    /**
+     * Posts the activation event, swallowing a listener failure.
+     *
+     * <p>Wrapped for the same reason {@link #settle} is: by the time this runs the player has already
+     * paid, so an exception thrown by a listener must not escape {@link #tryCast} — it would skip the
+     * showcase hand-off and turn a completed cast into a reported failure, with the gauge still gone.
+     */
+    private static void announce(UbActivatedEvent event) {
+        try {
+            NeoForge.EVENT_BUS.post(event);
+        } catch (RuntimeException e) {
+            Astrum.LOGGER.error("astrum: a UbActivatedEvent listener failed for slot {} — the cast has "
+                    + "already been paid for and is not rolled back", event.slot(), e);
+        }
     }
 
     private static void settle(ServerPlayer player, CharacterDef def, UbTier tier, boolean enhanced) {
@@ -135,8 +176,8 @@ public final class UbService {
      * tier 3?" would eventually disagree, and the wheel would show the base icon for a character whose
      * ultimate is already the enhanced one.
      *
-     * <p>Silent by design: {@code AstrumNetwork} asks once per player per tick, so the quarantine
-     * warning belongs to the cast path ({@link #isEnhanced}), not here.
+     * <p>Silent by design: {@code AstrumNetwork} asks once per player per (now one-second) tier-mask
+     * check, so the quarantine warning belongs to the cast path ({@link #isEnhanced}), not here.
      *
      * @param player      the player whose affection is being read
      * @param characterId the character being asked about
@@ -175,7 +216,11 @@ public final class UbService {
         return atTier3(player, characterId, def);
     }
 
+    /** Says "this player's book is unreadable" once per player, not once per cast attempt. */
     private static void warnQuarantinedOnce(ServerPlayer player) {
+        if (!QUARANTINE_WARNED.first(player.getUUID().toString())) {
+            return;
+        }
         Astrum.LOGGER.warn("astrum: character book of {} is quarantined (an unreadable save) — "
                 + "ultimate tier falls back to base until it can be read", player.getGameProfile().getName());
     }

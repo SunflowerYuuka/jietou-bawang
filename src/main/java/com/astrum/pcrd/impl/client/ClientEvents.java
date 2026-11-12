@@ -7,6 +7,7 @@ import com.astrum.pcrd.impl.network.UbCastPayload;
 import com.astrum.pcrd.impl.ub.WheelInputMachine;
 import com.astrum.pcrd.impl.ub.WheelInputMachine.Decision;
 import com.astrum.pcrd.impl.ub.WheelInputMachine.State;
+import com.astrum.pcrd.impl.ub.WheelSlots;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
@@ -37,6 +38,11 @@ import org.jetbrains.annotations.ApiStatus;
  *   WheelScreen digit 1–5    → machine.onDigit(n)           → act(decision)
  * </pre>
  *
+ * <p>The digits stay {@code 1}–{@code 5} all the way down to {@link #castDigit()}, which converts them
+ * once — through {@link WheelSlots#slotForDigit} — into the 0-based slot the payload and the server
+ * use. That single conversion point is deliberate: it used to be missing, and a missing conversion
+ * sends the wrong segment or (for {@code 5}) nothing at all.
+ *
  * <h2>Why the clock is wall-clock milliseconds</h2>
  * The 200 ms hold threshold is a duration a human feels, so it must not be counted in game ticks: a
  * lagging client (or one at 15 tps) would otherwise turn a 200 ms hold into a 400 ms one and open the
@@ -54,7 +60,9 @@ import org.jetbrains.annotations.ApiStatus;
  * <h2>What this class does not do</h2>
  * It never decides whether a cast is allowed: it sends a slot number and the server answers
  * ({@link com.astrum.pcrd.impl.ub.CastGate}, spec §5.5/§9.5). A refusal comes back as
- * {@link ClientCastFeedback} and is turned into a sound and a shake by {@link UbHud}.
+ * {@link ClientCastFeedback}, is made audible by {@link RefusalSound} on the client tick — independent
+ * of any display setting — and shakes the gauge when the optional HUD is actually drawn
+ * ({@link UbHud}).
  */
 @ApiStatus.Internal
 public final class ClientEvents {
@@ -125,12 +133,22 @@ public final class ClientEvents {
         MACHINE.onPress(nowMillis());
     }
 
-    /** One client tick: the only place the hold threshold can be crossed. */
+    /**
+     * One client tick: the only place the hold threshold can be crossed, and the home of the refusal
+     * sound.
+     *
+     * <p>The sound is played here, not from the HUD layer, so it is audible whether or not the optional
+     * HUD is on and whether or not {@code F1} is hiding the overlay ({@link RefusalSound} explains why
+     * that matters for 禁止静默失败).
+     */
     static void onClientTick(ClientTickEvent.Post event) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player != null && minecraft.level != null) {
+            RefusalSound.tick(minecraft.level.getGameTime());
+        }
         if (MACHINE.state() != State.PENDING) {
             return;
         }
-        Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null) {
             // Left the world mid-gesture: settle it rather than carry it into the next one.
             act(MACHINE.onRelease(nowMillis()));
@@ -145,7 +163,7 @@ public final class ClientEvents {
      * <p>Reached only from {@link WheelScreen}, which asks {@link WheelInputMachine#capturesHotbarDigits()}
      * first — the single place that rule lives.
      *
-     * @param slot1to5 the slot the player pressed, {@code 1}–{@code 5}
+     * @param slot1to5 the digit the player pressed, {@code 1}–{@code 5}
      */
     static void onWheelDigit(int slot1to5) {
         act(MACHINE.onDigit(slot1to5));
@@ -187,7 +205,7 @@ public final class ClientEvents {
             case TAP_CAST -> requestCast(WheelPreset.slot());
             case OPEN_WHEEL -> openWheel();
             case CAST_SLOT -> {
-                MACHINE.castSlot().ifPresent(ClientEvents::requestCast);
+                castDigit();
                 closeWheel();
             }
             case CLOSE -> closeWheel();
@@ -195,6 +213,23 @@ public final class ClientEvents {
                 // nothing to do
             }
         }
+    }
+
+    /**
+     * Sends the slot the player picked with a hotbar digit.
+     *
+     * <p>This is where the wheel's digit convention ({@code 1}–{@code 5}, what the player presses and
+     * what {@link WheelInputMachine#onDigit} stores) becomes the 0-based slot the wire and the server
+     * use — through {@link WheelSlots#slotForDigit}, the one implementation of that mapping. Both
+     * failures below are programming errors, not player input, and are thrown rather than swallowed:
+     * a press that produces nothing is exactly what spec §5.5 forbids (禁止静默失败).
+     */
+    private static void castDigit() {
+        int digit = MACHINE.castSlot().orElseThrow(() -> new IllegalStateException(
+                "astrum: CAST_SLOT without a digit — WheelInputMachine.onDigit was not the source"));
+        requestCast(WheelSlots.slotForDigit(digit).orElseThrow(() -> new IllegalStateException(
+                "astrum: wheel digit " + digit + " has no slot (expected "
+                        + WheelSlots.FIRST_DIGIT + "–" + WheelSlots.LAST_DIGIT + ")")));
     }
 
     private static void openWheel() {
@@ -233,8 +268,11 @@ public final class ClientEvents {
             return;
         }
         if (slot < 0 || slot >= Party.SLOTS) {
-            Astrum.LOGGER.warn("astrum: refusing to send a cast for out-of-range slot {}", slot);
-            return;
+            // Unreachable: every caller arrives here through WheelSlots.slotForDigit or
+            // WheelPreset.slot(). A bad slot is a programming error, so it is not turned into a
+            // silently dropped press (spec §5.5: 禁止静默失败) — it is reported as a bug.
+            throw new IllegalArgumentException(
+                    "astrum: wheel slot " + slot + " is outside [0, " + Party.SLOTS + ")");
         }
         PacketDistributor.sendToServer(new UbCastPayload(slot));
         Astrum.LOGGER.debug("astrum: UB cast requested for slot {}", slot);

@@ -34,10 +34,29 @@ import org.lwjgl.glfw.GLFW;
  * wheel capturing digits?" is asked of {@code WheelInputMachine.capturesHotbarDigits()} rather than
  * re-derived here, so there is one answer to that question in the codebase.
  *
- * <h2>What is deliberately not done</h2>
- * No {@code pauseGame}, no movement lock, no mouse grab of its own: opening a {@link Screen} already
- * hands the mouse to the GUI (so the camera stops turning) and hands it back on close, which is
- * exactly "capture the mouse only". The world keeps ticking behind the menu.
+ * <h2>What is deliberately not done — and the one thing this screen cannot give the player</h2>
+ * No {@code pauseGame}, no {@code isPauseScreen()} (the world keeps ticking: mobs move, animations run,
+ * health bars change), no mouse grab of its own (opening a {@link Screen} hands the mouse to the GUI and
+ * hands it back on close, so the camera stops turning), and no movement code at all.
+ *
+ * <p><b>Player movement does stop, and not because of anything here.</b> This is a vanilla
+ * {@link Screen}, so vanilla's own screen handling does it, and both halves were observed on a real
+ * client (log, {@code task-12-report.md} §12 fix round 1, I5):
+ *
+ * <ul>
+ *   <li>{@code Minecraft.setScreen} calls {@code KeyMapping.releaseAll()}, so a movement key the player
+ *       is <em>holding</em> when the wheel opens is released (raw mapping state {@code true → false} at
+ *       the moment the wheel was set).</li>
+ *   <li>While any screen is up, {@code KeyMapping.isDown()} answers {@code false} for the game movement
+ *       keys because their conflict context is inactive, and {@code KeyboardInput.tick} builds the
+ *       movement impulse from exactly that answer.</li>
+ * </ul>
+ *
+ * <p>So spec §5.5's 不锁玩家移动 is <b>not</b> met by this class: a player holding W stands still for the
+ * wheel's duration. Making it continue would mean this screen re-deriving key state itself (vanilla
+ * stops updating mappings while a screen is open), which is a bigger change than a javadoc fix and is
+ * left as a recorded deviation for the human rather than papered over — the earlier version of this
+ * comment claimed "no movement lock", which was true of the code and false of the game.
  */
 @ApiStatus.Internal
 public final class WheelScreen extends Screen {
@@ -79,7 +98,10 @@ public final class WheelScreen extends Screen {
     }
 
     /**
-     * The world keeps running behind the wheel (spec §5.5: 不暂停世界、不锁玩家移动).
+     * The world keeps running behind the wheel (spec §5.5: 不暂停世界).
+     *
+     * <p>Only the world half of that line is claimed here: player movement does stop while this screen
+     * is up, for vanilla's reasons, not this class's — see the class javadoc.
      */
     @Override
     public boolean isPauseScreen() {

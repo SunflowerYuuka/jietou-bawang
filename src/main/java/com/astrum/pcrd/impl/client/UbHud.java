@@ -1,13 +1,10 @@
 package com.astrum.pcrd.impl.client;
 
 import com.astrum.pcrd.impl.config.ClientConfig;
-import com.astrum.pcrd.impl.ub.CastGate;
 import java.util.Optional;
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.resources.sounds.SimpleSoundInstance;
-import net.minecraft.sounds.SoundEvents;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.ApiStatus;
@@ -29,9 +26,13 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Why the refusal is shown here</h2>
  * Spec §5.4 forbids silent failure, and by the time the server answers, the wheel is usually already
- * closed — so the place a refusal has to be visible is the gauge itself: it shakes, it flashes, and
- * it makes a noise, once per refusal. All three are the same message: "the cast did not happen, and
- * here is why" ({@link RefusalFeedback}).
+ * closed — so the place a refusal has to be visible is the gauge itself: it shakes and it flashes, once
+ * per refusal ({@link RefusalFeedback}).
+ *
+ * <p>Only the <b>sight</b> of it is drawn here. This layer returns early whenever the player turns the
+ * optional HUD off or hides the overlay with {@code F1} — both of which spec §7 allows — and a refusal
+ * must not become silent just because a display is hidden. The sound therefore lives in
+ * {@link RefusalSound}, driven by the client tick, and plays regardless of this class.
  */
 @ApiStatus.Internal
 @OnlyIn(Dist.CLIENT)
@@ -62,14 +63,6 @@ public final class UbHud {
      */
     private static volatile CooldownTracker.Span span = CooldownTracker.Span.NONE;
 
-    /**
-     * Game time of the refusal whose sound has already been played.
-     *
-     * <p>The edge detector: a refusal is identified by when it arrived, so a new one always has a new
-     * stamp and the sound is never repeated for the same refusal across frames.
-     */
-    private static volatile long soundedRefusalTick = Long.MIN_VALUE;
-
     private UbHud() {
     }
 
@@ -97,7 +90,6 @@ public final class UbHud {
         int shake = refusal
                 .map(r -> RefusalFeedback.shakeOffset(now - r.gameTime(), RefusalFeedback.WINDOW_TICKS))
                 .orElse(0);
-        refusal.ifPresent(r -> playRefusalSound(minecraft, r));
 
         HudLayout.Rect rect = HudLayout.anchor(graphics.guiWidth(), graphics.guiHeight(),
                 ClientConfig.HUD.hudAnchor.get(), ClientConfig.HUD.hudOffsetX.get(),
@@ -146,21 +138,5 @@ public final class UbHud {
             graphics.fill(barX + HudLayout.BAR_WIDTH, barY, barX + HudLayout.BAR_WIDTH + 1,
                     barY + HudLayout.BAR_HEIGHT, READY_OUTLINE);
         }
-    }
-
-    /**
-     * Plays the refusal sound once per refusal.
-     *
-     * <p>The pitch encodes the reason ({@link RefusalFeedback#pitchFor}), so the two refusals a player
-     * actually meets — not charged, and still on cooldown — are distinguishable by ear.
-     */
-    private static void playRefusalSound(Minecraft minecraft, ClientCastFeedback.Refusal refusal) {
-        if (soundedRefusalTick == refusal.gameTime()) {
-            return;
-        }
-        soundedRefusalTick = refusal.gameTime();
-        CastGate.Reason reason = refusal.reason();
-        minecraft.getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.NOTE_BLOCK_BASS,
-                RefusalFeedback.pitchFor(reason)));
     }
 }

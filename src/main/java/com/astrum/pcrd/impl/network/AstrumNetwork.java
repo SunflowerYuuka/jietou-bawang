@@ -74,6 +74,17 @@ public final class AstrumNetwork {
     public static final String PROTOCOL_VERSION = "1";
 
     /**
+     * How often the party's tier-3 mask is re-resolved when the party itself has not changed.
+     *
+     * <p>An affection level-up changes the mask without changing the party, and nothing fires an event
+     * for it, so it has to be polled — but once a second is enough for an icon (see {@code pushParty}).
+     * Twenty ticks is also the cheapest sensible window: the mask costs five registry lookups and five
+     * roster reads, and doing that every tick per player for data that cannot change that fast is the
+     * cost this constant removes.
+     */
+    private static final int TIER_MASK_INTERVAL_TICKS = 20;
+
+    /**
      * What each online player's client was last told, keyed by UUID.
      *
      * <p>Transient bookkeeping, not player state: the authoritative gauge lives in the
@@ -212,6 +223,22 @@ public final class AstrumNetwork {
     /**
      * Pushes the ordered party whenever it — or any slot's tier-3 status — actually changed.
      *
+     * <h2>Why this is a per-tick diff and what it costs per tick</h2>
+     * The party is mutated from outside this class (a command, a UI, a save load), and there is no
+     * change notification to subscribe to, so the push is a diff against the last thing sent rather
+     * than a call at the mutation site. What it must <b>not</b> be is expensive on the ticks where
+     * nothing changed, which used to be the case: the tier-3 mask (five registry lookups plus five
+     * roster reads) was resolved <em>before</em> the comparison, so every player paid for it every tick
+     * to discover that the answer was unchanged.
+     *
+     * <p>Now the common tick costs one attachment read and one record comparison. The mask is resolved
+     * only in two cases: the party itself changed (then the push happens in this very tick, so a
+     * reordering or an equip reaches the wheel immediately), or
+     * {@link #TIER_MASK_INTERVAL_TICKS} has elapsed, because an affection level-up changes the mask
+     * without touching the party and there is nothing to observe it on. One second of lag on a tier-3
+     * icon is invisible to a player — affection moves on level-up, not tick to tick — and the cast path
+     * never consults this mask at all (it re-reads the roster itself).
+     *
      * <p>On login the map holds nothing for this UUID, so the first tick after joining always sends:
      * that is the "send on login" half of the requirement, without needing a separate login listener.
      *
@@ -220,9 +247,13 @@ public final class AstrumNetwork {
      */
     private static void pushParty(ServerPlayer player) {
         Party party = player.getData(Attachments.PARTY);
-        int mask = PartySyncPayload.maskOf(party, id -> isTier3(player, id));
         SentParty last = LAST_PARTY.get(player.getUUID());
-        if (last != null && last.party().equals(party) && last.enhancedMask() == mask) {
+        boolean unchanged = last != null && last.party().equals(party);
+        if (unchanged && player.tickCount % TIER_MASK_INTERVAL_TICKS != 0) {
+            return;
+        }
+        int mask = PartySyncPayload.maskOf(party, id -> isTier3(player, id));
+        if (unchanged && last.enhancedMask() == mask) {
             return;
         }
         PacketDistributor.sendToPlayer(player, PartySyncPayload.of(party, mask));

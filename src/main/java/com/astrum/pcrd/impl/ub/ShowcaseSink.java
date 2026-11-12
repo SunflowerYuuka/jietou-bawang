@@ -12,9 +12,11 @@ import org.jetbrains.annotations.ApiStatus;
  * <h2>Why this seam exists</h2>
  * The演出 (showcase) entity is Task 13. Everything in this task — validation, spending the gauge,
  * arming the cooldown, posting the event — is provable without a single entity in the world, so the
- * entity is kept behind this one interface. Task 13 supplies the real implementation; the default
- * below settles the damage and spawns nothing, which keeps the whole cast pipeline playable and
- * testable in the meantime (the same shape Task 10 used for {@code AreaChargeSink}).
+ * entity is kept behind this one interface. Task 13 supplies the real implementation. Until it does,
+ * the placeholder below ({@link #NO_SHOWCASE_YET}) <b>settles nothing at all</b> — no entity, no
+ * damage — and the single truthful statement about it is in its own javadoc. It exists so the cast
+ * pipeline is complete and testable in the meantime (the same shape Task 10 used for
+ * {@code AreaChargeSink}).
  *
  * <h2>The contract a replacement must obey</h2>
  * <ol>
@@ -46,7 +48,8 @@ public interface ShowcaseSink {
     void settle(ServerLevel level, ServerPlayer caster, CharacterDef def, UbTier tier, boolean enhanced);
 
     /**
-     * The placeholder: settles nothing yet, and says so instead of pretending.
+     * The placeholder for Task 13: it settles <b>nothing</b> — no damage, no entity — and is named so
+     * that no reader can mistake it for a working default.
      *
      * <p>It exists so the cast pipeline is complete and testable without an entity: gauge spent,
      * cooldown armed, event posted, seam called exactly once. The <b>damage half is still missing</b>,
@@ -55,11 +58,12 @@ public interface ShowcaseSink {
      * rule twice and having Task 13 disagree with it.
      *
      * <p>Consequence, stated plainly so it is not mistaken for a bug or for a finished feature: until
-     * Task 13 installs a real sink, an accepted cast empties the bar and changes nothing in the world.
-     * That is acceptable only because no player-facing build ships before Task 13; the first thing
-     * Task 13 must do is replace this constant.
+     * Task 13 installs a real sink, an accepted cast empties the bar, arms the cooldown, announces
+     * itself — and changes nothing in the world. That is acceptable only because no player-facing
+     * build ships before Task 13; the first thing Task 13 must do is replace this constant through
+     * {@code UbService.installShowcase}.
      */
-    ShowcaseSink DAMAGE_ONLY = (level, caster, def, tier, enhanced) -> {
+    ShowcaseSink NO_SHOWCASE_YET = (level, caster, def, tier, enhanced) -> {
         // Task 13 replaces this with the演出 entity, which owns both the visuals and the one-shot
         // settlement. Kept as a single place so Task 13 does not have to find four scattered
         // settlements.

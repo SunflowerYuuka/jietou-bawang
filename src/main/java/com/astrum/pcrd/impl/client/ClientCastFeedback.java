@@ -48,34 +48,26 @@ public final class ClientCastFeedback {
     }
 
     /**
-     * {@return the last refusal if it happened within {@code windowTicks}, otherwise empty}
-     *
-     * <p>Expiry is judged when asked, never on a tick — the same lazy rule the stack table obeys
-     * (spec §4.4).
-     *
-     * @param now         the client's current game time
-     * @param windowTicks how long the shake should last
-     */
-    public static java.util.Optional<CastGate.Reason> activeRefusal(long now, int windowTicks) {
-        return active(now, windowTicks).map(Refusal::reason);
-    }
-
-    /**
      * {@return the last refusal <b>with its timestamp</b> if it happened within {@code windowTicks}}
      *
-     * <p>The timestamp is what lets the HUD play the refusal sound exactly once: two refusals in a
-     * row have different game times, so comparing times is enough and no counter or tick is needed.
+     * <p>The timestamp is what lets {@link RefusalSound} play the refusal sound exactly once: two
+     * refusals in a row have different game times, so comparing times is enough and no counter or tick
+     * is needed.
+     *
+     * <p>"Still inside the window" is asked of {@link RefusalFeedback#isActive} and not re-derived
+     * here: two implementations of one window rule is how the unused one ends up being the tested one
+     * (which is exactly what happened before — the inline comparison here was live and untested while
+     * {@code isActive} was tested and dead).
      *
      * @param now         the client's current game time
-     * @param windowTicks how long the shake should last
+     * @param windowTicks how long the shake and the sound last
      */
     public static java.util.Optional<Refusal> active(long now, int windowTicks) {
         Refusal refusal = latest;
         if (refusal == null) {
             return java.util.Optional.empty();
         }
-        long age = now - refusal.gameTime();
-        if (age < 0 || age > windowTicks) {
+        if (!RefusalFeedback.isActive(now, refusal.gameTime(), windowTicks)) {
             return java.util.Optional.empty();
         }
         return java.util.Optional.of(refusal);
