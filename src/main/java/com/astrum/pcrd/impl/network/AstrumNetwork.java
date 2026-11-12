@@ -3,8 +3,11 @@ package com.astrum.pcrd.impl.network;
 import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.UbState;
+import com.astrum.pcrd.impl.client.ClientCastFeedback;
 import com.astrum.pcrd.impl.client.ClientUbCache;
+import com.astrum.pcrd.impl.ub.CastGate;
 import com.astrum.pcrd.impl.ub.SyncGate;
+import com.astrum.pcrd.impl.ub.UbService;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -19,8 +22,18 @@ import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * The charge channel: one clientbound payload, registered on both sides, pushed to a player only
- * when the server's copy of their gauge actually changed.
+ * The mod's payloads, all registered here, on both sides: the charge channel (one clientbound
+ * payload, pushed to a player only when the server's copy of their gauge actually changed), the UB
+ * cast request ({@link UbCastPayload}, serverbound) and its typed refusal
+ * ({@link UbCastFeedbackPayload}, clientbound, back to that one player).
+ *
+ * <h2>The cast pair: one request up, one reason down</h2>
+ * The client says only <em>which slot</em>; {@link UbService#tryCast} re-decides everything on the
+ * server and answers through {@link CastGate.Reason}. A <b>success sends nothing back</b>: the gauge
+ * push above already carries the cleared bar and the new cooldown, so a second packet would say the
+ * same thing twice. A <b>refusal is answered on the same connection, to the asking player only</b>
+ * ({@code PacketDistributor.sendToPlayer}), never broadcast — spec §5.4's 禁止静默失败 without
+ * letting one player's cooldown shake another's slot.
  *
  * <h2>Why the registration is one call, on the mod bus, in common code</h2>
  * {@link RegisterPayloadHandlersEvent} is an {@code IModBusEvent} fired by
@@ -33,10 +46,11 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code FMLEnvironment.dist} check here, because skipping the call on the server would break
  * exactly that.
  *
- * <p>The handler is a reference to a common method whose body touches only
- * {@link ClientUbCache}, a class with no {@code net.minecraft.client} imports, so loading this class
- * on a dedicated server cannot pull client-only types in. The handler itself is only ever invoked on
- * the client, because the payload is registered {@code playToClient}.
+ * <p>The handlers are references to common methods whose bodies touch only {@link ClientUbCache} and
+ * {@link ClientCastFeedback} — classes with no {@code net.minecraft.client} imports — so loading this
+ * class on a dedicated server cannot pull client-only types in. The two {@code playToClient} handlers
+ * are only ever invoked on the client, for that reason; the {@code playToServer} one runs on the
+ * server and touches only server types.
  *
  * <h2>Why the push is here and not at the mutation site</h2>
  * Charge is mutated from several places (damage dealt, damage taken, a kill, later the
@@ -48,7 +62,7 @@ import org.jetbrains.annotations.ApiStatus;
 @ApiStatus.Internal
 public final class AstrumNetwork {
 
-    /** Negotiated payload version; bump when {@link ChargeSyncPayload}'s shape changes. */
+    /** Negotiated payload version; bump when any payload registered here changes shape. */
     public static final String PROTOCOL_VERSION = "1";
 
     /**
@@ -78,9 +92,17 @@ public final class AstrumNetwork {
     }
 
     private static void onRegisterPayloads(RegisterPayloadHandlersEvent event) {
-        event.registrar(PROTOCOL_VERSION).playToClient(
-                ChargeSyncPayload.TYPE, ChargeSyncPayload.STREAM_CODEC, AstrumNetwork::handleChargeSync);
-        Astrum.LOGGER.info("astrum: charge sync payload registered, protocol {}", PROTOCOL_VERSION);
+        // One registrar, both flows, no dist check: this call must run on the client and on the
+        // dedicated server alike (see the class javadoc).
+        event.registrar(PROTOCOL_VERSION)
+                .playToClient(ChargeSyncPayload.TYPE, ChargeSyncPayload.STREAM_CODEC,
+                        AstrumNetwork::handleChargeSync)
+                .playToServer(UbCastPayload.TYPE, UbCastPayload.STREAM_CODEC,
+                        AstrumNetwork::handleUbCast)
+                .playToClient(UbCastFeedbackPayload.TYPE, UbCastFeedbackPayload.STREAM_CODEC,
+                        AstrumNetwork::handleUbCastFeedback);
+        Astrum.LOGGER.info("astrum: payloads registered (charge_sync, ub_cast, ub_cast_feedback), protocol {}",
+                PROTOCOL_VERSION);
     }
 
     /**
@@ -92,6 +114,41 @@ public final class AstrumNetwork {
      */
     private static void handleChargeSync(ChargeSyncPayload payload, IPayloadContext context) {
         ClientUbCache.accept(payload);
+    }
+
+    /**
+     * Receives the client's cast request on the server and answers a refusal on the same connection.
+     *
+     * <p>Only the slot is taken from the packet: {@link UbService#tryCast} re-resolves the party, the
+     * registry, the gauge and the cooldown, so nothing the client says here is trusted beyond "which
+     * slot the player picked" (spec §9.5).
+     *
+     * <p>The refusal goes to <b>this</b> player and nobody else. It also needs no
+     * {@code enqueueWork}: same {@code HandlerThread.MAIN} default as above, so the cast is decided on
+     * the server thread, in the same tick the packet arrived.
+     */
+    private static void handleUbCast(UbCastPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)) {
+            // Unreachable for a playToServer payload; if it ever happens the registration is wrong,
+            // so say so rather than throwing into the packet handler.
+            Astrum.LOGGER.warn("astrum: ub_cast arrived without a ServerPlayer (slot {}) — dropped",
+                    payload.slot());
+            return;
+        }
+        UbService.tryCast(player, payload.slot())
+                .ifPresent(reason -> PacketDistributor.sendToPlayer(player,
+                        new UbCastFeedbackPayload(reason)));
+    }
+
+    /**
+     * Receives the server's refusal on the client.
+     *
+     * <p>Stamps the refusal with the client's own game time here rather than inside
+     * {@link ClientCastFeedback}: the cache must stay a plain value holder so this class can be loaded
+     * on a dedicated server without dragging a level (let alone a client level) into its types.
+     */
+    private static void handleUbCastFeedback(UbCastFeedbackPayload payload, IPayloadContext context) {
+        ClientCastFeedback.accept(payload, context.player().level().getGameTime());
     }
 
     /**
