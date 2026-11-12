@@ -15,6 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -294,5 +295,87 @@ class RosterCodecTest {
         var touched = r.addOrIgnore(InternalIds.id("djeeta"), new CharacterProgress(1, 0, 0));
         assertTrue(touched.isQuarantined());
         assertEquals(original, Roster.SERIALIZER.write(touched, RegistryAccess.EMPTY));
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // withProgress: the growth path's writer (exp, level and affection for characters the player
+    // ALREADY owns). Its whole rule is "replace, never add" - a book entry is one the card granted.
+    // ---------------------------------------------------------------------------------------
+
+    private static Roster djeetaAt(int level, int exp, int affection) {
+        return new Roster(Map.of(InternalIds.id("djeeta"), new CharacterProgress(level, exp, affection)),
+                Roster.CURRENT_DATA_VERSION);
+    }
+
+    @Test void withProgressReplacesAnExistingEntry() {
+        var raised = djeetaAt(7, 12, 2)
+                .withProgress(Map.of(InternalIds.id("djeeta"), new CharacterProgress(7, 12, 3)));
+        assertEquals(new CharacterProgress(7, 12, 3), raised.entries().get(InternalIds.id("djeeta")));
+    }
+
+    /**
+     * The rule this method exists for: a key that is not in the book is ignored. Adding one is
+     * {@code addOrIgnore}'s job (a card), so a mis-resolved id here must not appear as an owned
+     * character in the roster grid, the party slots or the sync payload.
+     */
+    @Test void withProgressIgnoresACharacterTheBookDoesNotOwn() {
+        var raised = djeetaAt(7, 12, 2).withProgress(Map.of(
+                InternalIds.id("not_owned"), new CharacterProgress(30, 0, 8)));
+        assertEquals(Set.of(InternalIds.id("djeeta")), raised.entries().keySet(),
+                "an unknown character must not silently appear in the book");
+        assertEquals(1, raised.entries().size());
+    }
+
+    @Test void withProgressKeepsTheDataVersionAndTheOtherEntries() {
+        var katalina = InternalIds.id("katalina");
+        var base = new Roster(new LinkedHashMap<>(Map.of(
+                katalina, new CharacterProgress(3, 40, 1),
+                InternalIds.id("djeeta"), new CharacterProgress(5, 10, 2))),
+                Roster.CURRENT_DATA_VERSION);
+        var raised = base.withProgress(Map.of(
+                InternalIds.id("djeeta"), new CharacterProgress(5, 10, 3),
+                InternalIds.id("not_owned"), new CharacterProgress(1, 0, 1)));
+        assertEquals(Roster.CURRENT_DATA_VERSION, raised.dataVersion());
+        assertEquals(new CharacterProgress(3, 40, 1), raised.entries().get(katalina),
+                "a character the update does not mention must be untouched");
+        assertEquals(2, raised.entries().size());
+        // The version survives the save, which is what makes the update persist at all.
+        var enc = Roster.CODEC.encodeStart(NbtOps.INSTANCE, raised).getOrThrow();
+        assertTrue(((CompoundTag) enc).contains("dataVersion"), enc.toString());
+        assertEquals(Optional.of(raised), Roster.CODEC.parse(NbtOps.INSTANCE, enc).result());
+    }
+
+    /** The caller's roster is a value: writing progress to it must not mutate the one held. */
+    @Test void withProgressDoesNotMutateTheRosterItWasCalledOn() {
+        var before = djeetaAt(2, 0, 1);
+        before.withProgress(Map.of(InternalIds.id("djeeta"), new CharacterProgress(3, 0, 1)));
+        assertEquals(new CharacterProgress(2, 0, 1), before.entries().get(InternalIds.id("djeeta")));
+    }
+
+    /** And the result is as immutable as any other roster, so a later put cannot reach the save. */
+    @Test void withProgressReturnsAnImmutableBook() {
+        var raised = djeetaAt(2, 0, 1)
+                .withProgress(Map.of(InternalIds.id("djeeta"), new CharacterProgress(3, 0, 1)));
+        assertThrows(UnsupportedOperationException.class,
+                () -> raised.entries().put(InternalIds.id("x"), new CharacterProgress(1, 0, 0)));
+    }
+
+    /**
+     * A quarantined book writes its original tag back verbatim, so a progress write would be
+     * discarded at save time. Throwing is the same contract {@code entries()} and
+     * {@code progressOf()} keep: the caller handles the unreadable save instead of believing a write
+     * landed.
+     */
+    @Test void withProgressRefusesAQuarantinedRoster() {
+        var r = Roster.quarantined(new CompoundTag());
+        assertThrows(IllegalStateException.class,
+                () -> r.withProgress(Map.of(InternalIds.id("djeeta"), new CharacterProgress(2, 0, 2))));
+    }
+
+    /** A null progress value would read as "not owned" while looking like a write. */
+    @Test void withProgressRefusesANullProgressValue() {
+        var map = new LinkedHashMap<net.minecraft.resources.ResourceLocation, CharacterProgress>();
+        map.put(InternalIds.id("djeeta"), null);
+        assertThrows(NullPointerException.class, () -> djeetaAt(1, 0, 1).withProgress(map));
     }
 }

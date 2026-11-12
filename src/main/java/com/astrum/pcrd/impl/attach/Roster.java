@@ -8,6 +8,7 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
@@ -261,6 +262,44 @@ public record Roster(Map<ResourceLocation, CharacterProgress> entries, int dataV
         Map<ResourceLocation, CharacterProgress> copy = new LinkedHashMap<>(entries);
         copy.put(character, initial);
         return new Roster(copy, dataVersion, quarantine);
+    }
+
+    /**
+     * {@return a roster whose entries are these entries with {@code updated} written over them}
+     *
+     * <h2>Only owned characters are updated</h2>
+     * A key that the book does not already hold is <b>ignored</b>, not added. Owning a character is
+     * {@link #addOrIgnore}'s decision (a card is what grants one), and this method is the growth
+     * path: exp, levels and affection are written to characters the player already owns. Treating an
+     * unknown key as an addition would let any caller that mis-resolves a character id silently put
+     * a character in the book — and the book is what the roster grid, the party slots and the sync
+     * payload all read.
+     *
+     * <p>Everything else is preserved: the {@code dataVersion}, the entries {@code updated} does not
+     * mention, and their order. Nothing is merged into a value that is already there — the calls that
+     * use this pass complete {@link CharacterProgress} records, so "merge" means "replace".
+     *
+     * <p>The result is a fresh immutable roster; this one is not modified, and the map handed in is
+     * not read after the call returns.
+     *
+     * @param updated new progress for characters already in the book; keys not owned are ignored
+     * @throws IllegalStateException if this roster is {@linkplain #isQuarantined() quarantined} —
+     *                               the original tag is what gets written, so a progress write would
+     *                               be discarded at save time and must not be pretended to have landed
+     * @throws NullPointerException  if {@code updated} or one of its values is {@code null}
+     */
+    public Roster withProgress(Map<ResourceLocation, CharacterProgress> updated) {
+        requireReadable("withProgress");
+        Objects.requireNonNull(updated, "updated");
+        Map<ResourceLocation, CharacterProgress> copy = new LinkedHashMap<>(entries);
+        for (Map.Entry<ResourceLocation, CharacterProgress> entry : updated.entrySet()) {
+            // A null value would erase ownership while looking like a write; refuse it here instead.
+            Objects.requireNonNull(entry.getValue(), "progress of " + entry.getKey());
+            if (copy.containsKey(entry.getKey())) {
+                copy.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return new Roster(copy, dataVersion);
     }
 
     /**
