@@ -56,4 +56,16 @@ class WheelInputMachineTest {
     @Test void strayReleaseWhileIdleDoesNothing() {
         assertEquals(Decision.NONE, new WheelInputMachine().onRelease(500));
     }
+    /**
+     * A dropped frame means {@code poll} never ran between the press and the release, so the machine
+     * is still {@code PENDING} at ≥ 200 ms when the key comes up. That path must close, not cast:
+     * a long hold is never a tap, however late the announcement of the wheel was.
+     */
+    @Test void aLongHoldReleasedWithoutAPollClosesInsteadOfCasting() {
+        var m = new WheelInputMachine();
+        m.onPress(1000);
+        assertEquals(Decision.CLOSE, m.onRelease(1300));
+        assertEquals(State.IDLE, m.state());
+        assertTrue(m.castSlot().isEmpty(), "a closed gesture must not leave a slot to cast");
+    }
 }
