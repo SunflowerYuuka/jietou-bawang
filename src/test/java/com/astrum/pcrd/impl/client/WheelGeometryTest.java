@@ -10,10 +10,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <h2>Why this test exists at all</h2>
  * Four of the spec's requirements are claims about pixels that a screenshot can only illustrate, never
- * prove: ring radius 35–45% of screen height, band width ≈12%, interior completely empty, and a
- * hover that resolves to exactly one segment. All four are functions here, so all four are assertions:
- * a screen height in, a measurable radius out; a mouse position in, a segment (or none) out. What is
- * <b>not</b> covered — how it looks, whether it reads well — is left to a human, deliberately.
+ * prove: ring radius 20–33% of screen height (default 27%), band width 6–10% (default 8%, so the drawn
+ * annulus is 0.23–0.31 of the height), interior completely empty, and a hover that resolves to exactly
+ * one segment. All four are functions here, so all four are assertions: a screen height in, a
+ * measurable radius out; a mouse position in, a segment (or none) out. What is <b>not</b> covered — how
+ * it looks, whether it reads well — is left to a human, deliberately.
+ *
+ * <p>The numbers below are the post-playtest ones (spec §5.5, 2026-11-12): the first cut's 0.40 radius
+ * and 0.12 band were reported as about 1.5× too large, and 0.30 alpha as nearly invisible. Every
+ * assertion that encoded one of those old values moved with the spec; none was dropped.
  */
 class WheelGeometryTest {
 
@@ -31,11 +36,37 @@ class WheelGeometryTest {
         WheelGeometry.Ring ring = defaultRing();
         assertEquals(WIDTH / 2.0, ring.centerX(), 1e-9);
         assertEquals(HEIGHT / 2.0, ring.centerY(), 1e-9);
-        // 0.40 of 360 is the radius through the middle of the band; the band is 0.12 × 360 wide.
-        assertEquals(144.0, ring.midRadius(), 1e-9);
-        assertEquals(43.2, ring.bandWidth(), 1e-9);
-        assertEquals(122.4, ring.innerRadius(), 1e-9);
-        assertEquals(165.6, ring.outerRadius(), 1e-9);
+        // 0.27 of 360 is the radius through the middle of the band; the band is 0.08 × 360 wide.
+        assertEquals(97.2, ring.midRadius(), 1e-9);
+        assertEquals(28.8, ring.bandWidth(), 1e-9);
+        assertEquals(82.8, ring.innerRadius(), 1e-9);
+        assertEquals(111.6, ring.outerRadius(), 1e-9);
+    }
+
+    /**
+     * The annulus that actually gets drawn at the default, as a fraction of the screen height.
+     *
+     * <p>This is the shape the human asked for after seeing the first cut (spec §5.5): a mid radius of
+     * 27%, an 8% band, so the band occupies 23–31% of the height — and the whole outer edge (plus the
+     * 1 px outline) still on screen, i.e. inside half the height and half the width. The interior it
+     * leaves, 23% of the height in every direction, is the thing kept empty for the crosshair; the last
+     * assertion pins that the empty hole is far larger than the band, so a "fat ring with a pinhole"
+     * cannot pass as this shape.
+     */
+    @Test
+    void drawnAnnulusAtTheDefaultIsAThinRingLeavingTheCentreOpen() {
+        WheelGeometry.Ring ring = defaultRing();
+
+        assertEquals(0.27, ring.midRadius() / HEIGHT, 1e-9, "mid radius is 27% of the height");
+        assertEquals(0.08, ring.bandWidth() / HEIGHT, 1e-9, "the band is 8% of the height");
+        assertEquals(0.23, ring.innerRadius() / HEIGHT, 1e-9, "the band starts at 23% of the height");
+        assertEquals(0.31, ring.outerRadius() / HEIGHT, 1e-9, "the band ends at 31% of the height");
+
+        assertTrue(ring.outerRadius() <= HEIGHT / 2.0, "the outer edge stays on screen vertically");
+        assertTrue(ring.outerRadius() <= WIDTH / 2.0, "the outer edge stays on screen horizontally");
+        assertTrue(ring.innerRadius() > ring.bandWidth() * 2.0,
+                "the empty interior must dominate the band: " + ring.innerRadius()
+                        + " px of hole vs " + ring.bandWidth() + " px of band");
     }
 
     @Test
@@ -45,8 +76,14 @@ class WheelGeometryTest {
         assertEquals(WheelGeometry.RADIUS_FRACTION_MAX, WheelGeometry.clampRadiusFraction(0.9), 1e-9);
         assertEquals(WheelGeometry.RADIUS_FRACTION_DEFAULT,
                 WheelGeometry.clampRadiusFraction(Double.NaN), 1e-9);
-        // A value inside the window is left alone: the config's 0.40 must reach the screen as 0.40.
-        assertEquals(0.42, WheelGeometry.clampRadiusFraction(0.42), 1e-9);
+        // The shipped numbers survive the clamp untouched: 0.20 is the low edge, 0.33 the high one,
+        // and the default 0.27 is strictly inside so a playtest tune of it is not silently clipped.
+        assertEquals(0.20, WheelGeometry.clampRadiusFraction(WheelGeometry.RADIUS_FRACTION_MIN), 1e-9);
+        assertEquals(0.33, WheelGeometry.clampRadiusFraction(WheelGeometry.RADIUS_FRACTION_MAX), 1e-9);
+        assertEquals(0.27, WheelGeometry.clampRadiusFraction(WheelGeometry.RADIUS_FRACTION_DEFAULT),
+                1e-9);
+        // Any other value inside the window is left alone too: 0.30 must reach the screen as 0.30.
+        assertEquals(0.30, WheelGeometry.clampRadiusFraction(0.30), 1e-9);
     }
 
     @Test
@@ -54,9 +91,13 @@ class WheelGeometryTest {
         assertEquals(WheelGeometry.BAND_FRACTION_MIN, WheelGeometry.clampBandFraction(0.01), 1e-9);
         assertEquals(WheelGeometry.BAND_FRACTION_MAX, WheelGeometry.clampBandFraction(0.5), 1e-9);
         assertEquals(WheelGeometry.BAND_ALPHA_DEFAULT, WheelGeometry.clampAlpha(Double.NaN), 1e-9);
-        assertEquals(0.25, WheelGeometry.clampAlpha(0.0), 1e-9);
-        assertEquals(0.35, WheelGeometry.clampAlpha(1.0), 1e-9);
-        assertEquals(0.30, WheelGeometry.clampAlpha(0.30), 1e-9);
+        assertEquals(0.45, WheelGeometry.clampAlpha(0.0), 1e-9);
+        assertEquals(0.70, WheelGeometry.clampAlpha(1.0), 1e-9);
+        assertEquals(0.55, WheelGeometry.clampAlpha(0.55), 1e-9);
+        // 0.30 was the old default and is now below the spec floor: it must be lifted, not honoured.
+        assertEquals(0.45, WheelGeometry.clampAlpha(0.30), 1e-9);
+        // The band is measured against the height, and the default 0.08 is inside its own window.
+        assertEquals(0.08, WheelGeometry.clampBandFraction(WheelGeometry.BAND_FRACTION), 1e-9);
     }
 
     @Test
@@ -75,15 +116,20 @@ class WheelGeometryTest {
     }
 
     /**
-     * The clamp has to be reached by something, or it is untested code: at the spec's upper radius on
-     * a short screen the outer edge would land outside the frame, and the band is pulled in instead.
+     * The clamp has to be reached by something, or it is untested code.
+     *
+     * <p>At the post-playtest numbers the clamp is no longer reachable on a landscape window — 0.33 of
+     * the height plus half an 0.08 band is 0.37, comfortably inside the frame — so it is exercised where
+     * it still bites: a window narrower than it is tall. The outer edge is pulled back to half the
+     * width, and the band keeps its width, which is the point of clamping the radius rather than the
+     * band.
      */
     @Test
     void anOversizedRingIsPulledBackInsideTheFrame() {
-        WheelGeometry.Ring ring = WheelGeometry.ring(320, 240, WheelGeometry.RADIUS_FRACTION_MAX,
+        WheelGeometry.Ring ring = WheelGeometry.ring(160, 360, WheelGeometry.RADIUS_FRACTION_MAX,
                 WheelGeometry.BAND_FRACTION);
-        assertEquals(120.0, ring.outerRadius(), 1e-9, "the outer edge sits exactly on the screen edge");
-        assertEquals(91.2, ring.innerRadius(), 1e-9);
+        assertEquals(80.0, ring.outerRadius(), 1e-9, "the outer edge sits exactly on the screen edge");
+        assertEquals(51.2, ring.innerRadius(), 1e-9);
         assertEquals(28.8, ring.bandWidth(), 1e-9, "clamping the radius must not change the band width");
     }
 

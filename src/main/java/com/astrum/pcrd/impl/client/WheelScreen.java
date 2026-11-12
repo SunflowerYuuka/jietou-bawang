@@ -16,10 +16,13 @@ import org.lwjgl.glfw.GLFW;
  *
  * <h2>Shape of the thing</h2>
  * Segment {@code i} is party slot {@code i}. The band is drawn where {@link WheelGeometry} says it is,
- * so the "ring at 35–45% of screen height, band ≈12%, interior completely empty" claims are the same
- * numbers the tests assert. Nothing is drawn inside the inner radius: the crosshair, and whatever the
- * player is aiming at, must stay visible through the middle of the menu — which is also why
- * {@link #renderBackground} is a no-op instead of vanilla's blurred menu background.
+ * so the "ring at 20–33% of screen height (default 27%), band 6–10% (default 8%), interior completely
+ * empty, band alpha 0.45–0.70 (default 0.55)" claims are the same numbers the tests assert. Nothing is
+ * drawn inside the inner radius: the crosshair, and whatever the player is aiming at, must stay visible
+ * through the middle of the menu — which is also why {@link #renderBackground} is a no-op instead of
+ * vanilla's blurred menu background. The interior is not a plate that shrinks with the ring: it is the
+ * whole area inside {@link WheelGeometry.Ring#innerRadius()}, and no size setting moves anything into
+ * it.
  *
  * <h2>Two meanings of a click</h2>
  * Hovering a segment only <b>moves the preset</b> ({@link WheelPreset}); it never casts. Casting is the
@@ -38,6 +41,19 @@ import org.lwjgl.glfw.GLFW;
  * No {@code pauseGame}, no {@code isPauseScreen()} (the world keeps ticking: mobs move, animations run,
  * health bars change), no mouse grab of its own (opening a {@link Screen} hands the mouse to the GUI and
  * hands it back on close, so the camera stops turning), and no movement code at all.
+ *
+ * <h2>The cursor is hidden, for exactly as long as this screen exists</h2>
+ * Spec §5.5 asks for 仅捕获鼠标并隐藏光标. Vanilla only ever gives a screen the visible arrow, so
+ * {@link WheelCursor} sets GLFW's cursor mode to hidden in {@link #init()} — after {@code
+ * Minecraft.setScreen} has released the mouse, so nothing re-shows it — and puts it back in
+ * {@link #removed()}, which vanilla calls for <em>every</em> way a screen can go away: Escape,
+ * {@code ClientEvents}' digit cast (both go through {@code setScreen}, which calls {@code removed()} on
+ * the outgoing screen), a disconnect, another mod replacing the screen, and shutdown. Hovering is
+ * unaffected because hidden is not disabled: GLFW still reports absolute cursor positions.
+ *
+ * <p>An earlier round recorded the visible cursor as "by design, because hover uses absolute position".
+ * That was a deviation dressed up as a trade-off — hiding the cursor does not touch position reporting —
+ * and it is now implemented instead of argued about.
  *
  * <p><b>Player movement does stop, and not because of anything here.</b> This is a vanilla
  * {@link Screen}, so vanilla's own screen handling does it, and both halves were observed on a real
@@ -106,6 +122,34 @@ public final class WheelScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    /**
+     * Hides the cursor while the wheel is up.
+     *
+     * <p>Runs after {@code Minecraft.setScreen} has called {@code MouseHandler.releaseMouse()} (which
+     * makes the cursor visible again), so the hidden mode set here is the last word for the lifetime of
+     * the screen. Vanilla re-runs this on a window resize; {@link WheelCursor#hide()} is idempotent.
+     */
+    @Override
+    protected void init() {
+        super.init();
+        WheelCursor.hide();
+    }
+
+    /**
+     * Gives the cursor back.
+     *
+     * <p>Vanilla calls this from {@code Minecraft.setScreen} for the outgoing screen, before the mouse
+     * is handed on: to {@code grabMouse()} when the world resumes (which then sets the game's own
+     * {@code GLFW_CURSOR_DISABLED}), or to {@code releaseMouse()} when another GUI opens. So this is the
+     * one place that has to restore, and it covers Escape, a digit cast, a disconnect and a screen
+     * replacement alike.
+     */
+    @Override
+    public void removed() {
+        WheelCursor.restore();
+        super.removed();
     }
 
     /**

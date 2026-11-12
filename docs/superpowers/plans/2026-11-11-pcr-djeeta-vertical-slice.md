@@ -427,7 +427,7 @@ Run: `.\gradlew.bat test --tests "*BalanceTest*"` → 编译失败。
 
 - [ ] **Step 3: 实现 `Balance` + 两个 `ModConfigSpec`**
 
-服务端 `[balance] enableDiminishingReturns / diminishingBase`、`[ub] ubGlobalCooldownTicks=100 / ubChargePerDamage=1.0 / ubChargePerDamageTaken=0.33 / ubChargePerKill=20.0 / ubChargePerSecond=0.2`、`[wheel] scrollSwitchPolicy="ALLOW"`、`[multiplayer] allyMode="ALL_PLAYERS" / areaChargePairCooldownTicks=20 / areaChargeReceiveCapPerSecond=6.0 / maxActiveShowcaseEntities=8`。客户端 `[wheel] enableScrollSwitching=false / wheelScale=0.40 / wheelOpacity=0.30`、`[camera] ubCameraPush=false`（键名与默认值逐字照规格 §8.2/§8.3）。
+服务端 `[balance] enableDiminishingReturns / diminishingBase`、`[ub] ubGlobalCooldownTicks=100 / ubChargePerDamage=1.0 / ubChargePerDamageTaken=0.33 / ubChargePerKill=20.0 / ubChargePerSecond=0.2`、`[wheel] scrollSwitchPolicy="ALLOW"`、`[multiplayer] allyMode="ALL_PLAYERS" / areaChargePairCooldownTicks=20 / areaChargeReceiveCapPerSecond=6.0 / maxActiveShowcaseEntities=8`。客户端 `[wheel] enableScrollSwitching=false / wheelScale=0.27 / wheelOpacity=0.55`、`[camera] ubCameraPush=false`（键名与默认值逐字照规格 §8.2/§8.3；0.27/0.55 是 2026-11-12 实测后的数值）。
 
 - [ ] **Step 4: 跑测试确认通过**
 

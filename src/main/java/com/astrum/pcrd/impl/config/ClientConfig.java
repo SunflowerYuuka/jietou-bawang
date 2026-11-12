@@ -66,10 +66,10 @@ public final class ClientConfig {
         /** Player-side opt-in for using the mouse wheel to change preset while the wheel is open. */
         public final ModConfigSpec.BooleanValue enableScrollSwitching;
 
-        /** Ring radius as a fraction of screen height (spec §5.5: 35–45%). */
+        /** Ring radius as a fraction of screen height (spec §5.5: 20–33%, default 27%). */
         public final ModConfigSpec.DoubleValue wheelScale;
 
-        /** Ring background alpha (spec §5.5: 0.25–0.35); icons and labels stay opaque. */
+        /** Ring background alpha (spec §5.5: 0.45–0.70, default 0.55); icons and labels stay opaque. */
         public final ModConfigSpec.DoubleValue wheelOpacity;
 
         private WheelOptions(ModConfigSpec.Builder builder) {
@@ -78,11 +78,12 @@ public final class ClientConfig {
                     .comment(" 是否允许用滚轮切换预设（服务端 scrollSwitchPolicy 另有一道许可）")
                     .define("enableScrollSwitching", false);
             wheelScale = builder
-                    .comment(" 轮盘半径 = 屏高百分比（规格建议 0.35 ~ 0.45；定义域 0 ~ 1 防止越界）")
-                    .defineInRange("wheelScale", 0.40, 0.0, 1.0);
+                    .comment(" 轮盘半径 = 屏高百分比（规格 0.20 ~ 0.33，默认 0.27；定义域 0 ~ 1 防止越界，"
+                            + "WheelGeometry 会再夹一次）")
+                    .defineInRange("wheelScale", 0.27, 0.0, 1.0);
             wheelOpacity = builder
-                    .comment(" 环带背景透明度（规格建议 0.25 ~ 0.35）；图标与文字不受影响")
-                    .defineInRange("wheelOpacity", 0.30, 0.0, 1.0);
+                    .comment(" 环带背景透明度（规格 0.45 ~ 0.70，默认 0.55）；图标与文字不受影响")
+                    .defineInRange("wheelOpacity", 0.55, 0.0, 1.0);
             builder.pop();
         }
     }

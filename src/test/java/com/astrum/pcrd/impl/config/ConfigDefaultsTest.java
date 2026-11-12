@@ -122,8 +122,9 @@ class ConfigDefaultsTest {
         CommentedConfig toml = reload(toToml(writtenDefaults(ClientConfig.SPEC)));
 
         assertEquals(false, toml.get("wheel.enableScrollSwitching"));
-        assertEquals(0.40, toml.<Number>get("wheel.wheelScale").doubleValue(), 1e-9);
-        assertEquals(0.30, toml.<Number>get("wheel.wheelOpacity").doubleValue(), 1e-9);
+        // Spec §5.5/§8.3 after the 2026-11-12 playtest: 0.27 radius (was 0.40), 0.55 alpha (was 0.30).
+        assertEquals(0.27, toml.<Number>get("wheel.wheelScale").doubleValue(), 1e-9);
+        assertEquals(0.55, toml.<Number>get("wheel.wheelOpacity").doubleValue(), 1e-9);
         assertEquals(false, toml.get("camera.ubCameraPush"));
 
         // [hud] holds spec §7's "位置可配置、可整体关闭" — not in §8.3's sketch, added with the HUD itself.
