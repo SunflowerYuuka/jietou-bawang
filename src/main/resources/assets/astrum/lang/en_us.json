@@ -124,5 +124,12 @@
   "astrum.party.reason.SLOT_OUT_OF_RANGE": "the party has no such slot",
   "astrum.party.reason.NO_REGISTRY": "no character data is loaded right now",
   "astrum.party.reason.CHARACTER_UNKNOWN": "the loaded pack does not define that character",
-  "astrum.party.reason.NOT_OWNED": "that character is not in your book"
+  "astrum.party.reason.NOT_OWNED": "that character is not in your book",
+
+  "astrum.growth.fed": "Ate %1$s: %2$s character(s) gained goodwill.",
+  "astrum.growth.already_today": "You already fed %s today - one of each dish per day.",
+  "astrum.growth.already_full": "Everyone in the party is already at the last goodwill tier - %s was not fed.",
+  "astrum.growth.nobody": "No owned character is in the party, so %s had nobody to feed.",
+  "astrum.growth.book_unreadable": "Your character book cannot be read (the unreadable save is kept on disk) - the dish was not fed.",
+  "astrum.growth.level_up": "%1$s reached level %2$s."
 }

@@ -2,6 +2,7 @@ package com.astrum.pcrd.impl;
 
 import com.astrum.pcrd.impl.client.ClientKeyBindings;
 import com.astrum.pcrd.impl.command.AstrumCommand;
+import com.astrum.pcrd.impl.growth.GrowthText;
 import com.astrum.pcrd.impl.item.CharacterCardItem;
 import com.astrum.pcrd.impl.party.BookText;
 import com.google.gson.JsonElement;
@@ -70,6 +71,10 @@ class LangParityTest {
         keys.addAll(CharacterCardItem.LANG_KEYS);
         // The 角色册 item and screen, including every astrum.party.reason.* key derived from the enum.
         keys.addAll(BookText.LANG_KEYS);
+        // The growth messages: one per dish outcome plus the level-up line. Task 15b added these to the
+        // lang files and to GrowthText.LANG_KEYS; before that the keys existed in neither, so a missing
+        // translation could only have been found by a player reading a raw key.
+        keys.addAll(GrowthText.LANG_KEYS);
         return Set.copyOf(keys);
     }
 

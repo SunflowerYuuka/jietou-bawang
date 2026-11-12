@@ -7,6 +7,7 @@ import com.astrum.pcrd.impl.combat.CombatEvents;
 import com.astrum.pcrd.impl.command.AstrumCommand;
 import com.astrum.pcrd.impl.config.ClientConfig;
 import com.astrum.pcrd.impl.config.ServerConfig;
+import com.astrum.pcrd.impl.growth.GrowthEvents;
 import com.astrum.pcrd.impl.item.AstrumItems;
 import com.astrum.pcrd.impl.network.AstrumNetwork;
 import com.astrum.pcrd.impl.registry.CharacterRegistry;
@@ -33,10 +34,9 @@ public final class Astrum {
         AstrumItems.register(modBus);
         AstrumNetwork.register(modBus);
         CombatEvents.register();
+        GrowthEvents.register();
         AstrumCommand.register();
-        // The client half (keys, config screen, wheel, HUD) lives in impl.client and is only reached
-        // from this branch, so no client class is loaded on a dedicated server (spec §7 端隔离).
-        if (FMLEnvironment.dist == Dist.CLIENT) {
+        if (FMLEnvironment.dist == Dist.CLIENT) {   // client classes stay off a dedicated server (§7)
             ClientEvents.register(modBus);
             ClientConfigScreen.register(container);
         }

@@ -55,14 +55,19 @@ public final class HookEvaluator {
     /**
      * Runs {@code def}'s hooks for one event, applying whatever they produce through {@code ctx}.
      *
+     * <p>The second lambda is where growth is composed into the one multiplier chain: {@link
+     * HookContext#forHook} multiplies the slot's diminishing factor by the character's level and its
+     * affection modifier <em>for this hook index</em>, and the executors receive the product as an
+     * ordinary multiplier. Nothing downstream multiplies again — see {@link MultiplierChain}.
+     *
      * @param def  the character definition owning the hooks
-     * @param ctx  the event, carrying this slot's multiplier and character attribution
+     * @param ctx  the event, carrying this slot's diminishing multiplier and the character's growth
      * @param facts what just happened, as the eight triggers see it
      */
     public static void evaluate(CharacterDef def, HookContext ctx, TriggerFacts facts) {
         evaluateHooks(def, facts,
                 chance -> roll(chance, ctx.attacker()),
-                (index, hook) -> Optional.ofNullable(EffectExecutors.run(hook, ctx)),
+                (index, hook) -> Optional.ofNullable(EffectExecutors.run(hook, ctx.forHook(index))),
                 invalid -> warnInvalid(invalid, ctx));
     }
 

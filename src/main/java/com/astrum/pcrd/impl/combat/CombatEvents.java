@@ -2,6 +2,7 @@ package com.astrum.pcrd.impl.combat;
 
 import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.CharacterDef;
+import com.astrum.pcrd.api.v1.CharacterProgress;
 import com.astrum.pcrd.api.v1.Dimension;
 import com.astrum.pcrd.api.v1.AstrumApi;
 import com.astrum.pcrd.impl.InternalIds;
@@ -10,6 +11,9 @@ import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.config.Balance;
 import com.astrum.pcrd.impl.config.ServerConfig;
+import com.astrum.pcrd.impl.growth.ContributionTracker;
+import com.astrum.pcrd.impl.growth.GrowthMultiplier;
+import com.astrum.pcrd.impl.growth.KillExperience;
 import com.astrum.pcrd.impl.ub.UbCharge;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -252,6 +256,10 @@ public final class CombatEvents {
         }
         credit(killer, ServerConfig.UB.ubChargePerKill.get());
         if (event.getEntity() != killer) {
+            // The kill's experience is settled here, on the same event that pays kill charge and runs
+            // the killer's `kill` hooks: one combat surface, not two. KillExperience consumes the
+            // contribution ledger (so the same victim cannot pay twice) and writes the roster.
+            KillExperience.settle(killer, event.getEntity());
             queue(killer, event.getEntity(), event.getSource(), 0.0F, TriggerFacts.forKill());
         }
     }
@@ -424,6 +432,9 @@ public final class CombatEvents {
         landedCrits.clear();
         warnedQuarantine.clear();
         areaCharge.reset();   // pair timestamps and per-second windows belong to one world's clock
+        // One world's fights are not the next world's: the contribution ledger is cleared here, with
+        // the rest of this class's session state, exactly as DishThrottle is cleared by GrowthEvents.
+        ContributionTracker.clear();
         // An operator-tuned guard must not silently govern the next world (spec §8.4): the override
         // is session state, not a persisted value. Task 14's command sets it; this clears it.
         AreaChargeTuning.clearOverride();
@@ -475,25 +486,111 @@ public final class CombatEvents {
 
         // The hit, once; each wheel slot derives its own view (multiplier + character attribution).
         // The area_charge sink is constructed in exactly one place, and it is the guarded one.
-        HookContext hit = new HookContext(attacker, target, source, dealt,
-                Balance.MAX_MULTIPLIER, NO_CHARACTER, batch,
+        HookContext hit = new HookContext(attacker, target, source, dealt, Balance.MAX_MULTIPLIER,
+                GrowthMultiplier.NEUTRAL, NO_CHARACTER, batch,
                 (other, type, amount) -> queueDamage(attacker, other, type, amount),
                 areaCharge);
+        // Experience is paid for damage, so only a hit that removed health records a contribution.
+        // The kill and block paths reach this method too — a death has no health left to attribute
+        // (`dealt` is 0) and a blocked blow removed none — and recording them would both pay for
+        // damage nobody dealt and re-create the ledger entry the kill had just consumed.
+        boolean contributes = paysExperience(dealt, facts);
         for (int slot = 0; slot < Party.SLOTS; slot++) {
             Optional<ResourceLocation> slotValue = party.slots().get(slot);
             if (slotValue.isEmpty()) {
                 continue;
             }
             ResourceLocation characterId = slotValue.get();
-            if (ownershipKnown && roster.progressOf(characterId) == null) {
+            CharacterProgress progress = ownershipKnown ? roster.progressOf(characterId) : null;
+            if (ownershipKnown && progress == null) {
                 continue;   // equipped but not owned: a party slot cannot grant a character
             }
             CharacterDef def = registry.get(characterId);
             if (def == null) {
                 continue;   // the pack no longer defines it; PartyMultipliers already ranks it neutral
             }
-            HookEvaluator.evaluate(def, hit.forSlot(multipliers[slot], characterId), facts);
+            // Growth is resolved once per slot and travels as a value: the level factor and the
+            // affection definition/tier. The composition with multipliers[slot] happens per hook, in
+            // HookContext.forHook, so there is exactly one chain (see MultiplierChain).
+            GrowthMultiplier growth = GrowthMultiplier.of(progress, def);
+            HookContext slotContext = hit.forSlot(multipliers[slot], growth, characterId);
+            double before = totalOf(batch);
+            HookEvaluator.evaluate(def, slotContext, facts);
+            // §6.1 splits kill experience by the damage the player dealt, and the character is what
+            // levels — so a slot that was on the wheel for this hit contributed the hit itself, plus
+            // whatever extra damage its own hooks queued on top. Counting only the extra damage would
+            // pay nothing to a support character: the shipped 姬塔's hooks are gain_charge, splash on
+            // combo_n and area_charge, so a damage-only ledger would leave her at level 1 forever
+            // while she was demonstrably in the fight.
+            if (contributes) {
+                noteContribution(attacker, target, characterId, dealt + (totalOf(batch) - before));
+            }
         }
+    }
+
+    /**
+     * Records the damage one character contributed to one victim, for the kill payout.
+     *
+     * <p>Two halves, both damage the player caused and the character was present for: the landed hit
+     * the whole wheel rode on ({@code dealt}, already overkill-clamped by
+     * {@code LandedHit.healthLost}), and the extra damage that character's own hooks queued for it.
+     * The extra part is measured as the batch's growth across one slot's evaluation, because the batch
+     * is shared by the whole wheel — a whole-batch total would credit every slot with every other
+     * slot's damage.
+     *
+     * <p>A slot whose hooks queue nothing still contributes the hit, which is why "contributed a
+     * little" and "contributed nothing" stay different states: the latter is a slot that was not on
+     * the wheel (or a kill with no landed hit at all, e.g. a fall), and it gets no entry.
+     *
+     * <p>The ledger is in-memory and is consumed by {@link KillExperience#settle} at the death event;
+     * this is the only place that fills it, and {@code onServerStopping} clears it.
+     */
+    private static void noteContribution(ServerPlayer attacker, LivingEntity target,
+            ResourceLocation characterId, double damage) {
+        if (damage > 0.0) {
+            ContributionTracker.note(attacker.getUUID(), target.getUUID(), characterId, damage,
+                    attacker.level().getGameTime());
+        }
+    }
+
+    /** {@return the positive damage a batch currently holds, summed across its damage types} */
+    private static double totalOf(DamageBatch batch) {
+        double total = 0.0;
+        for (DamageBatch.Entry entry : batch.entries()) {
+            if (entry.amount() > 0.0F) {
+                total += entry.amount();
+            }
+        }
+        return total;
+    }
+
+    /**
+     * {@return whether this event may record a growth contribution (spec §6.1: 按玩家造成的伤害占比分摊经验)}
+     *
+     * <p>Only a hit that removed health may. {@link #collect} serves four entry points and three of
+     * them must not feed the ledger:
+     *
+     * <ul>
+     *   <li><b>A kill</b> carries {@code dealt = 0} — the target is already dead — and paying for it
+     *       would also re-create the pair {@link KillExperience#settle} has just consumed, so a second
+     *       death event for the same victim would pay the same fight out twice.</li>
+     *   <li><b>A shield block</b> carries the damage <em>prevented</em>, which is not damage dealt.</li>
+     *   <li><b>A zero, negative or {@code NaN} hit</b> removed nothing, so there is no share to
+     *       attribute (and {@code ContributionTracker.note} would ignore it, but stating the rule once
+     *       here is what keeps the two filters from drifting apart).</li>
+     * </ul>
+     *
+     * <p>Pure and package-private so the rule is asserted without a server; the three branches are
+     * exactly the three {@link TriggerFacts} families {@link #collect} is called with.
+     *
+     * @param dealt what the event actually removed
+     * @param facts what just happened; only the kill and block families are excluded
+     */
+    static boolean paysExperience(float dealt, TriggerFacts facts) {
+        if (facts == null || facts.kill() || facts.block()) {
+            return false;
+        }
+        return dealt > 0.0F && Float.isFinite(dealt);
     }
 
     private void warnQuarantined(ServerPlayer attacker) {

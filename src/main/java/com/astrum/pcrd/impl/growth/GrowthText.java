@@ -33,9 +33,13 @@ public final class GrowthText {
     /** The character book could not be read, so nothing was written. */
     public static final String KEY_BOOK_UNREADABLE = "astrum.growth.book_unreadable";
 
+    /** A character crossed a level from a kill. Args: character name, new level. */
+    public static final String KEY_LEVEL_UP = "astrum.growth.level_up";
+
     /** Every key above, for the language-parity test. */
     public static final Set<String> LANG_KEYS = Set.of(
-            KEY_FED, KEY_ALREADY_TODAY, KEY_ALREADY_FULL, KEY_NOBODY, KEY_BOOK_UNREADABLE);
+            KEY_FED, KEY_ALREADY_TODAY, KEY_ALREADY_FULL, KEY_NOBODY, KEY_BOOK_UNREADABLE,
+            KEY_LEVEL_UP);
 
     private GrowthText() {
     }
