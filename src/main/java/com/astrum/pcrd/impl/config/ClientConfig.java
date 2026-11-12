@@ -31,10 +31,14 @@ public final class ClientConfig {
     /** {@code [camera]} — optional feedback during a cast. */
     public static final CameraOptions CAMERA;
 
+    /** {@code [hud]} — where the UB gauge sits, and whether it is drawn at all. */
+    public static final HudOptions HUD;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
         WHEEL = new WheelOptions(builder);
         CAMERA = new CameraOptions(builder);
+        HUD = new HudOptions(builder);
         SPEC = builder.build();
     }
 
@@ -99,6 +103,51 @@ public final class ClientConfig {
             ubCameraPush = builder
                     .comment(" 演出时轻微镜头反馈，默认关")
                     .define("ubCameraPush", false);
+            builder.pop();
+        }
+    }
+
+    /**
+     * {@code [hud]} section (spec §7: HUD 位置可配置、可整体关闭、默认避开 hotbar 与右上角).
+     *
+     * <p>Not in spec §8.3's sketch, which stops at {@code [wheel]}/{@code [camera]}; the positional
+     * requirement in §7 needs somewhere to live, and a client file is the only place it can: the
+     * server must not decide where another player's gauge is drawn.
+     *
+     * <p>The default anchor is the bottom-left, which is clear of the hotbar (bottom centre) and of
+     * the top-right corner (Jade/AppleSkin). The offsets exist for players whose own HUD already owns
+     * the corners; {@code impl.client.HudLayout} still keeps the widget on screen and above the
+     * hotbar whatever they type.
+     */
+    public static final class HudOptions {
+
+        /** Draw the UB gauge at all; {@code false} removes it entirely. */
+        public final ModConfigSpec.BooleanValue enableUbHud;
+
+        /** Screen corner the gauge is pinned to. */
+        public final ModConfigSpec.EnumValue<HudAnchor> hudAnchor;
+
+        /** Extra horizontal offset from the anchor, in GUI pixels; positive is right. */
+        public final ModConfigSpec.IntValue hudOffsetX;
+
+        /** Extra vertical offset from the anchor, in GUI pixels; positive is down. */
+        public final ModConfigSpec.IntValue hudOffsetY;
+
+        private HudOptions(ModConfigSpec.Builder builder) {
+            builder.push("hud");
+            enableUbHud = builder
+                    .comment(" 是否显示 UB 充能条与冷却环（关掉则完全不绘制）")
+                    .define("enableUbHud", true);
+            hudAnchor = builder
+                    .comment(" 贴哪个角：BOTTOM_LEFT / BOTTOM_RIGHT / TOP_LEFT / TOP_RIGHT"
+                            + "（默认左下，避开快捷栏与右上角 Jade/AppleSkin）")
+                    .defineEnum("hudAnchor", HudAnchor.BOTTOM_LEFT);
+            hudOffsetX = builder
+                    .comment(" 相对锚点的水平偏移（GUI 像素，正数向右）")
+                    .defineInRange("hudOffsetX", 0, -1000, 1000);
+            hudOffsetY = builder
+                    .comment(" 相对锚点的垂直偏移（GUI 像素，正数向下）")
+                    .defineInRange("hudOffsetY", 0, -1000, 1000);
             builder.pop();
         }
     }

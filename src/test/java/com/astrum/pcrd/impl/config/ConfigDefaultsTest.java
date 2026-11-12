@@ -88,7 +88,7 @@ class ConfigDefaultsTest {
     @Test
     void clientTomlHasEverySpecSection() {
         String text = toToml(writtenDefaults(ClientConfig.SPEC));
-        for (String section : new String[] { "[wheel]", "[camera]" }) {
+        for (String section : new String[] { "[wheel]", "[camera]", "[hud]" }) {
             assertTrue(text.contains(section), "生成的 toml 缺少小节 " + section + "\n" + text);
         }
     }
@@ -125,6 +125,12 @@ class ConfigDefaultsTest {
         assertEquals(0.40, toml.<Number>get("wheel.wheelScale").doubleValue(), 1e-9);
         assertEquals(0.30, toml.<Number>get("wheel.wheelOpacity").doubleValue(), 1e-9);
         assertEquals(false, toml.get("camera.ubCameraPush"));
+
+        // [hud] holds spec §7's "位置可配置、可整体关闭" — not in §8.3's sketch, added with the HUD itself.
+        assertEquals(true, toml.get("hud.enableUbHud"));
+        assertEquals("BOTTOM_LEFT", toml.get("hud.hudAnchor"));
+        assertEquals(0, toml.<Number>get("hud.hudOffsetX").intValue());
+        assertEquals(0, toml.<Number>get("hud.hudOffsetY").intValue());
     }
 
     /**
@@ -163,7 +169,7 @@ class ConfigDefaultsTest {
     void noKeysBeyondSpec() {
         assertEquals(Set.of("balance", "ub", "wheel", "multiplayer"),
                 topLevelKeys(writtenDefaults(ServerConfig.SPEC)));
-        assertEquals(Set.of("wheel", "camera"), topLevelKeys(writtenDefaults(ClientConfig.SPEC)));
+        assertEquals(Set.of("wheel", "camera", "hud"), topLevelKeys(writtenDefaults(ClientConfig.SPEC)));
     }
 
     /**

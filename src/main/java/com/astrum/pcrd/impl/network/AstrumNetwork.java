@@ -1,16 +1,23 @@
 package com.astrum.pcrd.impl.network;
 
 import com.astrum.pcrd.Astrum;
+import com.astrum.pcrd.api.v1.AstrumApi;
+import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.impl.attach.Attachments;
+import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.UbState;
 import com.astrum.pcrd.impl.client.ClientCastFeedback;
+import com.astrum.pcrd.impl.client.ClientPartyCache;
 import com.astrum.pcrd.impl.client.ClientUbCache;
 import com.astrum.pcrd.impl.ub.CastGate;
 import com.astrum.pcrd.impl.ub.SyncGate;
 import com.astrum.pcrd.impl.ub.UbService;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.core.Registry;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.common.NeoForge;
@@ -23,9 +30,10 @@ import org.jetbrains.annotations.ApiStatus;
 
 /**
  * The mod's payloads, all registered here, on both sides: the charge channel (one clientbound
- * payload, pushed to a player only when the server's copy of their gauge actually changed), the UB
- * cast request ({@link UbCastPayload}, serverbound) and its typed refusal
- * ({@link UbCastFeedbackPayload}, clientbound, back to that one player).
+ * payload, pushed to a player only when the server's copy of their gauge actually changed), the party
+ * channel ({@link PartySyncPayload}, clientbound, the ordered slot contents plus their tier-3 bits, so
+ * the client can draw the wheel), the UB cast request ({@link UbCastPayload}, serverbound) and its
+ * typed refusal ({@link UbCastFeedbackPayload}, clientbound, back to that one player).
  *
  * <h2>The cast pair: one request up, one reason down</h2>
  * The client says only <em>which slot</em>; {@link UbService#tryCast} re-decides everything on the
@@ -46,11 +54,11 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code FMLEnvironment.dist} check here, because skipping the call on the server would break
  * exactly that.
  *
- * <p>The handlers are references to common methods whose bodies touch only {@link ClientUbCache} and
- * {@link ClientCastFeedback} — classes with no {@code net.minecraft.client} imports — so loading this
- * class on a dedicated server cannot pull client-only types in. The two {@code playToClient} handlers
- * are only ever invoked on the client, for that reason; the {@code playToServer} one runs on the
- * server and touches only server types.
+ * <p>The handlers are references to common methods whose bodies touch only {@link ClientUbCache},
+ * {@link ClientPartyCache} and {@link ClientCastFeedback} — classes with no {@code net.minecraft.client}
+ * imports — so loading this class on a dedicated server cannot pull client-only types in. The three
+ * {@code playToClient} handlers are only ever invoked on the client, for that reason; the
+ * {@code playToServer} one runs on the server and touches only server types.
  *
  * <h2>Why the push is here and not at the mutation site</h2>
  * Charge is mutated from several places (damage dealt, damage taken, a kill, later the
@@ -76,6 +84,17 @@ public final class AstrumNetwork {
      */
     private static final Map<UUID, Sent> LAST_SENT = new HashMap<>();
 
+    /**
+     * What each online player's client was last told about their party, keyed by UUID.
+     *
+     * <p>Same idea as {@link #LAST_SENT} one field up, and for the same reason: the party is mutated
+     * from outside this class (a command, a UI, a save load), so the push is a diff against the last
+     * thing sent rather than a call at the mutation site. The tier-3 mask is part of the compared
+     * value because the wheel's icon depends on it: an affection level-up must reach the client even
+     * though the party itself did not change. Dropped on logout, so a re-join is always re-sent.
+     */
+    private static final Map<UUID, SentParty> LAST_PARTY = new HashMap<>();
+
     private AstrumNetwork() {
     }
 
@@ -97,12 +116,14 @@ public final class AstrumNetwork {
         event.registrar(PROTOCOL_VERSION)
                 .playToClient(ChargeSyncPayload.TYPE, ChargeSyncPayload.STREAM_CODEC,
                         AstrumNetwork::handleChargeSync)
+                .playToClient(PartySyncPayload.TYPE, PartySyncPayload.STREAM_CODEC,
+                        AstrumNetwork::handlePartySync)
                 .playToServer(UbCastPayload.TYPE, UbCastPayload.STREAM_CODEC,
                         AstrumNetwork::handleUbCast)
                 .playToClient(UbCastFeedbackPayload.TYPE, UbCastFeedbackPayload.STREAM_CODEC,
                         AstrumNetwork::handleUbCastFeedback);
-        Astrum.LOGGER.info("astrum: payloads registered (charge_sync, ub_cast, ub_cast_feedback), protocol {}",
-                PROTOCOL_VERSION);
+        Astrum.LOGGER.info("astrum: payloads registered (charge_sync, party_sync, ub_cast, "
+                + "ub_cast_feedback), protocol {}", PROTOCOL_VERSION);
     }
 
     /**
@@ -114,6 +135,16 @@ public final class AstrumNetwork {
      */
     private static void handleChargeSync(ChargeSyncPayload payload, IPayloadContext context) {
         ClientUbCache.accept(payload);
+    }
+
+    /**
+     * Receives the ordered party on the client, so the wheel can be drawn.
+     *
+     * <p>Display data only: nothing here decides anything. A wheel opened before the first sync
+     * arrives shows five empty slots rather than guessing an order (spec §5.5 — order is meaning).
+     */
+    private static void handlePartySync(PartySyncPayload payload, IPayloadContext context) {
+        ClientPartyCache.accept(payload);
     }
 
     /**
@@ -159,6 +190,11 @@ public final class AstrumNetwork {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
         }
+        pushCharge(player);
+        pushParty(player);
+    }
+
+    private static void pushCharge(ServerPlayer player) {
         // getData, not getExistingData: a player who has not charged yet still owns a gauge, and its
         // value is the documented default. Reading it materialises that default, which is what makes
         // the first window after login push the real state — otherwise a client whose cache still
@@ -173,8 +209,47 @@ public final class AstrumNetwork {
         LAST_SENT.put(player.getUUID(), new Sent(player.tickCount, state.charge(), state.cdEndTick()));
     }
 
+    /**
+     * Pushes the ordered party whenever it — or any slot's tier-3 status — actually changed.
+     *
+     * <p>On login the map holds nothing for this UUID, so the first tick after joining always sends:
+     * that is the "send on login" half of the requirement, without needing a separate login listener.
+     *
+     * <p>The tier-3 mask is resolved here, not on the client, because affection lives in the server's
+     * {@code ROSTER}; {@link UbService#atTier3} is the same rule the cast path uses.
+     */
+    private static void pushParty(ServerPlayer player) {
+        Party party = player.getData(Attachments.PARTY);
+        int mask = PartySyncPayload.maskOf(party, id -> isTier3(player, id));
+        SentParty last = LAST_PARTY.get(player.getUUID());
+        if (last != null && last.party().equals(party) && last.enhancedMask() == mask) {
+            return;
+        }
+        PacketDistributor.sendToPlayer(player, PartySyncPayload.of(party, mask));
+        LAST_PARTY.put(player.getUUID(), new SentParty(party, mask));
+        Astrum.LOGGER.debug("astrum: party synced to {} ({} characters, tier-3 mask {})",
+                player.getGameProfile().getName(), party.equipped().size(), mask);
+    }
+
+    /**
+     * {@return whether {@code characterId} is at affection tier 3 for this player}
+     *
+     * <p>A character the running pack no longer defines cannot be at any tier, and an unknown id is
+     * not worth a warning here: {@code CastGate} already reports {@code CHARACTER_UNKNOWN} when the
+     * player tries to cast it.
+     */
+    private static boolean isTier3(ServerPlayer player, ResourceLocation characterId) {
+        Optional<Registry<CharacterDef>> registry = AstrumApi.characters();
+        if (registry.isEmpty()) {
+            return false;
+        }
+        CharacterDef def = registry.get().get(characterId);
+        return def != null && UbService.atTier3(player, characterId, def);
+    }
+
     private static void onLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         LAST_SENT.remove(event.getEntity().getUUID());
+        LAST_PARTY.remove(event.getEntity().getUUID());
     }
 
     /**
@@ -187,5 +262,14 @@ public final class AstrumNetwork {
     private record Sent(int tick, float charge, long cdEndTick) {
         /** The "never pushed" value: tick {@code -1} and a {@code NaN} charge, so the first window always sends. */
         static final Sent NEVER = new Sent(-1, Float.NaN, Long.MIN_VALUE);
+    }
+
+    /**
+     * What one client was last told about its party.
+     *
+     * @param party        the slot contents that were pushed
+     * @param enhancedMask the tier-3 bits that were pushed with them
+     */
+    private record SentParty(Party party, int enhancedMask) {
     }
 }

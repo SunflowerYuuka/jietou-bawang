@@ -1,5 +1,8 @@
 {
   "death.attack.astrum.hook_damage": "%1$s 被 %2$s 的附着伤害击倒",
   "death.attack.astrum.hook_damage.player": "%1$s 被 %2$s 的附着伤害击倒",
-  "death.attack.astrum.hook_damage.item": "%1$s 被 %2$s 用 %3$s 的附着伤害击倒"
+  "death.attack.astrum.hook_damage.item": "%1$s 被 %2$s 用 %3$s 的附着伤害击倒",
+  "key.categories.astrum": "Astrum",
+  "key.astrum.ub_wheel": "释放 UB / 长按出轮盘",
+  "screen.astrum.ub_wheel": "UB 轮盘"
 }

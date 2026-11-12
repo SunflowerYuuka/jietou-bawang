@@ -128,6 +128,34 @@ public final class UbService {
     }
 
     /**
+     * {@return whether this character is at affection tier 3 for this player}
+     *
+     * <p>Split out of {@link #isEnhanced} so the party sync ({@code AstrumNetwork}) can put the
+     * enhanced bit on the wheel without a second implementation of the rule — two answers to "is this
+     * tier 3?" would eventually disagree, and the wheel would show the base icon for a character whose
+     * ultimate is already the enhanced one.
+     *
+     * <p>Silent by design: {@code AstrumNetwork} asks once per player per tick, so the quarantine
+     * warning belongs to the cast path ({@link #isEnhanced}), not here.
+     *
+     * @param player      the player whose affection is being read
+     * @param characterId the character being asked about
+     * @param def         that character's definition, already resolved by the caller
+     */
+    public static boolean atTier3(ServerPlayer player, ResourceLocation characterId, CharacterDef def) {
+        int threshold = def.affection().tier3Threshold();
+        if (threshold <= 0) {
+            return false;
+        }
+        Roster roster = player.getData(Attachments.ROSTER);
+        if (roster.isQuarantined()) {
+            return false;
+        }
+        CharacterProgress progress = roster.progressOf(characterId);
+        return progress != null && progress.affection() >= threshold;
+    }
+
+    /**
      * {@return whether the caster's affection has reached the tier-3 threshold}
      *
      * <p>Tier 3 swaps in the enhanced ultimate and its own animation (spec §6.2). Affection lives in
@@ -137,17 +165,14 @@ public final class UbService {
      */
     private static boolean isEnhanced(ServerPlayer player, ResourceLocation characterId,
             CharacterDef def) {
-        int threshold = def.affection().tier3Threshold();
-        if (threshold <= 0) {
+        if (def.affection().tier3Threshold() <= 0) {
             return false;
         }
-        Roster roster = player.getData(Attachments.ROSTER);
-        if (roster.isQuarantined()) {
+        if (player.getData(Attachments.ROSTER).isQuarantined()) {
             warnQuarantinedOnce(player);
             return false;
         }
-        CharacterProgress progress = roster.progressOf(characterId);
-        return progress != null && progress.affection() >= threshold;
+        return atTier3(player, characterId, def);
     }
 
     private static void warnQuarantinedOnce(ServerPlayer player) {
