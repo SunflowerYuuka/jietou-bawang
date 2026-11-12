@@ -11,17 +11,20 @@ import com.astrum.pcrd.impl.ub.WheelSlots;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.PauseScreen;
+import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.ApiStatus;
+import org.lwjgl.glfw.GLFW;
 
 /**
  * The client's UB input path: one key, one {@link WheelInputMachine}, and the four things a decision
@@ -32,16 +35,50 @@ import org.jetbrains.annotations.ApiStatus;
  * which is pure and tested on its own. This class only feeds it and obeys it:
  *
  * <pre>
- *   InputEvent.Key (press)   → machine.onPress(nowMillis)
- *   InputEvent.Key (release) → machine.onRelease(nowMillis) → act(decision)
- *   ClientTickEvent.Post     → machine.poll(nowMillis)      → act(decision)
- *   WheelScreen digit 1–5    → machine.onDigit(n)           → act(decision)
+ *   InputEvent.Key (press)    → machine.onPress(nowMillis)
+ *   InputEvent.Key (release)  → machine.onRelease(nowMillis)  → act(decision)
+ *   ClientTickEvent.Post      → machine.poll(nowMillis)       → act(decision)
+ *   InputEvent.Key (1–5)      → machine.onDigit(n)            → act(decision)
  * </pre>
  *
  * <p>The digits stay {@code 1}–{@code 5} all the way down to {@link #castDigit()}, which converts them
  * once — through {@link WheelSlots#slotForDigit} — into the 0-based slot the payload and the server
  * use. That single conversion point is deliberate: it used to be missing, and a missing conversion
  * sends the wrong segment or (for {@code 5}) nothing at all.
+ *
+ * <h2>No {@code Screen} — and how the wheel is shown instead</h2>
+ * The wheel is a GUI layer ({@link WheelOverlay}, registered above the hotbar like {@link UbHud}), not a
+ * {@code Screen}: {@code setScreen} releases every held key and stops vanilla feeding the player's
+ * movement (spec §5.5, verified on a real client — see {@code task-12-report.md} §12 fix round 1, I5).
+ * Nothing in this class calls {@code setScreen}.
+ *
+ * <h2>How the two allowed interceptions actually work — and why not through {@code InputEvent.Key}</h2>
+ * Spec §5.5 allows exactly two: the hotbar digits {@code 1}–{@code 5} must not switch the hotbar while
+ * the wheel is up, and {@code Esc} must close the wheel without opening the pause menu. On NeoForge
+ * 21.1.265 both are decided inside vanilla <b>before</b> any mod sees them, and {@code InputEvent.Key}
+ * is a non-cancellable notification fired at the end of {@code KeyboardHandler.keyPress} — cancelling it
+ * is not possible, and processing it later would be too late. So the two rules are enforced at the two
+ * points that are genuinely before vanilla:
+ *
+ * <ul>
+ *   <li><b>Digits</b>: {@code ClientTickEvent.Pre} runs at the top of {@code Minecraft.tick}, before
+ *       vanilla's {@code handleKeybinds()} (which is what turns a queued click into
+ *       {@code inventory.selected = i}) in the same tick. While the wheel is up this class drains the
+ *       five hotbar click queues there, so vanilla finds nothing to consume
+ *       ({@link #drainHotbarClicks}). Nothing is released, nothing else is touched — the digit still
+ *       reaches {@link WheelDigits}/{@code onDigit} through the key event, so the <em>wheel</em> sees it
+ *       and the hotbar does not.</li>
+ *   <li><b>Escape</b>: {@code KeyboardHandler} calls {@code Minecraft.pauseGame} which goes through
+ *       {@code setScreen}, and NeoForge fires the cancellable {@code ScreenEvent.Opening} from
+ *       {@code setScreen} <em>before</em> the screen is installed (and before the release-everything
+ *       part runs). Cancelling that for a {@link PauseScreen} while the wheel is up closes the wheel and
+ *       never installs the pause menu. {@code pauseGame} pauses the sound <em>after</em> {@code setScreen}
+ *       returns, so the next client tick resumes it; without that the game would fall silent after one
+ *       Escape.</li>
+ * </ul>
+ *
+ * <p>Everything else passes through untouched: movement, attack, use, inventory, chat, {@code F3} —
+ * no other key is intercepted, which is the spec's requirement.
  *
  * <h2>Why the clock is wall-clock milliseconds</h2>
  * The 200 ms hold threshold is a duration a human feels, so it must not be counted in game ticks: a
@@ -53,9 +90,9 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code consumeClick()} is consumed by vanilla on the next tick and, while a screen is open, vanilla
  * never even records the click — the press and the release of the gesture would then be seen on
  * different ticks, or not at all. {@code InputEvent.Key} is fired from {@code KeyboardHandler} for
- * every physical key event on both edges, screen or no screen, which is exactly what a press/release
- * gesture needs. The {@link KeyMapping} is still consulted, through {@link ClientKeyBindings#matches},
- * so a rebound key works.
+ * every physical key event on both edges, which is exactly what a press/release gesture needs. The
+ * {@link KeyMapping} is still consulted, through {@link ClientKeyBindings#matches}, so a rebound key
+ * works.
  *
  * <h2>What this class does not do</h2>
  * It never decides whether a cast is allowed: it sends a slot number and the server answers
@@ -70,13 +107,33 @@ public final class ClientEvents {
     /** The HUD layer's id, and the fact that it draws just above vanilla's hotbar layer. */
     private static final ResourceLocation HUD_LAYER = InternalIds.id("ub_hud");
 
+    /** The wheel overlay's id: above the HUD layer, so the wheel is never painted under the gauge. */
+    private static final ResourceLocation WHEEL_LAYER = InternalIds.id("ub_wheel");
+
     private static final WheelInputMachine MACHINE = new WheelInputMachine();
+
+    /** The pick state of the wheel that is up: flick accumulation and the selected segment. */
+    private static final WheelSession SESSION = new WheelSession();
+
+    /** Whether the camera has been sampled yet for the wheel that is currently up. */
+    private static boolean cameraSampled;
+
+    /** Camera orientation when the wheel was opened, and each tick after that. */
+    private static float lastYaw;
+    private static float lastPitch;
+
+    /**
+     * Set when Escape's pause menu is suppressed: {@code Minecraft.pauseGame} pauses the sound
+     * <em>after</em> {@code setScreen} returns, so the resume has to happen on a later tick.
+     */
+    private static boolean resumeSoundNextTick;
 
     private ClientEvents() {
     }
 
     /**
-     * Wires the client half: key binding and HUD layer on the mod bus, input and tick on the game bus.
+     * Wires the client half: key binding, HUD and overlay layers on the mod bus, input and tick on the
+     * game bus.
      *
      * <p>Called only from a {@code Dist.CLIENT} branch in {@code Astrum}, so no client class is ever
      * loaded on a dedicated server (spec §7 端隔离).
@@ -87,28 +144,52 @@ public final class ClientEvents {
         modBus.addListener(RegisterKeyMappingsEvent.class, ClientKeyBindings::onRegisterKeyMappings);
         modBus.addListener(RegisterGuiLayersEvent.class, ClientEvents::onRegisterGuiLayers);
         NeoForge.EVENT_BUS.addListener(InputEvent.Key.class, ClientEvents::onKey);
+        NeoForge.EVENT_BUS.addListener(ClientTickEvent.Pre.class, ClientEvents::onClientTickPre);
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Post.class, ClientEvents::onClientTick);
-        Astrum.LOGGER.info("astrum: client UB input wired (press/hold/release {}, threshold {} ms)",
+        NeoForge.EVENT_BUS.addListener(ScreenEvent.Opening.class, ClientEvents::onScreenOpening);
+        Astrum.LOGGER.info(
+                "astrum: client UB input wired (press/hold/release {}, threshold {} ms, wheel on a GUI layer)",
                 ClientKeyBindings.UB_WHEEL_KEY, WheelInputMachine.HOLD_THRESHOLD_MILLIS);
     }
 
     private static void onRegisterGuiLayers(RegisterGuiLayersEvent event) {
         event.registerAbove(VanillaGuiLayers.HOTBAR, HUD_LAYER, UbHud::render);
-        Astrum.LOGGER.info("astrum: UB HUD layer registered above the hotbar ({})", HUD_LAYER);
+        event.registerAbove(HUD_LAYER, WHEEL_LAYER, WheelOverlay::render);
+        Astrum.LOGGER.info("astrum: UB layers registered above the hotbar ({}, then {})",
+                HUD_LAYER, WHEEL_LAYER);
     }
 
     /**
-     * One physical key event, press or release, screen or no screen.
+     * One physical key event, press, repeat or release.
      *
-     * <p>Presses are ignored while another GUI is open — the inventory's keys are not ours to take —
-     * but releases are always delivered, because a press that armed the machine before the GUI opened
-     * still has to settle, and settling is what prevents a stuck {@code PENDING} state.
+     * <p>Presses of other keys are ignored while another GUI is open — the inventory's keys are not
+     * ours to take — but releases are always delivered, because a press that armed the machine before
+     * the GUI opened still has to settle, and settling is what prevents a stuck {@code PENDING} state.
+     *
+     * <p>While the wheel is up, two keys are consumed here: {@code 1}–{@code 5} become a slot pick
+     * ({@link WheelDigits}), and {@code Esc} closes the wheel. The {@code Esc} case is a fallback —
+     * normally {@link #onScreenOpening} has already closed the wheel while cancelling the pause menu —
+     * and it costs nothing when it is not needed, because closing is derived from the machine state.
      */
     static void onKey(InputEvent.Key event) {
+        int action = event.getAction();
+        boolean down = action != InputConstants.RELEASE;
+
+        if (down && MACHINE.capturesHotbarDigits()) {
+            int digit = WheelDigits.digitForKey(event.getKey());
+            if (digit != WheelDigits.NO_DIGIT) {
+                onWheelDigit(digit);
+                return;
+            }
+            if (event.getKey() == GLFW.GLFW_KEY_ESCAPE) {
+                closeOverlay("escape");
+                return;
+            }
+        }
+
         if (!ClientKeyBindings.matches(event.getKey(), event.getScanCode())) {
             return;
         }
-        int action = event.getAction();
         if (action == InputConstants.PRESS) {
             onPress();
         } else if (action == InputConstants.RELEASE) {
@@ -125,8 +206,7 @@ public final class ClientEvents {
         if (minecraft.player == null || minecraft.level == null) {
             return;
         }
-        Screen open = minecraft.screen;
-        if (open != null && !(open instanceof WheelScreen)) {
+        if (minecraft.screen != null) {
             // Somebody else's GUI owns the keyboard; V is not ours until it closes.
             return;
         }
@@ -134,8 +214,37 @@ public final class ClientEvents {
     }
 
     /**
-     * One client tick: the only place the hold threshold can be crossed, and the home of the refusal
-     * sound.
+     * The start of a client tick: the one point that is <b>before</b> vanilla's own key handling.
+     *
+     * <p>Vanilla's {@code Minecraft.tick} runs {@code handleKeybinds()} (which switches the hotbar slot
+     * for a queued digit click) later in the same tick, and {@code ClientTickEvent.Pre} is posted at the
+     * very top of it. So the two things that have to win against vanilla live here: draining the hotbar
+     * digits while the wheel is up, and noticing that the world the wheel was opened in is gone.
+     */
+    static void onClientTickPre(ClientTickEvent.Pre event) {
+        if (resumeSoundNextTick) {
+            resumeSoundNextTick = false;
+            Minecraft.getInstance().getSoundManager().resume();
+            Astrum.LOGGER.debug("astrum: sound resumed after a suppressed pause menu");
+        }
+        if (!MACHINE.capturesHotbarDigits()) {
+            return;
+        }
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == null || minecraft.level == null
+                || minecraft.getConnection() == null || minecraft.screen != null) {
+            // Left the world, disconnected, or a GUI took over without going through the opening event:
+            // the overlay must not survive any of those.
+            closeOverlay("the world went away");
+            return;
+        }
+        drainHotbarClicks(minecraft);
+        sampleCamera(minecraft);
+    }
+
+    /**
+     * One client tick's end: the only place the hold threshold can be crossed, and the home of the
+     * refusal sound.
      *
      * <p>The sound is played here, not from the HUD layer, so it is audible whether or not the optional
      * HUD is on and whether or not {@code F1} is hiding the overlay ({@link RefusalSound} explains why
@@ -158,10 +267,32 @@ public final class ClientEvents {
     }
 
     /**
-     * A hotbar digit pressed while the wheel is up.
+     * A screen is about to open: the wheel must not survive it, and Escape must not open the pause menu.
      *
-     * <p>Reached only from {@link WheelScreen}, which asks {@link WheelInputMachine#capturesHotbarDigits()}
-     * first — the single place that rule lives.
+     * <p>Escape reaches vanilla before any mod's key listener, and vanilla's answer is
+     * {@code pauseGame → setScreen(new PauseScreen(...))}. NeoForge fires this cancellable event from
+     * {@code setScreen} <em>before</em> the screen is installed, which makes it the one place the pause
+     * menu can be refused without a {@code Screen} ever being set — and therefore without
+     * {@code KeyMapping.releaseAll()} running (spec §5.5).
+     *
+     * @param event the cancellable opening event
+     */
+    static void onScreenOpening(ScreenEvent.Opening event) {
+        if (!MACHINE.capturesHotbarDigits()) {
+            return;
+        }
+        boolean pauseMenu = event.getNewScreen() instanceof PauseScreen;
+        closeOverlay(pauseMenu ? "escape (pause menu suppressed)" : "another screen opened");
+        if (pauseMenu) {
+            event.setCanceled(true);
+            // pauseGame() pauses the sound after setScreen returns; undo that on the next tick, or one
+            // Escape would leave the game silent.
+            resumeSoundNextTick = true;
+        }
+    }
+
+    /**
+     * A hotbar digit pressed while the wheel is up.
      *
      * @param slot1to5 the digit the player pressed, {@code 1}–{@code 5}
      */
@@ -169,30 +300,14 @@ public final class ClientEvents {
         act(MACHINE.onDigit(slot1to5));
     }
 
-    /**
-     * The wheel screen was closed by something other than this class (Escape, a disconnect).
-     *
-     * <p>The decision is deliberately discarded: the screen is already gone, so all that is left is
-     * to put the machine back in {@code IDLE} — otherwise {@code capturesHotbarDigits()} would keep
-     * claiming the digits after the wheel had vanished.
-     */
-    static void onWheelScreenClosed() {
-        if (MACHINE.state() == State.WHEEL) {
-            MACHINE.onRelease(nowMillis());
-        }
-        // Nothing was recorded while a screen was open, but clear anyway: a click queued in the tick
-        // the wheel closed would change the player's hotbar slot for no reason they asked for.
-        Minecraft minecraft = Minecraft.getInstance();
-        for (KeyMapping hotbar : minecraft.options.keyHotbarSlots) {
-            while (hotbar.consumeClick()) {
-                // drain
-            }
-        }
-    }
-
-    /** {@return the machine, for the wheel screen's hotbar-capture question} */
+    /** {@return the machine, for the overlay's "is the wheel up?" question} */
     static WheelInputMachine machine() {
         return MACHINE;
+    }
+
+    /** {@return the pick state of the wheel that is up, read by {@link WheelOverlay}} */
+    static WheelSession session() {
+        return SESSION;
     }
 
     /**
@@ -206,9 +321,9 @@ public final class ClientEvents {
             case OPEN_WHEEL -> openWheel();
             case CAST_SLOT -> {
                 castDigit();
-                closeWheel();
+                teardown("digit cast");
             }
-            case CLOSE -> closeWheel();
+            case CLOSE -> teardown("release key");
             case NONE -> {
                 // nothing to do
             }
@@ -232,25 +347,110 @@ public final class ClientEvents {
                         + WheelSlots.FIRST_DIGIT + "–" + WheelSlots.LAST_DIGIT + ")")));
     }
 
+    /**
+     * The wheel is up: nothing to install, because it is drawn from {@link #machine()} state.
+     *
+     * <p>The only work is resetting the pick state, so the wheel always opens with no sector selected
+     * and with the camera baseline taken fresh — otherwise the tick that ran between opening and the
+     * first sample would count as a flick.
+     */
     private static void openWheel() {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.player == null) {
-            return;
-        }
-        if (minecraft.screen != null) {
+        if (minecraft.player == null || minecraft.level == null || minecraft.screen != null) {
             // Something took the screen between the press and the threshold; keep the world as it is.
             MACHINE.onRelease(nowMillis());
             return;
         }
-        minecraft.setScreen(new WheelScreen());
-        Astrum.LOGGER.debug("astrum: UB wheel opened (preset {})", WheelPreset.slot());
+        SESSION.reset();
+        cameraSampled = false;
+        Astrum.LOGGER.debug("astrum: UB wheel opened as an overlay (screen={}, preset {})",
+                minecraft.screen, WheelPreset.slot());
     }
 
-    private static void closeWheel() {
+    /**
+     * Closes the wheel from outside the gesture machine (Escape, another GUI, the world going away).
+     *
+     * <p>Idempotent by construction: it does nothing at all unless the wheel is really up, and "the
+     * wheel is up" is the machine's own state. So two close paths firing in the same tick (Escape's
+     * cancelled pause menu, then the key event that followed it) produce <b>one</b> machine reset and
+     * one teardown, not two.
+     *
+     * @param reason short description for the log, e.g. {@code "escape"}
+     */
+    private static void closeOverlay(String reason) {
+        if (!MACHINE.capturesHotbarDigits()) {
+            return;
+        }
+        // The decision is deliberately discarded: the overlay is going away anyway, and a CLOSE that
+        // nobody asked for must not become a cast.
+        MACHINE.onRelease(nowMillis());
+        teardown(reason);
+    }
+
+    /** The single teardown every close path goes through: forget the pick state, drop queued digits. */
+    private static void teardown(String reason) {
+        SESSION.reset();
+        cameraSampled = false;
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.screen instanceof WheelScreen) {
-            minecraft.setScreen(null);
-            Astrum.LOGGER.debug("astrum: UB wheel closed (preset {})", WheelPreset.slot());
+        if (minecraft.player != null) {
+            drainHotbarClicks(minecraft);
+        }
+        Astrum.LOGGER.debug("astrum: UB wheel overlay closed ({}, preset {})", reason,
+                WheelPreset.slot());
+    }
+
+    /**
+     * Throws away hotbar slot clicks for {@code 1}–{@code 5} while the wheel is up (spec §5.5:
+     * 屏蔽 {@code 1}–{@code 5} 的快捷栏切换).
+     *
+     * <p>Vanilla queues a click in {@code KeyboardHandler.keyPress} and turns it into
+     * {@code inventory.selected = i} in {@code Minecraft.handleKeybinds}. Both happen before any mod's
+     * key listener is notified, so the only place to win is between them: the client tick's start. The
+     * click is dropped, the <em>key event</em> is not, so the wheel still receives its pick.
+     *
+     * <p>Only the first five of the nine hotbar mappings are drained: {@code 6}–{@code 9} are not wheel
+     * digits, and spec §5.5 allows exactly one interception (其余键位一概放行).
+     */
+    private static void drainHotbarClicks(Minecraft minecraft) {
+        for (int slot = 0; slot < WheelSlots.LAST_DIGIT; slot++) {
+            KeyMapping hotbarSlot = minecraft.options.keyHotbarSlots[slot];
+            while (hotbarSlot.consumeClick()) {
+                // intentionally emptied: while the wheel is up a digit picks a segment, not a slot
+            }
+        }
+    }
+
+    /**
+     * Feeds one tick of camera movement to {@link WheelSession}, which turns its direction into a pick.
+     *
+     * <p>The cursor is {@code GLFW_CURSOR_DISABLED} in game and {@code MouseHandler}'s accumulators are
+     * private, so the game's own record of the mouse movement is the camera turn: vanilla rotates the
+     * player by exactly the accumulated mouse delta, scaled by the player's sensitivity. Direction is
+     * all {@link WheelFlick} needs, so the scaling drops out.
+     *
+     * <p>The first tick after opening only records the baseline: movement that happened before the wheel
+     * was up must not count as a flick.
+     */
+    private static void sampleCamera(Minecraft minecraft) {
+        LocalPlayer player = minecraft.player;
+        float yaw = player.getYRot();
+        float pitch = player.getXRot();
+        if (!cameraSampled) {
+            cameraSampled = true;
+            lastYaw = yaw;
+            lastPitch = pitch;
+            return;
+        }
+        double deltaYaw = WheelFlick.yawDelta(lastYaw, yaw);
+        double deltaPitch = (double) pitch - (double) lastPitch;
+        lastYaw = yaw;
+        lastPitch = pitch;
+
+        int picked = SESSION.accept(deltaYaw, deltaPitch);
+        if (picked != WheelGeometry.NO_SEGMENT && ClientPartyCache.slot(picked).isPresent()) {
+            WheelPreset.select(picked);
+            Astrum.LOGGER.debug("astrum: wheel preset -> {} (flick {}°, {}°)", picked,
+                    Math.round(deltaYaw), Math.round(deltaPitch));
         }
     }
 
@@ -282,6 +482,4 @@ public final class ClientEvents {
     private static long nowMillis() {
         return System.nanoTime() / 1_000_000L;
     }
-
-
 }

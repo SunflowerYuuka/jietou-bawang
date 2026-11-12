@@ -66,6 +66,14 @@ public final class ClientConfig {
         /** Player-side opt-in for using the mouse wheel to change preset while the wheel is open. */
         public final ModConfigSpec.BooleanValue enableScrollSwitching;
 
+        /**
+         * Layout of the wheel (spec §5.5): a hollow {@code RING} or one complete {@code DISC}.
+         *
+         * <p>Read lazily at draw time like the other wheel values, so switching it in the config
+         * screen changes the next frame instead of the next launch.
+         */
+        public final ModConfigSpec.EnumValue<WheelMode> wheelMode;
+
         /** Ring radius as a fraction of screen height (spec §5.5: 20–33%, default 27%). */
         public final ModConfigSpec.DoubleValue wheelScale;
 
@@ -84,6 +92,10 @@ public final class ClientConfig {
             wheelOpacity = builder
                     .comment(" 环带背景透明度（规格 0.45 ~ 0.70，默认 0.55）；图标与文字不受影响")
                     .defineInRange("wheelOpacity", 0.55, 0.0, 1.0);
+            wheelMode = builder
+                    .comment(" 轮盘布局：DISC = 中心填充的完整圆盘（默认），RING = 中心镂空、只画环带",
+                            " 两种模式选择逻辑完全一致，都保留中心死区；RING 露出更多战场视野")
+                    .defineEnum("wheelMode", WheelMode.DISC);
             builder.pop();
         }
     }

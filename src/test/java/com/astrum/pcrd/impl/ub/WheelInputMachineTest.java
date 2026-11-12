@@ -2,6 +2,7 @@ package com.astrum.pcrd.impl.ub;
 
 import com.astrum.pcrd.impl.ub.WheelInputMachine.Decision;
 import com.astrum.pcrd.impl.ub.WheelInputMachine.State;
+import java.util.Optional;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -67,5 +68,35 @@ class WheelInputMachineTest {
         assertEquals(Decision.CLOSE, m.onRelease(1300));
         assertEquals(State.IDLE, m.state());
         assertTrue(m.castSlot().isEmpty(), "a closed gesture must not leave a slot to cast");
+    }
+
+    /**
+     * A close is exactly one transition: a second release finds nothing to do.
+     *
+     * <p>This is what lets the overlay derive "is it up?" from this machine alone. Several close paths
+     * can fire in the same tick — Escape's cancelled pause menu (a {@code ScreenEvent}) and the key event
+     * that follows it, a digit cast and a tick that notices the world went away — and each of them ends
+     * in {@code onRelease}. If a repeat release moved the machine again, or reported a second
+     * {@link Decision#CLOSE}, the overlay would tear down twice and a later gesture could be swallowed.
+     */
+    @Test void aSecondReleaseAfterTheWheelClosedIsNothing() {
+        var m = new WheelInputMachine();
+        m.onPress(1000);
+        m.poll(1300);
+        assertEquals(Decision.CLOSE, m.onRelease(1400));
+        assertEquals(Decision.NONE, m.onRelease(1401), "the second close path must find nothing to do");
+        assertEquals(State.IDLE, m.state());
+        assertFalse(m.capturesHotbarDigits());
+    }
+
+    /** The same for the digit path: one pick, one cast slot, and nothing left over afterwards. */
+    @Test void aSecondReleaseAfterADigitCastIsNothing() {
+        var m = new WheelInputMachine();
+        m.onPress(1000);
+        m.poll(1300);
+        assertEquals(Decision.CAST_SLOT, m.onDigit(2));
+        assertEquals(Decision.NONE, m.onRelease(1400));
+        assertEquals(State.IDLE, m.state());
+        assertEquals(Optional.of(2), m.castSlot(), "the pick is still readable, but the wheel is down");
     }
 }

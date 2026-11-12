@@ -125,6 +125,8 @@ class ConfigDefaultsTest {
         // Spec §5.5/§8.3 after the 2026-11-12 playtest: 0.27 radius (was 0.40), 0.55 alpha (was 0.30).
         assertEquals(0.27, toml.<Number>get("wheel.wheelScale").doubleValue(), 1e-9);
         assertEquals(0.55, toml.<Number>get("wheel.wheelOpacity").doubleValue(), 1e-9);
+        // The player picks the layout (spec §5.5); the shipped default is the filled disc the human chose.
+        assertEquals("DISC", toml.get("wheel.wheelMode"));
         assertEquals(false, toml.get("camera.ubCameraPush"));
 
         // [hud] holds spec §7's "位置可配置、可整体关闭" — not in §8.3's sketch, added with the HUD itself.

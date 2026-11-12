@@ -11,10 +11,17 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <h2>Why this test exists at all</h2>
  * Four of the spec's requirements are claims about pixels that a screenshot can only illustrate, never
  * prove: ring radius 20–33% of screen height (default 27%), band width 6–10% (default 8%, so the drawn
- * annulus is 0.23–0.31 of the height), interior completely empty, and a hover that resolves to exactly
- * one segment. All four are functions here, so all four are assertions: a screen height in, a
- * measurable radius out; a mouse position in, a segment (or none) out. What is <b>not</b> covered — how
- * it looks, whether it reads well — is left to a human, deliberately.
+ * band is 0.23–0.31 of the height), a selection that resolves to exactly one segment (or none), and —
+ * since the wheel got its two layouts — where a sector's <em>centroid</em> is. All of them are functions
+ * here, so all of them are assertions: a screen height in, a measurable radius out; a position in, a
+ * segment (or none) out. What is <b>not</b> covered — how it looks, whether it reads well — is left to a
+ * human, deliberately.
+ *
+ * <p>"The interior is empty" is <b>not</b> asserted here and never was: it is a {@code RING}-only
+ * statement about painting, and the overlay fills the middle in {@code DISC} (spec §5.5). What is
+ * asserted, in both modes, is that the interior answers {@link WheelGeometry#NO_SEGMENT} — the centre
+ * dead zone — because that is what keeps the preset from flickering when the player moves through the
+ * middle. Painting is not selecting.
  *
  * <p>The numbers below are the post-playtest ones (spec §5.5, 2026-11-12): the first cut's 0.40 radius
  * and 0.12 band were reported as about 1.5× too large, and 0.30 alpha as nearly invisible. Every
@@ -44,17 +51,16 @@ class WheelGeometryTest {
     }
 
     /**
-     * The annulus that actually gets drawn at the default, as a fraction of the screen height.
+     * The band that actually gets drawn at the default, as a fraction of the screen height.
      *
      * <p>This is the shape the human asked for after seeing the first cut (spec §5.5): a mid radius of
      * 27%, an 8% band, so the band occupies 23–31% of the height — and the whole outer edge (plus the
-     * 1 px outline) still on screen, i.e. inside half the height and half the width. The interior it
-     * leaves, 23% of the height in every direction, is the thing kept empty for the crosshair; the last
-     * assertion pins that the empty hole is far larger than the band, so a "fat ring with a pinhole"
+     * 1 px outline) still on screen, i.e. inside half the height and half the width. The band is common
+     * to both layouts; last assertion pins that it is far thinner than the radius, so a "fat ring"
      * cannot pass as this shape.
      */
     @Test
-    void drawnAnnulusAtTheDefaultIsAThinRingLeavingTheCentreOpen() {
+    void drawnBandAtTheDefaultIsAThinBand() {
         WheelGeometry.Ring ring = defaultRing();
 
         assertEquals(0.27, ring.midRadius() / HEIGHT, 1e-9, "mid radius is 27% of the height");
@@ -65,8 +71,8 @@ class WheelGeometryTest {
         assertTrue(ring.outerRadius() <= HEIGHT / 2.0, "the outer edge stays on screen vertically");
         assertTrue(ring.outerRadius() <= WIDTH / 2.0, "the outer edge stays on screen horizontally");
         assertTrue(ring.innerRadius() > ring.bandWidth() * 2.0,
-                "the empty interior must dominate the band: " + ring.innerRadius()
-                        + " px of hole vs " + ring.bandWidth() + " px of band");
+                "the centre region must dominate the band: " + ring.innerRadius()
+                        + " px of centre vs " + ring.bandWidth() + " px of band");
     }
 
     @Test
@@ -134,10 +140,12 @@ class WheelGeometryTest {
     }
 
     /**
-     * Spec §5.5: 环内区域完全留空 — the crosshair and the enemy behind it must stay uncovered.
+     * The <b>centre dead zone</b>, in both layouts: the middle belongs to nobody (spec §5.5).
      *
-     * <p>The assertion is that the region answers "no segment", which is exactly what the screen uses
-     * to decide whether anything is hovered or drawn there.
+     * <p>This assertion is deliberately independent of whether the middle is painted. {@code DISC}
+     * paints it; {@code RING} leaves it clear; both must answer {@code NO_SEGMENT} there, or moving
+     * through the centre would shuffle the preset. {@code WheelGeometry.segmentAt} is the rule the
+     * overlay uses for selection, so it is the rule tested.
      */
     @Test
     void interiorAnswersNoSegment() {
@@ -148,6 +156,69 @@ class WheelGeometryTest {
                 WheelGeometry.segmentAt(ring, WIDTH / 2.0, HEIGHT / 2.0 - ring.innerRadius() + 0.01));
         assertEquals(WheelGeometry.NO_SEGMENT,
                 WheelGeometry.segmentAt(ring, WIDTH / 2.0 - ring.midRadius() * 0.5, HEIGHT / 2.0));
+    }
+
+    /**
+     * The two layouts differ only in where the plate starts (spec §5.5).
+     *
+     * <p>{@code DISC} fills the whole sector down to the centre, {@code RING} starts at the band's inner
+     * edge. The band itself — {@code innerRadius..outerRadius} — is identical in both, which is why the
+     * ring does not move when the player switches mode.
+     */
+    @Test
+    void thePlateStartsAtTheCentreForDiscAndAtTheBandForRing() {
+        WheelGeometry.Ring ring = defaultRing();
+        assertEquals(0.0, WheelGeometry.plateInnerRadius(ring, true), 1e-9,
+                "DISC: one complete disc, sectors reach the centre");
+        assertEquals(ring.innerRadius(), WheelGeometry.plateInnerRadius(ring, false), 1e-9,
+                "RING: the plate is the band, so the middle stays clear");
+    }
+
+    /**
+     * {@code DISC} puts each sector's icon and label at that sector's <b>centroid</b> (spec §5.5:
+     * 扇形自身的中心点, `(2/3)·R·sinα/α`).
+     *
+     * <p>Pinned as the formula's value at this wheel's sector angle (α = 36° → ≈ 0.6237 R, not 0.5 R),
+     * then per sector: right distance, right bisector. The distinction matters because 0.5 R is the
+     * {@code RING} band's mid radius in disguise — a "centroid" that silently equalled it would make the
+     * two layouts look identical at the centre and be impossible to spot without eyes.
+     */
+    @Test
+    void discIconsSitAtTheSectorCentroid() {
+        WheelGeometry.Ring ring = defaultRing();
+        double expectedFraction = (2.0 / 3.0) * Math.sin(Math.toRadians(36.0)) / Math.toRadians(36.0);
+        assertEquals(expectedFraction, WheelGeometry.centroidRadiusFraction(), 1e-12);
+        assertEquals(0.6237, WheelGeometry.centroidRadiusFraction(), 1e-4);
+        assertEquals(ring.outerRadius() * expectedFraction, WheelGeometry.centroidRadius(ring), 1e-9);
+        assertTrue(WheelGeometry.centroidRadius(ring) > 0.6 * ring.outerRadius()
+                        && WheelGeometry.centroidRadius(ring) < 0.65 * ring.outerRadius(),
+                "the centroid is near 0.62 R, not the 0.5 R halfway point and not the band's 0.87 R");
+
+        for (int slot = 0; slot < WheelGeometry.SEGMENTS; slot++) {
+            double dx = WheelGeometry.segmentCentroidX(ring, slot) - ring.centerX();
+            double dy = WheelGeometry.segmentCentroidY(ring, slot) - ring.centerY();
+            assertEquals(expectedFraction * ring.outerRadius(), Math.sqrt(dx * dx + dy * dy), 1e-9,
+                    "slot " + slot + " must sit at the centroid radius");
+            // clockwiseDegreesFromUp answers in (-180, 180], so normalise before comparing angles.
+            double degrees = WheelGeometry.clockwiseDegreesFromUp(dx, dy);
+            double normalised = (degrees % 360.0 + 360.0) % 360.0;
+            assertEquals(slot * WheelGeometry.sectorDegrees(), normalised, 1e-9,
+                    "slot " + slot + " must sit on its own bisector");
+            assertEquals(slot, WheelGeometry.segmentAtAngle(degrees),
+                    "and that direction must select it, which is what the overlay does");
+        }
+    }
+
+    /** The formula is the textbook one: it tends to 2/3 R as the sector narrows, and is not 1/2. */
+    @Test
+    void theCentroidFormulaIsTheRealOne() {
+        assertEquals(2.0 / 3.0, WheelGeometry.centroidRadiusFraction(1.0e-4), 1e-6);
+        assertEquals(0.66663, WheelGeometry.centroidRadiusFraction(1.0), 1e-4);
+        assertEquals(0.42441, WheelGeometry.centroidRadiusFraction(90.0), 1e-4);
+        assertEquals(2.0 / 3.0 * Math.sin(Math.PI / 2.0) / (Math.PI / 2.0),
+                WheelGeometry.centroidRadiusFraction(90.0), 1e-12);
+        assertTrue(WheelGeometry.centroidRadiusFraction(36.0) < WheelGeometry.centroidRadiusFraction(10.0),
+                "a wider sector pulls its centroid inwards");
     }
 
     @Test

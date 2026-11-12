@@ -3,6 +3,5 @@
   "death.attack.astrum.hook_damage.player": "%1$s was cut down by %2$s",
   "death.attack.astrum.hook_damage.item": "%1$s was cut down by %2$s using %3$s",
   "key.categories.astrum": "Astrum",
-  "key.astrum.ub_wheel": "UB cast / wheel (hold)",
-  "screen.astrum.ub_wheel": "Ultimate Burst"
+  "key.astrum.ub_wheel": "UB cast / wheel (hold)"
 }

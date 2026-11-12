@@ -13,7 +13,7 @@ import org.jetbrains.annotations.ApiStatus;
  * <ul>
  *   <li><b>Digits, 1–5</b> — what the player presses. {@code WheelInputMachine.onDigit} keeps that
  *       convention (its name and its tests say {@code 1..5}), and so does
- *       {@code WheelScreen.hotbarDigit}.</li>
+ *       {@code impl.client.WheelDigits}, which decides which raw key codes are wheel digits.</li>
  *   <li><b>Slots, 0–4</b> — the party index, which is also the wheel position and the number on the
  *       wire ({@code UbCastPayload}), and the only thing {@code UbService} and {@code Party} accept.
  *       Hover and tap-cast are 0-based already.</li>

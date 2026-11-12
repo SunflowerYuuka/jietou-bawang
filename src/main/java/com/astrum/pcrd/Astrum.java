@@ -31,7 +31,7 @@ public final class Astrum {
         Attachments.register(modBus);
         AstrumNetwork.register(modBus);
         CombatEvents.register();
-        // The client half — key binding, wheel screen, HUD — lives in impl.client and is only reached
+        // The client half — key binding, wheel overlay, HUD — lives in impl.client and is only reached
         // from this branch, so no client class is ever loaded on a dedicated server (spec §7 端隔离).
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientEvents.register(modBus);
