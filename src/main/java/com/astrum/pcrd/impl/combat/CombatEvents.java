@@ -8,6 +8,7 @@ import com.astrum.pcrd.impl.InternalIds;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
+import com.astrum.pcrd.impl.config.Balance;
 import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.ub.UbCharge;
 import java.util.ArrayList;
@@ -137,6 +138,7 @@ public final class CombatEvents {
         DamageSource source = event.getSource();
         ResourceLocation typeId = damageTypeId(source);
         LandedHit.Plan plan = LandedHit.plan(typeId);
+        float dealt = 0.0F;
 
         if (plan.creditsCharge()) {
             float credited = creditedDamage(target, applied);
@@ -148,6 +150,7 @@ public final class CombatEvents {
                     credit(attacker, credited * ServerConfig.UB.ubChargePerDamage.get());
                 }
             }
+            dealt = credited;
         }
 
         if (!plan.runsHooks()) {
@@ -156,7 +159,7 @@ public final class CombatEvents {
             return;
         }
         if (source.getEntity() instanceof ServerPlayer attacker && attacker != target) {
-            queue(attacker, target, source);
+            queue(attacker, target, source, dealt);
         }
     }
 
@@ -257,21 +260,53 @@ public final class CombatEvents {
         }
     }
 
-    private void queue(ServerPlayer attacker, LivingEntity target, DamageSource source) {
+    private void queue(ServerPlayer attacker, LivingEntity target, DamageSource source, float dealt) {
         DamageBatch batch = new DamageBatch();
-        collect(attacker, target, source, batch);
+        collect(attacker, target, source, dealt, batch);
         if (batch.isEmpty()) {
             return;
         }
-        PendingKey key = new PendingKey(attacker.getUUID(), target.getUUID());
+        merge(new PendingKey(attacker.getUUID(), target.getUUID()),
+                new Pending(attacker, target, batch));
+    }
+
+    /**
+     * Adds a batch to the end-of-tick queue, merging into whatever is already queued for the same
+     * (attacker, target) pair.
+     *
+     * <p>Merging rather than overwriting is what makes "same tick" literal for the whole pipeline, not
+     * just for {@code extra_damage}: two hits on one target in one tick, and a splash from a third hit
+     * elsewhere, all end in one {@code hurt()} per damage type (spec §5.1 rule 3).
+     */
+    private void merge(PendingKey key, Pending fresh) {
         Pending already = pending.get(key);
         if (already == null) {
-            pending.put(key, new Pending(attacker, target, batch));
-        } else {
-            for (DamageBatch.Entry entry : batch.entries()) {
-                already.batch().add(entry.type(), entry.amount());
-            }
+            pending.put(key, fresh);
+            return;
         }
+        for (DamageBatch.Entry entry : fresh.batch().entries()) {
+            already.batch().add(entry.type(), entry.amount());
+        }
+    }
+
+    /**
+     * Queues damage from an effect that hits a <b>different</b> entity — {@code splash} and
+     * {@code detonate}'s radius (see {@link DamageToTarget} for why it cannot be a nested
+     * {@code hurt()}).
+     *
+     * <p>Same queue, same flush, same fuse as the hit's own attachment damage: the target of the splash
+     * gets one {@code hurt()} per damage type at the end of the tick, and because the damage type is
+     * {@code astrum:hook_damage} it will not re-enter hook evaluation.
+     */
+    private void queueDamage(ServerPlayer attacker, LivingEntity target, ResourceLocation type,
+            float amount) {
+        if (!(amount > 0.0F) || target.isRemoved() || !target.isAlive()) {
+            return;
+        }
+        DamageBatch batch = new DamageBatch();
+        batch.add(type, amount);
+        merge(new PendingKey(attacker.getUUID(), target.getUUID()),
+                new Pending(attacker, target, batch));
     }
 
     /** Drops all per-session state when the world goes away, so nothing survives a restart. */
@@ -298,7 +333,8 @@ public final class CombatEvents {
      * {@code IllegalStateException} in that state, and an exception escaping here would land in the
      * middle of a damage sequence.
      */
-    private void collect(ServerPlayer attacker, LivingEntity target, DamageSource source, DamageBatch batch) {
+    private void collect(ServerPlayer attacker, LivingEntity target, DamageSource source, float dealt,
+            DamageBatch batch) {
         Optional<Registry<CharacterDef>> characters = AstrumApi.characters();
         if (characters.isEmpty()) {
             return;   // no world loaded: nothing to read
@@ -325,7 +361,12 @@ public final class CombatEvents {
             warnQuarantined(attacker);
         }
 
-        HookEvaluator.Hit hit = new HookEvaluator.Hit(attacker, target, source);
+        // The hit, once; each wheel slot derives its own view (multiplier + character attribution).
+        // The area_charge sink is the Task 11 seam and is constructed in exactly one place.
+        HookContext hit = new HookContext(attacker, target, source, dealt,
+                Balance.MAX_MULTIPLIER, NO_CHARACTER, batch,
+                (other, type, amount) -> queueDamage(attacker, other, type, amount),
+                AreaChargeSink.DIRECT);
         for (int slot = 0; slot < Party.SLOTS; slot++) {
             Optional<ResourceLocation> slotValue = party.slots().get(slot);
             if (slotValue.isEmpty()) {
@@ -339,7 +380,7 @@ public final class CombatEvents {
             if (def == null) {
                 continue;   // the pack no longer defines it; PartyMultipliers already ranks it neutral
             }
-            HookEvaluator.evaluate(def, multipliers[slot], hit, batch);
+            HookEvaluator.evaluate(def, hit.forSlot(multipliers[slot], characterId));
         }
     }
 

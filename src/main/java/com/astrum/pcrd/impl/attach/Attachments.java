@@ -1,6 +1,7 @@
 package com.astrum.pcrd.impl.attach;
 
 import com.astrum.pcrd.Astrum;
+import com.astrum.pcrd.impl.combat.StackTable;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.attachment.AttachmentType;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -9,12 +10,14 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Registration of the three player-state attachments.
+ * Registration of the four attachment types: three persistent player-state ones and one runtime-only
+ * stack cache.
  *
- * <h2>Why three types and not one big object</h2>
+ * <h2>Why the three player-state types are separate and not one big object</h2>
  * Sync frequency. {@link UbState} changes every tick; {@link Roster} changes a handful of times per
  * session. One combined attachment would re-serialize the whole character book on every charge
- * tick. Spec §4.3 makes the split a requirement, not a preference.
+ * tick. Spec §4.3 makes the split a requirement, not a preference. {@link #STACK} is a fourth type
+ * for a different reason again — it is not player state at all, and it is never written to disk.
  *
  * <h2>Where the state actually lives</h2>
  * On the player entity ({@code ServerPlayer}) — so it is written to {@code playerdata/<uuid>.dat}
@@ -121,6 +124,29 @@ public final class Attachments {
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<UbState>> UB_STATE =
             ATTACHMENT_TYPES.register("ub_state",
                     () -> AttachmentType.builder(UbState::fresh).serialize(UbState.CODEC).build());
+
+    /**
+     * The stack state of one target entity, keyed by (attacker uuid, stack kind) (spec §4.4).
+     *
+     * <h2>{@code serialize = false}, and it is not a .build() omission</h2>
+     * This type calls <b>no</b> {@code .serialize(...)} at all. That is the spec's "serialize = false":
+     * {@code AttachmentHolder.serializeAttachments} skips every type whose {@code serializer} is
+     * {@code null} (measured in the 21.1.265 sources — the loop is
+     * {@code if (type.serializer != null) { ... tag.put(key, write(...)); } }), so this attachment can
+     * never reach {@code playerdata} or a region file. The value is a runtime cache of a fight in
+     * progress, and a stack that survives a restart would be a stack from a fight nobody remembers.
+     *
+     * <p>Being unserialized also makes it un-copyable: {@code copyOnDeath()} and {@code copyHandler()}
+     * both throw when the type has no serializer, so the "did I forget to copy it?" failure mode cannot
+     * be reached. Mobs are not respawned, so nothing needs copying anyway.
+     *
+     * <p>Consequence worth knowing: an entity that unloads forgets its stacks. That is at least as
+     * strict as the lazy expiry in {@code StackRuntime}, and it needs no cleanup path — which is also
+     * why no tick listener exists that could sweep it.
+     */
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<StackTable>> STACK =
+            ATTACHMENT_TYPES.register("stack",
+                    () -> AttachmentType.builder(StackTable::new).build());
 
     private Attachments() {
     }

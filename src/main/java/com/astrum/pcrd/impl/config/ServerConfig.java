@@ -75,10 +75,17 @@ public final class ServerConfig {
     }
 
     /**
-     * {@code [balance]} section.
+     * {@code [balance]} section: the two knobs that shape how much a wheel is worth — the
+     * same-dimension falloff, and how long a stack survives.
      *
      * <p>Named {@code BalanceOptions} rather than {@code Balance} so it cannot be confused with the
      * arithmetic kernel of the same package; the field keeps the plan's {@code BALANCE} name.
+     *
+     * <p>{@code stackTtlTicks} lives here rather than in a section of its own because it is a
+     * <em>pacing</em> number, the same kind as the decay factor (spec §4.4 asks for a configurably
+     * lazy stack lifetime; §8.2's table has no section for it). It is deliberately not a new top-level
+     * section: {@code ConfigDefaultsTest.noKeysBeyondSpec} pins the file's top-level shape to the
+     * spec's tables, and a new section would be a spec change rather than a new option.
      */
     public static final class BalanceOptions {
 
@@ -88,6 +95,22 @@ public final class ServerConfig {
         /** Decay factor; {@code 0.7} means the second same-dimension slot gets 70%. */
         public final ModConfigSpec.DoubleValue diminishingBase;
 
+        /**
+         * How long a stack survives without a new hit, in ticks.
+         *
+         * <p>The only stack number the datapack does not declare: the hook says what the cap is and
+         * what a detonation is worth, while "how long is a stack alive" is a pacing decision an
+         * operator owns. Read at the point of use by {@code StackRuntime.ttlTicks()} on every stack
+         * read — never copied into a constant, because a copy taken before the file loads would freeze
+         * the default forever (spec §8.4 guardrail 1).
+         *
+         * <p>The lower bound is {@code 1}, not {@code 0}: a ttl of zero would mean every stack is born
+         * expired, silently turning {@code stack}/{@code detonate} into dead data.
+         * {@code StackKernel.isExpired} also treats a non-positive ttl as expired, so a hand-edited
+         * file cannot produce a stack that lives forever either.
+         */
+        public final ModConfigSpec.IntValue stackTtlTicks;
+
         private BalanceOptions(ModConfigSpec.Builder builder) {
             builder.push("balance");
             enableDiminishingReturns = builder
@@ -96,6 +119,9 @@ public final class ServerConfig {
             diminishingBase = builder
                     .comment(" 倍率 = base^(n-1)；范围按规格 §8.2 钉在 [0.1, 1.0]，填 0 或 2.0 会被拉回边界")
                     .defineInRange("diminishingBase", 0.7, Balance.MIN_MULTIPLIER, Balance.MAX_MULTIPLIER);
+            stackTtlTicks = builder
+                    .comment(" 叠层在没有新命中后存活多久（tick）；只在该实体被再次命中时判定，不做 tick 轮询")
+                    .defineInRange("stackTtlTicks", 100, 1, 72_000);
             builder.pop();
         }
     }
