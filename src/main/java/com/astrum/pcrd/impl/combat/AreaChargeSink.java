@@ -17,9 +17,9 @@ import org.jetbrains.annotations.ApiStatus;
  * tests can prove without a Minecraft server — which is the whole point, because these guards are
  * the part most likely to be wrong in a way that only shows up on a LAN world with three players.
  *
- * <p>{@link GuardedAreaChargeSink} is the production implementation. It is constructed in exactly
- * one place, {@link CombatEvents}, and the only other implementation is a test double; nothing else
- * may deliver directly to {@link com.astrum.pcrd.impl.ub.UbCharge}.
+ * <p>{@link GuardedAreaChargeSink} is the only implementation. It is constructed in exactly one
+ * place, {@link CombatEvents}; nothing else may deliver directly to
+ * {@link com.astrum.pcrd.impl.ub.UbCharge}.
  *
  * <h2>The contract, in full</h2>
  * <ol>

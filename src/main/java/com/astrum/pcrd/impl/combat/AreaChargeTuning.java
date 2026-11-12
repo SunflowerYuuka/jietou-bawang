@@ -32,10 +32,23 @@ import org.jetbrains.annotations.ApiStatus;
  * AreaChargeTuning.clearOverride();     // remove both, back to the config values
  * }</pre>
  *
- * <p>{@link #override} <b>rejects</b> absurd values with {@link IllegalArgumentException} instead of
- * accepting them: a negative pair cooldown, or a per-second cap that is zero, negative, NaN or
- * infinite. A typo must never silently switch an anti-loop brake off. The command should catch the
- * exception and report the message to the sender. The persisted defaults remain the TOML entries
+ * <h2>The file and the command deliberately have different floors</h2>
+ * The TOML file and a runtime override are not the same kind of act. Editing a file is deliberate,
+ * persistent and auditable (it lands in git); typing a command is one keystroke away from a typo.
+ * The two paths therefore enforce different limits at the pair cooldown:
+ *
+ * <ul>
+ *   <li><b>TOML</b> ({@code areaChargePairCooldownTicks}) may be {@code 0}: the pack author is
+ *       explicitly saying "I want the pair brake off for this world". That value is honoured when
+ *       no override is set.</li>
+ *   <li><b>{@link #override}</b> requires {@code pairCooldownTicks >= 1}. A typo must never let
+ *       {@code /astrum} switch the brake off by accident; to turn it off, edit the file.</li>
+ * </ul>
+ *
+ * <p>{@link #override} also rejects a per-second cap that is zero, negative, NaN or infinite. On
+ * any rejected call it throws {@link IllegalArgumentException} and changes nothing, so the previous
+ * values stay in place. The command should catch the exception and report the message to the
+ * sender. The persisted defaults remain the TOML entries
  * {@code [multiplayer] areaChargePairCooldownTicks = 20} and
  * {@code areaChargeReceiveCapPerSecond = 6.0}; nothing here changes what a pack author writes.
  *
@@ -113,15 +126,19 @@ public final class AreaChargeTuning {
      * <p>Validation happens before either field is written, so a rejected call changes nothing.
      *
      * @param pairCooldownTicks new pair cooldown in ticks, or {@code null} to leave it unchanged;
-     *                          must be {@code >= 0} (0 is the config's documented "no cooldown")
+     *                          must be {@code >= 1}. The TOML file may say {@code 0}, but a runtime
+     *                          command may not: editing the file is a deliberate, auditable act,
+     *                          while a command is one typo away from switching the brake off
      * @param receiveCapPerSecond new per-second cap, or {@code null} to leave it unchanged; must be
      *                            finite and {@code > 0}
      * @throws IllegalArgumentException if a value would disable a brake by accident
      */
     public static void override(Integer pairCooldownTicks, Double receiveCapPerSecond) {
-        if (pairCooldownTicks != null && pairCooldownTicks < 0) {
+        if (pairCooldownTicks != null && pairCooldownTicks < 1) {
             throw new IllegalArgumentException(
-                    "astrum: areaChargePairCooldownTicks must be >= 0, got " + pairCooldownTicks);
+                    "astrum: areaChargePairCooldownTicks must be >= 1 at runtime "
+                            + "(edit the TOML file to disable the pair cooldown), got "
+                            + pairCooldownTicks);
         }
         if (receiveCapPerSecond != null
                 && (!(receiveCapPerSecond > 0.0) || !Double.isFinite(receiveCapPerSecond))) {

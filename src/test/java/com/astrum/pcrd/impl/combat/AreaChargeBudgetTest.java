@@ -7,7 +7,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Spec §7.4's two guards against the N-djeeta charge loop, as arithmetic with an injected clock.
@@ -48,7 +47,7 @@ class AreaChargeBudgetTest {
             UUID caster = UUID.randomUUID();   // 每次不同施放者，绕开成对 CD
             total += b.grant(caster, receiver, 3.0, 100 + i, 5);
         }
-        assertTrue(total <= 6.0 + 1e-9, "每秒接收上限必须封顶，实际 " + total);
+        assertEquals(6.0, total, 1e-9, "10 个不同施放者的 3.0 必须恰好封顶在 6.0，实际 " + total);
     }
 
     // ------------------------------------------------------------------ the edges the brief implies
@@ -75,16 +74,23 @@ class AreaChargeBudgetTest {
 
     /**
      * A grant the cap refuses must not also arm the pair cooldown: the receiver would otherwise be
-     * punished twice for a limit that is not the pair's. The third call is placed 20 ticks after the
-     * <b>first</b> grant and 19 after the refused one, so an armed pair would block it.
+     * punished twice for a limit that is not the pair's.
+     *
+     * <p>The second call is from a <b>different</b> caster, so the pair cooldown cannot be the thing
+     * that refuses it; the receiver is already at its 6.0 ceiling for that second, so only the cap
+     * can answer 0. The third call is 19 ticks after that refused attempt (and 20 after the first
+     * grant), so a pair cooldown armed by the refusal would block it; the cap window has rolled to
+     * the next second, so nothing else can.
      */
     @Test
     void aGrantTheCapRefusesDoesNotArmThePairCooldown() {
         var b = new AreaChargeBudget();
-        UUID caster = UUID.randomUUID(), receiver = UUID.randomUUID();
-        assertEquals(6.0, b.grant(caster, receiver, 6.0, 100, 5), 1e-9);
-        assertEquals(0.0, b.grant(caster, receiver, 3.0, 101, 5), 1e-9);
-        assertEquals(3.0, b.grant(caster, receiver, 3.0, 120, 6), 1e-9,
+        UUID firstCaster = UUID.randomUUID(), refusedCaster = UUID.randomUUID(),
+                receiver = UUID.randomUUID();
+        assertEquals(6.0, b.grant(firstCaster, receiver, 6.0, 100, 5), 1e-9);
+        assertEquals(0.0, b.grant(refusedCaster, receiver, 3.0, 101, 5), 1e-9,
+                "接收者本秒已满，不同施放者应被每秒上限拒绝（不是成对 CD）");
+        assertEquals(3.0, b.grant(refusedCaster, receiver, 3.0, 120, 6), 1e-9,
                 "被每秒上限拒绝的那次不得再占住成对 CD");
     }
 
@@ -139,17 +145,20 @@ class AreaChargeBudgetTest {
 
     /**
      * The default constructor must go through {@link AreaChargeTuning}, not read a config value of
-     * its own: an operator override of "no pair cooldown" has to be visible to the budget on the
-     * very next grant, and the overridden cap has to bound that grant. If the budget kept its own
-     * config path, both assertions below would see 20 ticks / 6.0 and the second grant would be 0.
+     * its own: an operator override of the pair cooldown has to be visible to the budget on the very
+     * next grant, and the overridden cap has to bound that grant. The cap is deliberately {@code 4.0}
+     * rather than the 6.0 fallback: with the fallback the second grant would be 3.0, so the asserted
+     * 1.0 can only come from the override. The cooldown is {@code 1}, not the 20-tick fallback: with
+     * the fallback the second grant would be 0.
      */
     @Test
     void theBudgetReadsItsKnobsThroughTheTuningSeam() {
-        AreaChargeTuning.override(0, 6.0);
+        AreaChargeTuning.override(1, 4.0);
         var b = new AreaChargeBudget();
         UUID caster = UUID.randomUUID(), receiver = UUID.randomUUID();
         assertEquals(3.0, b.grant(caster, receiver, 3.0, 100, 5), 1e-9);
-        assertEquals(3.0, b.grant(caster, receiver, 3.0, 100, 5), 1e-9, "override 的 0 tick CD 必须生效");
-        assertEquals(0.0, b.grant(caster, receiver, 3.0, 100, 5), 1e-9, "override 的 6.0 上限必须封顶");
+        assertEquals(1.0, b.grant(caster, receiver, 3.0, 101, 5), 1e-9,
+                "override 的 1 tick CD 必须已放行；override 的 4.0 上限必须把 3.0 截成 1.0");
+        assertEquals(0.0, b.grant(caster, receiver, 3.0, 102, 5), 1e-9, "override 的 4.0 上限必须封顶");
     }
 }

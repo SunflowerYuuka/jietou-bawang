@@ -5,6 +5,7 @@ import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.ub.UbCharge;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -117,21 +118,27 @@ public final class GuardedAreaChargeSink implements AreaChargeSink {
                 caster.getName().getString(), mode, request.includeSelf(), request.radius(),
                 selected.size(), candidates.size());
 
+        List<UUID> selectedIds = new ArrayList<>(selected.size());
         for (AllySelector.Candidate candidate : selected) {
-            ServerPlayer receiver = receivers.get(candidate.id());
-            if (receiver == null) {
-                continue;   // left the level between selection and delivery
+            if (receivers.containsKey(candidate.id())) {
+                selectedIds.add(candidate.id());
+            }
+        }
+
+        Map<UUID, Double> credits = grantEach(selectedIds, caster.getUUID(), request.amount(),
+                nowTick, nowSecond, budget);
+
+        for (UUID id : selectedIds) {
+            ServerPlayer receiver = receivers.get(id);
+            double granted = credits.getOrDefault(id, 0.0);
+            if (!(granted > 0.0)) {
+                Astrum.LOGGER.debug("astrum: area_charge {} -> {} withheld ({} requested, "
+                                + "pair cooldown or per-second cap)",
+                        caster.getName().getString(), receiver.getName().getString(),
+                        request.amount());
+                continue;
             }
             try {
-                double granted = budget.grant(caster.getUUID(), candidate.id(), request.amount(),
-                        nowTick, nowSecond);
-                if (!(granted > 0.0)) {
-                    Astrum.LOGGER.debug("astrum: area_charge {} -> {} withheld ({} requested, "
-                                    + "pair cooldown or per-second cap)",
-                            caster.getName().getString(), receiver.getName().getString(),
-                            request.amount());
-                    continue;
-                }
                 // characterId is attribution only and amount already carries diminishing: both
                 // are passed through exactly as the hook produced them.
                 UbCharge.apply(receiver, request.characterId(), granted);
@@ -141,9 +148,34 @@ public final class GuardedAreaChargeSink implements AreaChargeSink {
             } catch (RuntimeException e) {
                 // One receiver's failure must not cost the others: same rule as the damage flush.
                 Astrum.LOGGER.error("astrum: area_charge to {} threw; the other receivers still run",
-                        candidate.id(), e);
+                        id, e);
             }
         }
+    }
+
+    /**
+     * The per-receiver half of one delivery, free of Minecraft types so a unit test can pin the two
+     * call-level promises: a receiver withheld by a guard does not stop the others, and the amount
+     * handed to the credit step is exactly what {@link AreaChargeBudget#grant} returned.
+     *
+     * <p>Only credited receivers appear in the result; an empty map means every receiver was
+     * withheld, not that the call failed. The order of {@code receivers} is preserved. A grant is
+     * still made per receiver, so one pair being blocked never short-circuits another receiver's
+     * window. {@code AreaChargeBudget} is documented never to throw, and its suppliers are wrapped
+     * internally, so this loop has no per-receiver catch of its own; the caller wraps each credit.
+     *
+     * @return receiver id → amount actually credited, in delivery order
+     */
+    static Map<UUID, Double> grantEach(List<UUID> receivers, UUID caster, double amount,
+                                       long nowTick, long nowSecond, AreaChargeBudget budget) {
+        Map<UUID, Double> credits = new LinkedHashMap<>();
+        for (UUID receiver : receivers) {
+            double granted = budget.grant(caster, receiver, amount, nowTick, nowSecond);
+            if (granted > 0.0) {
+                credits.put(receiver, granted);
+            }
+        }
+        return credits;
     }
 
     /** Forgets the budget when the world goes away; the next server starts from a clean clock. */
