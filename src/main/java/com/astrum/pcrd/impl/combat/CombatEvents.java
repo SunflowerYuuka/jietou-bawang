@@ -1,22 +1,18 @@
 package com.astrum.pcrd.impl.combat;
 
 import com.astrum.pcrd.Astrum;
-import com.astrum.pcrd.api.v1.AstrumApi;
 import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.api.v1.Dimension;
-import com.astrum.pcrd.api.v1.EffectHook;
-import com.astrum.pcrd.api.v1.EffectType;
-import com.astrum.pcrd.api.v1.Trigger;
+import com.astrum.pcrd.api.v1.AstrumApi;
 import com.astrum.pcrd.impl.InternalIds;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.config.ServerConfig;
-import com.astrum.pcrd.impl.ub.ChargeKernel;
 import com.astrum.pcrd.impl.ub.UbCharge;
 import java.util.ArrayList;
-import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,21 +25,20 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageType;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.LivingEntity;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * The attachment entry point: one place where a landed hit is turned into extra damage and UB
- * charge (spec §5.1). Every rule in this class is one of the three the spec calls non-negotiable.
+ * The attachment entry point: one place where a landed hit is turned into UB charge and extra
+ * damage (spec §5.1). Every rule in this class is one of the three the spec calls non-negotiable.
  *
  * <h2>Which event, and why (measured, not assumed)</h2>
  * The listener hangs on {@link LivingDamageEvent.Post}. NeoForge 1.21.1 exposes four stages of one
@@ -56,10 +51,11 @@ import org.jetbrains.annotations.ApiStatus;
  *       ({@code setAmount})</td><td>yes</td><td>also for hits the invulnerability window then
  *       swallows entirely (measured: {@code amount=4.0}, health delta 0)</td></tr>
  *   <tr><td>{@code LivingDamageEvent.Pre}</td><td>post-armour, 4.920</td><td>yes
- *       ({@code setNewDamage})</td><td>no</td><td>after armour/effects, before absorption</td></tr>
- *   <tr><td>{@code LivingDamageEvent.Post}</td><td>final health loss, 4.920</td><td>no (immutable
- *       copy)</td><td>no</td><td>after health is subtracted — and only when the sequence got that
- *       far</td></tr>
+ *       ({@code setNewDamage})</td><td>no</td><td>after armour/effects, before absorption; the
+ *       entity's health is still the pre-hit value here</td></tr>
+ *   <tr><td>{@code LivingDamageEvent.Post}</td><td>post-absorption damage, 4.920 — <b>not</b>
+ *       clamped to the health that was left</td><td>no (immutable copy)</td><td>no</td><td>after
+ *       health is subtracted — and only when the sequence got that far</td></tr>
  * </table>
  *
  * <p>{@code LivingDamageEvent} itself is an abstract base class with a private constructor: there
@@ -68,14 +64,16 @@ import org.jetbrains.annotations.ApiStatus;
  * <p><b>Why Post.</b> Rule 1 forbids touching the amount, so the writability of the other two
  * stages is a liability rather than a feature: rewriting {@code amount} is exactly how the spec's
  * "armour/crit re-scaling" failure happens, and the run measured it — asking for 7.0 through
- * {@code setAmount} landed as 6.888 after the armour step. Post has nothing to rewrite, reports the
- * health that was actually lost (the number charge must be based on), and fires only for hits that
- * dealt damage, so the attachment pipeline never runs for a hit the iframe check ate.
+ * {@code setAmount} landed as 6.888 after the armour step. Post has nothing to rewrite, and it fires
+ * only for hits that reached health, so the attachment pipeline never runs for a hit the iframe
+ * check ate. Its number is not, however, "health lost": see
+ * {@link LandedHit#healthLost(float, float)} for the clamp that turns it into one.
  *
  * <h2>Rule 2 — the recursion fuse</h2>
- * The first statement of both damage handlers is {@link OwnDamage#isOurs}: damage in the
- * {@code astrum} namespace is ours, and ours must not come back through here. Without it the extra
- * damage would trigger the attachment logic which would deal more extra damage, forever.
+ * Damage in the {@code astrum} namespace is ours, and ours must not come back through hook
+ * evaluation or the extra damage would trigger the logic that deals more extra damage, forever. The
+ * fuse gates <b>hooks only</b>: the same damage still earns UB charge, because spec §5.4 counts
+ * damage dealt with no carve-out for mod-applied damage ({@link LandedHit.Plan}).
  *
  * <h2>Rule 3 — one hurt per tick per target</h2>
  * The batch is not flushed from inside the damage event. It is queued and drained at
@@ -95,14 +93,14 @@ public final class CombatEvents {
     /** Where the merged extra damage is credited when no single character caused it. */
     private static final ResourceLocation NO_CHARACTER = InternalIds.id("combat");
 
-    /** The one damage type attachment damage uses (spec §5.1 rule 3). */
-    private static final ResourceLocation HOOK_DAMAGE = InternalIds.id("hook_damage");
-
     /** Batches waiting for the end of this tick, keyed by attacker and target. */
     private final Map<PendingKey, Pending> pending = new LinkedHashMap<>();
 
+    /** Health of each entity when its damage sequence started, consumed by the matching Post. */
+    private final Map<UUID, Float> preHitHealth = new HashMap<>();
+
     /** Players already warned about a quarantined roster, so the warning is one line, not per hit. */
-    private final Set<UUID> warnedQuarantine = new java.util.HashSet<>();
+    private final Set<UUID> warnedQuarantine = new HashSet<>();
 
     private CombatEvents() {
     }
@@ -115,36 +113,49 @@ public final class CombatEvents {
     // ------------------------------------------------------------------ damage landing
 
     /**
+     * Remembers the health a target had before its damage sequence, so the hit can be charged for
+     * the health it actually removed rather than for the number the container carries.
+     */
+    @SubscribeEvent
+    public void onDamagePre(LivingDamageEvent.Pre event) {
+        preHitHealth.put(event.getEntity().getUUID(), event.getEntity().getHealth());
+    }
+
+    /**
      * A hit landed: credit charge for it, and queue the attachment damage it earned.
      *
-     * <p>Order matters. The fuse comes first, so our own merged damage neither charges the gauge a
-     * second time nor grows another batch.
+     * <p>Charge comes first and is unconditional; only hook evaluation is fused. See
+     * {@link LandedHit.Plan} for why that order is the correct one and not the other way round.
      */
     @SubscribeEvent
     public void onDamageLanded(LivingDamageEvent.Post event) {
-        DamageSource source = event.getSource();
-        ResourceLocation typeId = damageTypeId(source);
-        if (OwnDamage.isOurs(typeId)) {
-            Astrum.LOGGER.debug("astrum: own damage {} on {} skipped by the attachment entry (recursion fuse)",
-                    typeId, event.getEntity().getName().getString());
-            return;
-        }
-
-        float dealt = event.getNewDamage();
-        if (dealt <= 0.0F) {
-            return;   // nothing was lost: nothing to charge, nothing to attach
+        float applied = event.getNewDamage();
+        if (!(applied > 0.0F)) {
+            return;   // nothing was applied: no charge to earn, no hooks to run
         }
         LivingEntity target = event.getEntity();
+        DamageSource source = event.getSource();
+        ResourceLocation typeId = damageTypeId(source);
+        LandedHit.Plan plan = LandedHit.plan(typeId);
 
-        if (target instanceof ServerPlayer victim) {
-            credit(victim, ChargeKernel.addTaken(ChargeKernel.MIN_CHARGE, dealt,
-                    ServerConfig.UB.ubChargePerDamageTaken.get()));
+        if (plan.creditsCharge()) {
+            float credited = creditedDamage(target, applied);
+            if (credited > 0.0F) {
+                if (target instanceof ServerPlayer victim) {
+                    credit(victim, credited * ServerConfig.UB.ubChargePerDamageTaken.get());
+                }
+                if (source.getEntity() instanceof ServerPlayer attacker && attacker != target) {
+                    credit(attacker, credited * ServerConfig.UB.ubChargePerDamage.get());
+                }
+            }
         }
 
-        Entity attackerEntity = source.getEntity();
-        if (attackerEntity instanceof ServerPlayer attacker && attacker != target) {
-            credit(attacker, ChargeKernel.addDealt(ChargeKernel.MIN_CHARGE, dealt,
-                    ServerConfig.UB.ubChargePerDamage.get()));
+        if (!plan.runsHooks()) {
+            Astrum.LOGGER.debug("astrum: own damage {} on {} charged but not re-entering hook evaluation "
+                    + "(recursion fuse)", typeId, target.getName().getString());
+            return;
+        }
+        if (source.getEntity() instanceof ServerPlayer attacker && attacker != target) {
             queue(attacker, target, source);
         }
     }
@@ -154,18 +165,33 @@ public final class CombatEvents {
      *
      * <p>Deliberately <b>not</b> short-circuited on our own damage type: a death is a single event
      * whichever damage type finished the target, and crediting it once cannot recurse because
-     * nothing here deals damage. (The entry point's fuse exists to protect the attachment
-     * pipeline, not the kill counter.)
+     * nothing here deals damage. (The fuse exists to protect hook evaluation, not the kill counter.)
      */
     @SubscribeEvent
     public void onDeath(LivingDeathEvent event) {
         if (event.getSource().getEntity() instanceof ServerPlayer killer) {
-            credit(killer, ChargeKernel.addKill(ChargeKernel.MIN_CHARGE,
-                    ServerConfig.UB.ubChargePerKill.get()));
+            credit(killer, ServerConfig.UB.ubChargePerKill.get());
         }
     }
 
-    /** Posts the charge change through {@link UbCharge}, which owns the write. */
+    /**
+     * {@return the damage to charge for: the part of {@code applied} that the target still had}
+     *
+     * <p>{@code Pre} always precedes {@code Post} for the same sequence, so the entry is normally
+     * there. If it is not (a sequence that began before this listener existed), the raw number is
+     * credited rather than zero, and the hole is logged.
+     */
+    private float creditedDamage(LivingEntity target, float applied) {
+        Float preHealth = preHitHealth.remove(target.getUUID());
+        if (preHealth == null) {
+            Astrum.LOGGER.debug("astrum: no pre-hit health for {}, crediting {} unclamped",
+                    target.getName().getString(), applied);
+            return applied;
+        }
+        return LandedHit.healthLost(applied, preHealth);
+    }
+
+    /** Posts the charge change through {@link UbCharge}, which owns the write and the clamp. */
     private static void credit(ServerPlayer player, double delta) {
         if (delta > 0.0) {
             UbCharge.apply(player, NO_CHARACTER, delta);
@@ -177,29 +203,37 @@ public final class CombatEvents {
     /**
      * Drains the batches queued during this tick, one {@code hurt()} per damage type.
      *
-     * <p>Runs after everything else in the tick has had its chance to queue, which is what makes
-     * the merge a same-tick merge rather than a same-event one.
+     * <p>Runs after everything else in the tick has had its chance to queue, which is what makes the
+     * merge a same-tick merge rather than a same-event one.
      */
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
+        preHitHealth.clear();   // anything left here belonged to a sequence that never reached Post
         if (pending.isEmpty()) {
             return;
         }
         List<Pending> ready = new ArrayList<>(pending.values());
         pending.clear();
-        for (Pending entry : ready) {
-            flush(entry);
+        for (Pending queued : ready) {
+            try {
+                flush(queued);
+            } catch (RuntimeException e) {
+                // One bad target (or one bad third-party listener) must not cost the rest of the tick.
+                Astrum.LOGGER.error("astrum: extra damage for {} threw, the other queued targets still run",
+                        queued.target().getName().getString(), e);
+            }
         }
     }
 
-    private void flush(Pending pending) {
-        LivingEntity target = pending.target();
+    private void flush(Pending pended) {
+        LivingEntity target = pended.target();
         if (target.isRemoved() || !target.isAlive()) {
-            Astrum.LOGGER.debug("astrum: extra damage for {} dropped, target is gone", target.getName().getString());
+            Astrum.LOGGER.debug("astrum: extra damage for {} dropped, target is gone",
+                    target.getName().getString());
             return;
         }
         Registry<DamageType> damageTypes = target.level().registryAccess().registryOrThrow(Registries.DAMAGE_TYPE);
-        for (DamageBatch.Entry entry : pending.batch().entries()) {
+        for (DamageBatch.Entry entry : pended.batch().entries()) {
             if (entry.amount() <= 0.0F) {
                 continue;
             }
@@ -211,10 +245,15 @@ public final class CombatEvents {
                         entry.type().getPath());
                 continue;
             }
-            DamageSource applied = new DamageSource(holder, pending.attacker(), pending.attacker());
-            boolean landed = target.hurt(applied, entry.amount());
-            Astrum.LOGGER.debug("astrum: extra {} damage {} on {} landed={} hp={}", entry.type(),
-                    entry.amount(), target.getName().getString(), landed, target.getHealth());
+            DamageSource applied = new DamageSource(holder, pended.attacker(), pended.attacker());
+            try {
+                boolean landed = target.hurt(applied, entry.amount());
+                Astrum.LOGGER.debug("astrum: extra {} damage {} on {} landed={} hp={}", entry.type(),
+                        entry.amount(), target.getName().getString(), landed, target.getHealth());
+            } catch (RuntimeException e) {
+                Astrum.LOGGER.error("astrum: applying {} extra damage to {} threw", entry.amount(),
+                        target.getName().getString(), e);
+            }
         }
     }
 
@@ -235,11 +274,19 @@ public final class CombatEvents {
         }
     }
 
+    /** Drops all per-session state when the world goes away, so nothing survives a restart. */
+    @SubscribeEvent
+    public void onServerStopping(ServerStoppingEvent event) {
+        pending.clear();
+        preHitHealth.clear();
+        warnedQuarantine.clear();
+    }
+
     // ------------------------------------------------------------------ hook evaluation
 
     /**
      * Fills {@code batch} from one player's wheel: {@code PARTY} × the character definitions, each
-     * {@code extra_damage} hook scaled by its slot's diminishing multiplier.
+     * hook evaluated by {@link HookEvaluator}.
      *
      * <h2>Quarantine handling (the trap this task was warned about)</h2>
      * The multipliers are computed from the party and the registry — both readable while the
@@ -278,6 +325,7 @@ public final class CombatEvents {
             warnQuarantined(attacker);
         }
 
+        HookEvaluator.Hit hit = new HookEvaluator.Hit(attacker, target, source);
         for (int slot = 0; slot < Party.SLOTS; slot++) {
             Optional<ResourceLocation> slotValue = party.slots().get(slot);
             if (slotValue.isEmpty()) {
@@ -291,84 +339,8 @@ public final class CombatEvents {
             if (def == null) {
                 continue;   // the pack no longer defines it; PartyMultipliers already ranks it neutral
             }
-            evaluate(def, multipliers[slot], attacker, target, source, batch);
+            HookEvaluator.evaluate(def, multipliers[slot], hit, batch);
         }
-    }
-
-    /**
-     * Runs one character's hooks for one hit.
-     *
-     * <p>Spec §5.3: "each character, each trigger kind, at most once per attack". The dedupe lives
-     * here rather than per effect type, because the rule is about the event being counted twice —
-     * a character listing two {@code melee_hit} hooks must not double-dip.
-     */
-    private void evaluate(CharacterDef def, double multiplier, ServerPlayer attacker, LivingEntity target,
-            DamageSource source, DamageBatch batch) {
-        Set<Trigger> fired = EnumSet.noneOf(Trigger.class);
-        for (EffectHook hook : def.effects()) {
-            if (fired.contains(hook.trigger())) {
-                continue;
-            }
-            if (!observes(hook.trigger(), source, attacker)) {
-                continue;
-            }
-            if (!roll(hook.chance(), attacker)) {
-                continue;
-            }
-            fired.add(hook.trigger());
-            dispatch(hook, multiplier, target, batch);
-        }
-    }
-
-    /**
-     * The effect seam. Task 9 implements {@code extra_damage} only; the other seven effect types
-     * are Task 10's, and say so at DEBUG rather than silently doing nothing.
-     *
-     * <p>Exhaustive on purpose (no {@code default}): a ninth {@link EffectType} stops compiling
-     * here, which is the reminder to give it an executor. Task 10 widens this signature when its
-     * executors need more of the hit — {@code lifesteal} and {@code gain_charge} need the attacker,
-     * {@code splash} the radius around the target — rather than guessing the parameter list now.
-     *
-     * @param multiplier this slot's diminishing multiplier; it scales <b>quantities only</b>
-     *                   (spec §5.2) — never whether the effect runs
-     */
-    private void dispatch(EffectHook hook, double multiplier, LivingEntity target, DamageBatch batch) {
-        switch (hook.type()) {
-            case EXTRA_DAMAGE -> {
-                EffectHook.ExtraDamage extra = (EffectHook.ExtraDamage) hook;
-                batch.add(HOOK_DAMAGE, (float) (extra.amount() * multiplier));
-            }
-            case APPLY_EFFECT, LIFESTEAL, GAIN_CHARGE, AREA_CHARGE, SPLASH, STACK, DETONATE ->
-                    Astrum.LOGGER.debug("astrum: effect {} is not implemented yet (Task 10); hook on {} skipped",
-                            hook.type(), target.getName().getString());
-        }
-    }
-
-    /**
-     * {@return whether this damage sequence can be the trigger a hook waits for}
-     *
-     * <p>Only the triggers a landed damage event can observe are implemented. The rest belong to
-     * other sources — {@code kill} to the death path, {@code block} to the shield path, {@code
-     * combo_n}/{@code stack_full} to counters Task 10 keeps — and answering {@code false} is the
-     * honest answer here rather than pretending they fired.
-     */
-    private static boolean observes(Trigger trigger, DamageSource source, ServerPlayer attacker) {
-        return switch (trigger) {
-            case MELEE_HIT -> source.getDirectEntity() == attacker;
-            case PROJECTILE_HIT -> source.is(DamageTypeTags.IS_PROJECTILE);
-            case CRIT, KILL, LOW_HEALTH, COMBO_N, BLOCK, STACK_FULL -> false;
-        };
-    }
-
-    /** {@return the chance roll for one hook, in {@code [0, 1]}} */
-    private static boolean roll(double chance, ServerPlayer attacker) {
-        if (chance >= 1.0) {
-            return true;
-        }
-        if (chance <= 0.0) {
-            return false;
-        }
-        return attacker.getRandom().nextFloat() < chance;
     }
 
     private void warnQuarantined(ServerPlayer attacker) {
