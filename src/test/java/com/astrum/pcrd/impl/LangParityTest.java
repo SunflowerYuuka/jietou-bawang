@@ -4,6 +4,7 @@ import com.astrum.pcrd.impl.client.ClientKeyBindings;
 import com.astrum.pcrd.impl.command.AstrumCommand;
 import com.astrum.pcrd.impl.growth.Dishes;
 import com.astrum.pcrd.impl.growth.GrowthText;
+import com.astrum.pcrd.impl.item.AstrumCreativeTab;
 import com.astrum.pcrd.impl.item.BookTheme;
 import com.astrum.pcrd.impl.item.CharacterCardItem;
 import com.astrum.pcrd.impl.party.BookText;
@@ -82,6 +83,9 @@ class LangParityTest {
         // lang files and to GrowthText.LANG_KEYS; before that the keys existed in neither, so a missing
         // translation could only have been found by a player reading a raw key.
         keys.addAll(GrowthText.LANG_KEYS);
+        // The creative tab's title. Registered from AstrumCreativeTab rather than hard-coded here so
+        // renaming the key fails this test instead of showing "itemGroup.astrum" over a tab.
+        keys.addAll(AstrumCreativeTab.langKeys());
         return Set.copyOf(keys);
     }
 

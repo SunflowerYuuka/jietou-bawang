@@ -2,6 +2,7 @@
   "death.attack.astrum.hook_damage": "%1$s was cut down by %2$s",
   "death.attack.astrum.hook_damage.player": "%1$s was cut down by %2$s",
   "death.attack.astrum.hook_damage.item": "%1$s was cut down by %2$s using %3$s",
+  "itemGroup.astrum": "Astrum",
   "key.categories.astrum": "Astrum",
   "key.astrum.ub_wheel": "Cast UB (hold: slot pad)",
   "key.astrum.ub_preset_wheel": "Preset wheel (hold)",

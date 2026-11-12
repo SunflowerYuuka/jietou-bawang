@@ -136,5 +136,9 @@ public final class AstrumItems {
     public static void register(IEventBus modBus) {
         AstrumDataComponents.register(modBus);
         ITEMS.register(modBus);
+        // The creative tab is item content that lists these items, and its population is derived from
+        // ITEMS above, so it is wired here rather than from Astrum: one call per subsystem keeps the
+        // entry point wiring-only (44 lines) instead of one call per register.
+        AstrumCreativeTab.register(modBus);
     }
 }

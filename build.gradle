@@ -165,6 +165,17 @@ sourceSets.main.resources.srcDir generateModMetadata
 // To avoid having to run "generateModMetadata" manually, make it run on every project reload
 neoForge.ideSyncTask generateModMetadata
 
+// The Mods-list banner that neoforge.mods.toml points at with `logoFile = "logo.png"`.
+// NeoForge reads logoFile through PackResources#getRootResource, i.e. relative to the JAR ROOT — not
+// assets/ — so the committed banner (one copy, in the texture tree where the art lives) is also placed
+// at the jar root. Copying it in the build rather than committing a second identical PNG keeps one file
+// as the source of truth for the art; the two cannot drift because neither is hand-edited.
+tasks.named('processResources', ProcessResources).configure {
+    from("src/main/resources/assets/astrum/textures/logo.png") {
+        rename { "logo.png" }
+    }
+}
+
 // Example configuration to allow publishing using the maven-publish plugin
 publishing {
     publications {
