@@ -448,8 +448,12 @@ scrollSwitchPolicy = "ALLOW"         # ALLOW / DENY / FORCE
 
 [multiplayer]
 allyMode = "ALL_PLAYERS"                 # ALL_PLAYERS / SAME_TEAM_ONLY
-areaChargePairCooldownTicks = 20         # 同一施放者→同一接收者的 area_charge 内部 CD
-areaChargeReceiveCapPerSecond = 6.0      # 每个接收者每秒从 area_charge 获得的上限
+areaChargePairCooldownTicks = 20         # 同一施放者→同一接收者的 area_charge 内部 CD（运行时可由 OP 覆盖）
+areaChargeReceiveCapPerSecond = 6.0      # 每个接收者每秒从 area_charge 获得的上限（运行时可由 OP 覆盖）
+
+> **这两项是 OP / 作弊级别（权限等级 2）的运行时可调项。** TOML 里的是**持久默认值**；运行时可通过 `/astrum` 命令覆盖，覆盖值优先于 TOML，且在 `ServerStoppingEvent` 时清除（避免一个世界调过的值悄悄作用到下一个世界）。
+> 理由：这两项是阻止「N 个姬塔互相充能形成闭环」的**护栏**，管理员需要在事件/卡顿/整合包写错时当场调整，而不是重启服务器。这是对「配置值不得缓存」（§8.4）的**有意例外**——覆盖不是缓存，是显式的运维意图；无覆盖时仍每次懒读 TOML。
+> **护栏不能被静默关掉**：覆盖值必须 clamp（CD ≥ 0，上限 > 0），运维手抖填 0 或负数不得使护栏失效。
 maxActiveShowcaseEntities = 8            # 同世界演出实体上限，超限只结算伤害不生成实体
 ```
 
