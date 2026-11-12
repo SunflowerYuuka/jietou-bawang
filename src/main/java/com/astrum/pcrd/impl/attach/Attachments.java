@@ -1,7 +1,6 @@
 package com.astrum.pcrd.impl.attach;
 
 import com.astrum.pcrd.Astrum;
-import com.astrum.pcrd.impl.combat.StackTable;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.attachment.AttachmentType;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -147,6 +146,22 @@ public final class Attachments {
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<StackTable>> STACK =
             ATTACHMENT_TYPES.register("stack",
                     () -> AttachmentType.builder(StackTable::new).build());
+
+    /**
+     * One player's {@code combo_n} chain (see {@link ComboState}).
+     *
+     * <p>Also {@code serialize = false}, and for the same reason as {@link #STACK}: a hit chain is a
+     * property of the fight in progress. A chain that survived a restart would pay out
+     * {@code combo_n} on the first hit of a new session, which is not what "three hits in a row" means.
+     *
+     * <p>Lives on the <b>player</b> rather than on the target, because a combo is the attacker's rhythm
+     * across whatever it is hitting (the convention is stated on {@code TriggerFacts}).
+     *
+     * <p>Not copied on death, which is the conventional reading: dying ends your combo.
+     */
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ComboState>> COMBO =
+            ATTACHMENT_TYPES.register("combo",
+                    () -> AttachmentType.builder(() -> ComboState.EMPTY).build());
 
     private Attachments() {
     }

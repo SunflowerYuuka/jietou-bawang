@@ -112,6 +112,9 @@ class ConfigDefaultsTest {
         assertEquals(20, toml.<Number>get("multiplayer.areaChargePairCooldownTicks").intValue());
         assertEquals(6.0, toml.<Number>get("multiplayer.areaChargeReceiveCapPerSecond").doubleValue(), 1e-9);
         assertEquals(8, toml.<Number>get("multiplayer.maxActiveShowcaseEntities").intValue());
+
+        assertEquals(100, toml.<Number>get("balance.stackTtlTicks").intValue());
+        assertEquals(40, toml.<Number>get("balance.comboWindowTicks").intValue());
     }
 
     @Test
@@ -128,11 +131,62 @@ class ConfigDefaultsTest {
      * No key beyond the spec's two tables: an accidental extra option is as much a spec violation as
      * a missing one.
      */
+    /**
+     * Every leaf key the file contains, exactly — not just the sections.
+     *
+     * <p>This is the strict half of the spec check: an accidental extra option anywhere in the file is
+     * as much a spec violation as a missing one, and a section-only comparison would happily accept a
+     * new key inside {@code [balance]}. Adding {@code stackTtlTicks} and {@code comboWindowTicks} to
+     * spec §8.2 therefore required this list to grow too, in that order: spec first, then the test.
+     */
+    @Test
+    void theServerConfigHasExactlyTheSpecKeys() {
+        assertEquals(Set.of(
+                "balance.enableDiminishingReturns",
+                "balance.diminishingBase",
+                "balance.stackTtlTicks",
+                "balance.comboWindowTicks",
+                "ub.ubGlobalCooldownTicks",
+                "ub.ubChargePerDamage",
+                "ub.ubChargePerDamageTaken",
+                "ub.ubChargePerKill",
+                "ub.ubChargePerSecond",
+                "wheel.scrollSwitchPolicy",
+                "multiplayer.allyMode",
+                "multiplayer.areaChargePairCooldownTicks",
+                "multiplayer.areaChargeReceiveCapPerSecond",
+                "multiplayer.maxActiveShowcaseEntities"),
+                leafKeys(writtenDefaults(ServerConfig.SPEC)));
+    }
+
     @Test
     void noKeysBeyondSpec() {
         assertEquals(Set.of("balance", "ub", "wheel", "multiplayer"),
                 topLevelKeys(writtenDefaults(ServerConfig.SPEC)));
         assertEquals(Set.of("wheel", "camera"), topLevelKeys(writtenDefaults(ClientConfig.SPEC)));
+    }
+
+    /**
+     * {@return the dotted paths of every leaf (non-table) key of a config}
+     *
+     * <p>Walks {@code entrySet()} recursively rather than {@code valueMap()}, which is deprecated in
+     * nightconfig 3.8.3 — using it would put a warning in the build output.
+     */
+    private static Set<String> leafKeys(CommentedConfig config) {
+        Set<String> keys = new TreeSet<>();
+        collectLeaves("", config, keys);
+        return keys;
+    }
+
+    private static void collectLeaves(String prefix, CommentedConfig config, Set<String> into) {
+        for (var entry : config.entrySet()) {
+            String path = prefix.isEmpty() ? entry.getKey() : prefix + "." + entry.getKey();
+            if (entry.getValue() instanceof CommentedConfig child) {
+                collectLeaves(path, child, into);
+            } else {
+                into.add(path);
+            }
+        }
     }
 
     /**

@@ -1,4 +1,4 @@
-package com.astrum.pcrd.impl.combat;
+package com.astrum.pcrd.impl.attach;
 
 import org.junit.jupiter.api.Test;
 

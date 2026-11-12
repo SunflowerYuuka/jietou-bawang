@@ -3,6 +3,8 @@ package com.astrum.pcrd.impl.combat;
 import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.EffectHook;
 import com.astrum.pcrd.impl.InternalIds;
+import com.astrum.pcrd.impl.attach.StackKernel;
+import com.astrum.pcrd.impl.attach.StackState;
 import com.astrum.pcrd.impl.ub.UbCharge;
 import java.util.List;
 import java.util.Optional;
@@ -13,6 +15,7 @@ import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.entity.LivingEntity;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * The eight effect executors of spec §5.2 — one arm per {@code EffectType}, dispatched from
@@ -62,19 +65,42 @@ public final class EffectExecutors {
      * stops compiling here, which is the reminder to give it an executor.
      *
      * @param hook the effect to apply
-     * @param ctx  the hit it applies to, with this slot's multiplier
+     * @param ctx  the event it applies to, with this slot's multiplier
+     * @return the stack id whose count this hook filled to its cap, or {@code null} for every other
+     *         outcome — the one fact a following {@code stack_full} evaluation needs
      */
-    public static void run(EffectHook hook, HookContext ctx) {
-        switch (hook.type()) {
-            case EXTRA_DAMAGE -> extraDamage((EffectHook.ExtraDamage) hook, ctx);
-            case APPLY_EFFECT -> applyEffect((EffectHook.ApplyEffect) hook, ctx);
-            case LIFESTEAL -> lifesteal((EffectHook.Lifesteal) hook, ctx);
-            case GAIN_CHARGE -> gainCharge((EffectHook.GainCharge) hook, ctx);
-            case AREA_CHARGE -> areaCharge((EffectHook.AreaCharge) hook, ctx);
-            case SPLASH -> splash((EffectHook.Splash) hook, ctx);
+    public static @Nullable ResourceLocation run(EffectHook hook, HookContext ctx) {
+        return switch (hook.type()) {
+            case EXTRA_DAMAGE -> {
+                extraDamage((EffectHook.ExtraDamage) hook, ctx);
+                yield null;
+            }
+            case APPLY_EFFECT -> {
+                applyEffect((EffectHook.ApplyEffect) hook, ctx);
+                yield null;
+            }
+            case LIFESTEAL -> {
+                lifesteal((EffectHook.Lifesteal) hook, ctx);
+                yield null;
+            }
+            case GAIN_CHARGE -> {
+                gainCharge((EffectHook.GainCharge) hook, ctx);
+                yield null;
+            }
+            case AREA_CHARGE -> {
+                areaCharge((EffectHook.AreaCharge) hook, ctx);
+                yield null;
+            }
+            case SPLASH -> {
+                splash((EffectHook.Splash) hook, ctx);
+                yield null;
+            }
             case STACK -> stack((EffectHook.Stack) hook, ctx);
-            case DETONATE -> detonate((EffectHook.Detonate) hook, ctx);
-        }
+            case DETONATE -> {
+                detonate((EffectHook.Detonate) hook, ctx);
+                yield null;
+            }
+        };
     }
 
     // ------------------------------------------------------------------ damage
@@ -215,12 +241,23 @@ public final class EffectExecutors {
                 name(ctx.target()));
     }
 
-    private static void stack(EffectHook.Stack hook, HookContext ctx) {
-        // One stack per hit, added with the hook's own cap. No multiplier anywhere: §5.2 lists
-        // 叠层上限 among the things diminishing returns must not touch.
+    /**
+     * {@code stack}: one stack per hit, capped by the hook.
+     *
+     * <p>No multiplier anywhere: §5.2 lists 叠层上限 among the things diminishing returns must not
+     * touch, so this arm has no way to be handed one.
+     *
+     * @return the stack id when this hit took the count <b>to</b> the cap (not when it was already
+     *         there), so {@code stack_full} fires once per fill rather than on every capped hit
+     */
+    private static @Nullable ResourceLocation stack(EffectHook.Stack hook, HookContext ctx) {
+        StackState before = StackRuntime.read(ctx.target(), ctx.attacker(), hook.stackId());
         StackState next = StackRuntime.add(ctx.target(), ctx.attacker(), hook.stackId(), 1, hook.max());
-        Astrum.LOGGER.debug("astrum: stack {} on {} for {} -> {}/{} (lastHitTick {})", hook.stackId(),
-                name(ctx.target()), name(ctx.attacker()), next.stacks(), hook.max(), next.lastHitTick());
+        boolean reachedCap = hook.max() > 0 && before.stacks() < hook.max() && next.stacks() >= hook.max();
+        Astrum.LOGGER.debug("astrum: stack {} on {} for {} -> {}/{} (lastHitTick {}){}", hook.stackId(),
+                name(ctx.target()), name(ctx.attacker()), next.stacks(), hook.max(), next.lastHitTick(),
+                reachedCap ? " REACHED CAP" : "");
+        return reachedCap ? hook.stackId() : null;
     }
 
     // ------------------------------------------------------------------ helpers

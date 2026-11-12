@@ -1,4 +1,4 @@
-package com.astrum.pcrd.impl.combat;
+package com.astrum.pcrd.impl.attach;
 
 import java.util.Iterator;
 import java.util.LinkedHashMap;

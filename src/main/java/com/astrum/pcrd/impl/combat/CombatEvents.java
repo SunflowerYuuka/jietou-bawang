@@ -26,6 +26,7 @@ import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.tags.DamageTypeTags;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageType;
 import net.minecraft.world.entity.LivingEntity;
@@ -33,6 +34,8 @@ import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingShieldBlockEvent;
+import net.neoforged.neoforge.event.entity.player.CriticalHitEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.ApiStatus;
@@ -100,6 +103,17 @@ public final class CombatEvents {
     /** Health of each entity when its damage sequence started, consumed by the matching Post. */
     private final Map<UUID, Float> preHitHealth = new HashMap<>();
 
+    /**
+     * Hits the engine announced as critical, keyed by attacker and target, consumed by that hit's
+     * {@code LivingDamageEvent.Post} in the same tick.
+     *
+     * <p>{@code CriticalHitEvent} fires <b>before</b> {@code hurt()}, so it cannot carry the damage that
+     * was actually removed. Remembering the fact and evaluating {@code crit} hooks on the Post lets a
+     * crit {@code lifesteal} heal for real damage instead of a predicted one — the same reason
+     * {@link #preHitHealth} exists.
+     */
+    private final Map<PendingKey, Long> landedCrits = new HashMap<>();
+
     /** Players already warned about a quarantined roster, so the warning is one line, not per hit. */
     private final Set<UUID> warnedQuarantine = new HashSet<>();
 
@@ -120,6 +134,36 @@ public final class CombatEvents {
     @SubscribeEvent
     public void onDamagePre(LivingDamageEvent.Pre event) {
         preHitHealth.put(event.getEntity().getUUID(), event.getEntity().getHealth());
+    }
+
+    /**
+     * Remembers that the engine called this swing a critical hit, for the {@code Post} that follows in
+     * the same tick.
+     *
+     * <p>Not `isVanillaCritical()`: a mod that grants crits itself sets {@code isCriticalHit} on this
+     * very event, and that is a crit the player experienced. Both flags are the engine's word for it.
+     */
+    @SubscribeEvent
+    public void onCriticalHit(CriticalHitEvent event) {
+        if (!event.isCriticalHit() || !(event.getEntity() instanceof ServerPlayer attacker)
+                || !(event.getTarget() instanceof LivingEntity target) || attacker == target) {
+            return;
+        }
+        landedCrits.put(new PendingKey(attacker.getUUID(), target.getUUID()),
+                attacker.level().getGameTime());
+        Astrum.LOGGER.debug("astrum: crit announced: {} -> {}", attacker.getName().getString(),
+                target.getName().getString());
+    }
+
+    /**
+     * {@return whether this hit was announced as a critical one in this tick, consuming the fact}
+     *
+     * <p>Consumed rather than merely read: a crit flag that lingered would turn the next ordinary hit on
+     * the same target into a crit too, and a crit hook that pays charge would pay it twice.
+     */
+    private boolean takeCrit(ServerPlayer attacker, LivingEntity target) {
+        Long tick = landedCrits.remove(new PendingKey(attacker.getUUID(), target.getUUID()));
+        return tick != null && tick == target.level().getGameTime();
     }
 
     /**
@@ -159,22 +203,73 @@ public final class CombatEvents {
             return;
         }
         if (source.getEntity() instanceof ServerPlayer attacker && attacker != target) {
-            queue(attacker, target, source, dealt);
+            // The hit has landed, so the combo chain advances here — once per hit, whatever the wheel
+            // contains, because a chain is the attacker's rhythm and not a character's feature.
+            int comboHits = TriggerRuntime.noteHit(attacker);
+            TriggerFacts facts = TriggerFacts.forHit(
+                    source.getDirectEntity() == attacker,
+                    source.is(DamageTypeTags.IS_PROJECTILE),
+                    takeCrit(attacker, target),
+                    comboHits,
+                    TriggerFacts.isLowHealth(attacker.getHealth(), attacker.getMaxHealth()));
+            Astrum.LOGGER.debug("astrum: hit facts on {}: melee={} projectile={} crit={} combo={} "
+                    + "lowHealth={}", target.getName().getString(), facts.meleeHit(),
+                    facts.projectileHit(), facts.crit(), facts.comboHits(), facts.lowHealth());
+            queue(attacker, target, source, dealt, facts);
         }
     }
 
     /**
-     * A mob died. Kill charge is credited to the player the game credits the kill to.
+     * A mob died: credit kill charge, and run the killer's {@code kill} hooks.
      *
      * <p>Deliberately <b>not</b> short-circuited on our own damage type: a death is a single event
      * whichever damage type finished the target, and crediting it once cannot recurse because
      * nothing here deals damage. (The fuse exists to protect hook evaluation, not the kill counter.)
+     *
+     * <p>The kill hooks are evaluated with {@link TriggerFacts#forKill()}, which observes {@code kill}
+     * and nothing else: the killing blow already fired its own {@code melee_hit}/{@code crit} hooks
+     * when it landed, and replaying them here would pay twice.
+     *
+     * <p>{@code dealt} is {@code 0} for this path — the target is already dead, so there is no health
+     * to attribute. Effects that need real damage ({@code lifesteal}) therefore do nothing on a kill
+     * hook while flat ones ({@code gain_charge}, {@code extra_damage}) work normally, and any damage
+     * queued against the corpse is dropped by the flush with a debug line.
      */
     @SubscribeEvent
     public void onDeath(LivingDeathEvent event) {
-        if (event.getSource().getEntity() instanceof ServerPlayer killer) {
-            credit(killer, ServerConfig.UB.ubChargePerKill.get());
+        if (!(event.getSource().getEntity() instanceof ServerPlayer killer)) {
+            return;
         }
+        credit(killer, ServerConfig.UB.ubChargePerKill.get());
+        if (event.getEntity() != killer) {
+            queue(killer, event.getEntity(), event.getSource(), 0.0F, TriggerFacts.forKill());
+        }
+    }
+
+    /**
+     * A player blocked with a shield: run that player's {@code block} hooks.
+     *
+     * <p>The blocker is the actor, so it takes the attacker role the executors expect: {@code lifesteal}
+     * heals the blocker, {@code gain_charge} credits the blocker, and the "target" is the entity whose
+     * blow was stopped when there is one. {@code dealt} is the blocked damage, which is what makes a
+     * block {@code lifesteal} ("heal for a fraction of what you blocked") mean something.
+     *
+     * <p>Skipped when the damage came from no entity at all (environmental): there is no target to
+     * attribute the effects to, and inventing one would be worse than the debug line.
+     */
+    @SubscribeEvent
+    public void onShieldBlock(LivingShieldBlockEvent event) {
+        if (!event.getBlocked() || !(event.getEntity() instanceof ServerPlayer blocker)) {
+            return;
+        }
+        if (!(event.getDamageSource().getEntity() instanceof LivingEntity sourceEntity)
+                || sourceEntity == blocker) {
+            Astrum.LOGGER.debug("astrum: {} blocked damage with no attributable source, block hooks "
+                    + "skipped", blocker.getName().getString());
+            return;
+        }
+        queue(blocker, sourceEntity, event.getDamageSource(),
+                Math.max(0.0F, event.getBlockedDamage()), TriggerFacts.forBlock());
     }
 
     /**
@@ -212,6 +307,7 @@ public final class CombatEvents {
     @SubscribeEvent
     public void onServerTick(ServerTickEvent.Post event) {
         preHitHealth.clear();   // anything left here belonged to a sequence that never reached Post
+        landedCrits.clear();    // ditto: a crit whose hit never landed must not bless a later one
         if (pending.isEmpty()) {
             return;
         }
@@ -260,9 +356,10 @@ public final class CombatEvents {
         }
     }
 
-    private void queue(ServerPlayer attacker, LivingEntity target, DamageSource source, float dealt) {
+    private void queue(ServerPlayer attacker, LivingEntity target, DamageSource source, float dealt,
+            TriggerFacts facts) {
         DamageBatch batch = new DamageBatch();
-        collect(attacker, target, source, dealt, batch);
+        collect(attacker, target, source, dealt, facts, batch);
         if (batch.isEmpty()) {
             return;
         }
@@ -314,6 +411,7 @@ public final class CombatEvents {
     public void onServerStopping(ServerStoppingEvent event) {
         pending.clear();
         preHitHealth.clear();
+        landedCrits.clear();
         warnedQuarantine.clear();
     }
 
@@ -334,7 +432,7 @@ public final class CombatEvents {
      * middle of a damage sequence.
      */
     private void collect(ServerPlayer attacker, LivingEntity target, DamageSource source, float dealt,
-            DamageBatch batch) {
+            TriggerFacts facts, DamageBatch batch) {
         Optional<Registry<CharacterDef>> characters = AstrumApi.characters();
         if (characters.isEmpty()) {
             return;   // no world loaded: nothing to read
@@ -380,7 +478,7 @@ public final class CombatEvents {
             if (def == null) {
                 continue;   // the pack no longer defines it; PartyMultipliers already ranks it neutral
             }
-            HookEvaluator.evaluate(def, hit.forSlot(multipliers[slot], characterId));
+            HookEvaluator.evaluate(def, hit.forSlot(multipliers[slot], characterId), facts);
         }
     }
 

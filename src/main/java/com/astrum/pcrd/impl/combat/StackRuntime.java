@@ -1,6 +1,9 @@
 package com.astrum.pcrd.impl.combat;
 
 import com.astrum.pcrd.impl.attach.Attachments;
+import com.astrum.pcrd.impl.attach.StackKey;
+import com.astrum.pcrd.impl.attach.StackState;
+import com.astrum.pcrd.impl.attach.StackTable;
 import com.astrum.pcrd.impl.config.ServerConfig;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;

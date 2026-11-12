@@ -111,6 +111,19 @@ public final class ServerConfig {
          */
         public final ModConfigSpec.IntValue stackTtlTicks;
 
+        /**
+         * How long a {@code combo_n} chain survives a gap between hits, in ticks.
+         *
+         * <p>A chain is "consecutive hits", which needs a definition of consecutive: any gap of this
+         * many ticks or more starts a new chain. Like {@link #stackTtlTicks} it is read at the point of
+         * use ({@code TriggerRuntime.comboWindowTicks()}) and never cached, and it is judged only when
+         * the player next hits something — no timer, no tick listener.
+         *
+         * <p>The lower bound is {@code 1}: a window of zero would mean no chain can ever span two hits,
+         * which would silently disable every {@code combo_n} hook rather than merely shortening it.
+         */
+        public final ModConfigSpec.IntValue comboWindowTicks;
+
         private BalanceOptions(ModConfigSpec.Builder builder) {
             builder.push("balance");
             enableDiminishingReturns = builder
@@ -122,6 +135,9 @@ public final class ServerConfig {
             stackTtlTicks = builder
                     .comment(" 叠层在没有新命中后存活多久（tick）；只在该实体被再次命中时判定，不做 tick 轮询")
                     .defineInRange("stackTtlTicks", 100, 1, 72_000);
+            comboWindowTicks = builder
+                    .comment(" combo_n 连击链允许的间隔（tick）；超过即重新计数，只在命中时判定，不做 tick 轮询")
+                    .defineInRange("comboWindowTicks", 40, 1, 72_000);
             builder.pop();
         }
     }
