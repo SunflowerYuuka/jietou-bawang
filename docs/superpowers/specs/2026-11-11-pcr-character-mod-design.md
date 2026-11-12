@@ -423,6 +423,27 @@ CD 期间或槽未满时按释放键必须给明确反馈（音效 + 槽位抖�
 
 ## 8. 配置
 
+### 8.0 配置必须有游戏内界面（用户 2026-11-12 明确指出，硬性要求）
+
+**"配置"指的是游戏里的界面，不是让人去改 toml 文件。**
+
+两条入口都要有：
+1. **模组列表 → 选中 astrum → 「配置」按钮**能打开界面；
+2. **按键**能直接打开本模的配置界面（键位可改，默认候选避开 `R`/`V`/中键等已占用键）。
+
+> ⚠️ **关键事实（已从 NeoForge 21.1.265 源码确认）**：`ModListScreen` 里
+> `configButton.active = IConfigScreenFactory.getForMod(selectedMod).isPresent();`
+> ——该扩展点是**按 mod 查的**。所以只调 `container.registerConfig(...)` 生成 toml 是**不够的**：
+> 不注册 `IConfigScreenFactory` 的话，那个按钮是**灰的、点不动**。
+>
+> 好消息是不用自己写 GUI：NeoForge 提供 `ConfigurationScreen`，能**直接从 `ModConfigSpec` 生成界面**。
+> 注册一行即可：`container.registerExtensionPoint(IConfigScreenFactory.class, ConfigurationScreen::new);`
+> （必须在客户端侧注册；`ConfigurationScreen` 是 client 类，不能进 common 路径——§7 端隔离仍然适用。）
+
+界面需要覆盖的项：§8.2 服务端全项 + §8.3 客户端全项，含 `wheelMode`（RING/DISC）、`wheelScale`、
+`wheelOpacity`、`enableUbHud`、`hudAnchor`、以及 `[multiplayer]` 的两条护栏。
+服务端项在单人/整合服里改了要提示「重进世界生效」。
+
 ### 8.1 为什么用 ModConfig（不用命令 + SavedData）
 
 用户决策。补充理由：`ModConfig.Type.SERVER` 是 **per-save**（**⚠️ 但落在哪里见 §8.1.1**），**不是 per-dimension**；而 SavedData 是每维度一份，会静默分叉。加上 ModConfig 是加载器原生、纯文本、整合包作者熟悉，避免第二套配置机制。
