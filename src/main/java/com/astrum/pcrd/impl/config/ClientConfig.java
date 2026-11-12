@@ -1,5 +1,6 @@
 package com.astrum.pcrd.impl.config;
 
+import com.astrum.pcrd.impl.client.WheelGeometry;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.config.ModConfig;
 import net.neoforged.neoforge.common.ModConfigSpec;
@@ -85,14 +86,21 @@ public final class ClientConfig {
             enableScrollSwitching = builder
                     .comment(" 是否允许用滚轮切换预设（服务端 scrollSwitchPolicy 另有一道许可）")
                     .define("enableScrollSwitching", false);
+            // The declared range is WheelGeometry's own clamp window, not a wider guess: the spec's
+            // 20–33% is a design decision (spec §5.5), so the config must declare exactly it. Declaring
+            // 0.0 ~ 1.0 while the clamp rewrote everything into 0.20–0.33 is the defect the previous round
+            // fixed for wheelOpacity — typing 0.8 silently became 0.33 with nothing to say why. Reading the
+            // bounds from the clamp's constants means the two cannot drift apart again.
             wheelScale = builder
-                    .comment(" 轮盘半径 = 屏高百分比（规格 0.20 ~ 0.33，默认 0.27；定义域 0 ~ 1 防止越界，"
-                            + "WheelGeometry 会再夹一次）")
-                    .defineInRange("wheelScale", 0.27, 0.0, 1.0);
+                    .comment(" 轮盘半径 = 屏高比例（规格 §5.5：0.20 ~ 0.33，默认 0.27）；"
+                            + "超出范围的值会被拒绝，WheelGeometry 用同一组常数再夹一次")
+                    .defineInRange("wheelScale", WheelGeometry.RADIUS_FRACTION_DEFAULT,
+                            WheelGeometry.RADIUS_FRACTION_MIN, WheelGeometry.RADIUS_FRACTION_MAX);
             wheelOpacity = builder
                     .comment(" 环带背景透明度（0.00 ~ 1.00，默认 0.75，即规格 §5.5 的窗口；1.00 = 完全不透明）；"
                             + "图标与文字不受影响")
-                    .defineInRange("wheelOpacity", 0.75, 0.0, 1.0);
+                    .defineInRange("wheelOpacity", WheelGeometry.BAND_ALPHA_DEFAULT,
+                            WheelGeometry.BAND_ALPHA_MIN, WheelGeometry.BAND_ALPHA_MAX);
             wheelMode = builder
                     .comment(" 轮盘布局：DISC = 中心填充的完整圆盘（默认），RING = 中心镂空、只画环带",
                             " 两种模式选择逻辑完全一致，都保留中心死区；RING 露出更多战场视野")

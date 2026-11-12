@@ -3,14 +3,15 @@
   "death.attack.astrum.hook_damage.player": "%1$s 被 %2$s 的附着伤害击倒",
   "death.attack.astrum.hook_damage.item": "%1$s 被 %2$s 用 %3$s 的附着伤害击倒",
   "key.categories.astrum": "Astrum",
-  "key.astrum.ub_wheel": "释放 UB / 长按出轮盘",
+  "key.astrum.ub_wheel": "释放 UB（长按：槽位提示条）",
+  "key.astrum.ub_preset_wheel": "预设轮盘（长按：只换预设）",
   "key.astrum.config": "Astrum 设置界面",
 
   "astrum.configuration.title": "Astrum 设置",
   "astrum.configuration.section.astrum.client.toml": "客户端设置（即时生效）",
   "astrum.configuration.section.astrum.client.toml.title": "Astrum 客户端设置（即时生效）",
-  "astrum.configuration.section.astrum.server.toml": "服务端设置（重进世界后重新读取）",
-  "astrum.configuration.section.astrum.server.toml.title": "Astrum 服务端设置（重进世界后重新读取）",
+  "astrum.configuration.section.astrum.server.toml": "服务端设置（单人即时生效；手改文件需重进世界）",
+  "astrum.configuration.section.astrum.server.toml.title": "Astrum 服务端设置（单人即时生效；手改文件需重进世界）",
 
   "astrum.configuration.wheel": "轮盘",
   "astrum.configuration.camera": "镜头",

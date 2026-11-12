@@ -3,14 +3,15 @@
   "death.attack.astrum.hook_damage.player": "%1$s was cut down by %2$s",
   "death.attack.astrum.hook_damage.item": "%1$s was cut down by %2$s using %3$s",
   "key.categories.astrum": "Astrum",
-  "key.astrum.ub_wheel": "UB cast / wheel (hold)",
+  "key.astrum.ub_wheel": "Cast UB (hold: slot pad)",
+  "key.astrum.ub_preset_wheel": "Preset wheel (hold)",
   "key.astrum.config": "Astrum settings",
 
   "astrum.configuration.title": "Astrum settings",
   "astrum.configuration.section.astrum.client.toml": "Client settings (applies immediately)",
   "astrum.configuration.section.astrum.client.toml.title": "Astrum client settings (applies immediately)",
-  "astrum.configuration.section.astrum.server.toml": "Server settings (re-read on next world entry)",
-  "astrum.configuration.section.astrum.server.toml.title": "Astrum server settings (re-read on next world entry)",
+  "astrum.configuration.section.astrum.server.toml": "Server settings (single-player: applies immediately; a hand-edited file needs the next world entry)",
+  "astrum.configuration.section.astrum.server.toml.title": "Astrum server settings (single-player: applies immediately; a hand-edited file needs the next world entry)",
 
   "astrum.configuration.wheel": "Wheel",
   "astrum.configuration.camera": "Camera",

@@ -1,7 +1,9 @@
 package com.astrum.pcrd.impl.client;
 
+import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.AstrumApi;
 import com.astrum.pcrd.api.v1.CharacterDef;
+import com.astrum.pcrd.impl.InternalIds;
 import com.astrum.pcrd.impl.config.ClientConfig;
 import com.astrum.pcrd.impl.config.WheelMode;
 import java.util.Optional;
@@ -48,14 +50,17 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Two meanings of a pick</h2>
  * Moving selects <b>the preset</b> ({@link WheelPreset}) and never casts; casting is the digit
- * {@code 1}–{@code 5} (handled by {@link ClientEvents}) or letting go of the release key. That split is
- * spec §5.5's input table, and it exists so a player can sweep the wheel to look without firing
- * anything.
+ * {@code 1}–{@code 5} or the tap on the <em>other</em> key. That split is spec §5.5's input table, and
+ * it exists so a player can sweep the wheel to look without firing anything. Since the 2026-11-12
+ * decision the split is even sharper: <b>this</b> overlay belongs to the preset wheel key only
+ * ({@code key.astrum.ub_preset_wheel}, default {@code B}), a digit pressed while it is up sets the preset
+ * and never casts, and the cast key's hold raises {@link CastPadOverlay} instead of this ring. The
+ * overlay draws while {@link ClientEvents#presetWheelUp()} is true, which is that key's own machine.
  *
  * <h2>What this class does not do</h2>
  * No input handling at all (the highlight it draws comes from {@link WheelSession}, fed by the client
  * tick), no cursor work (in game the cursor is already grabbed by the game; the selection is by flick
- * direction, see {@link WheelFlick}), no pause, and nothing client-authoritative: picking sends
+ * direction, see {@link WheelFlick}), no pause, and nothing client-authoritative: a cast is sent as
  * {@code UbCastPayload} and the server validates (spec §5.5/§9.5).
  *
  * <p>The overlay is visible only while the wheel is up and — like every other HUD layer — not while
@@ -65,6 +70,9 @@ import org.jetbrains.annotations.ApiStatus;
 @ApiStatus.Internal
 @OnlyIn(Dist.CLIENT)
 public final class WheelOverlay {
+
+    /** This layer's own id, so the per-frame diagnostic can name the layer it drew. */
+    static final ResourceLocation LAYER_ID = InternalIds.id("ub_wheel");
 
     /** Band colour behind the segments; the alpha is added per frame from the config. */
     private static final int BAND_RGB = 0x16203A;
@@ -107,7 +115,7 @@ public final class WheelOverlay {
         if (minecraft.player == null || minecraft.level == null) {
             return;
         }
-        if (!ClientEvents.machine().capturesHotbarDigits()) {
+        if (!ClientEvents.presetWheelUp()) {
             return;
         }
 
@@ -121,17 +129,24 @@ public final class WheelOverlay {
                 : WheelCellLayout.fitBand(ring.bandWidth(), minecraft.font.lineHeight);
         boolean centreFilled = mode == WheelMode.DISC;
 
+        int vertices = 0;
         for (int slot = 0; slot < WheelGeometry.SEGMENTS; slot++) {
-            drawSegment(graphics, ring, slot, alpha, centreFilled, selected);
+            vertices += drawSegment(graphics, ring, slot, alpha, centreFilled, selected);
         }
         for (int slot = 0; slot < WheelGeometry.SEGMENTS; slot++) {
             if (slot == WheelPreset.slot() || slot == selected) {
-                drawOutline(graphics, ring, slot);
+                vertices += drawOutline(graphics, ring, slot);
             }
         }
         for (int slot = 0; slot < WheelGeometry.SEGMENTS; slot++) {
-            drawContents(graphics, ring, slot, mode, layout);
+            vertices += drawContents(graphics, ring, slot, mode, layout);
         }
+        Astrum.LOGGER.debug("astrum: wheel frame layer={} mode={} alpha={} plate={} emptyPlate={} "
+                        + "radius={}..{} (band {} px, {} of height) preset={} hovered={} vertices={}",
+                LAYER_ID, mode, alpha, hex(argb(alpha, BAND_RGB)), hex(argb(alpha, EMPTY_RGB)),
+                ring.innerRadius(), ring.outerRadius(), ring.bandWidth(),
+                ring.midRadius() / Math.max(1.0, graphics.guiHeight()), WheelPreset.slot(), selected,
+                vertices);
     }
 
     /**
@@ -142,11 +157,11 @@ public final class WheelOverlay {
      * every pixel of the wheel is painted once, at the configured alpha, and no two sectors overlap
      * into a darker seam.
      */
-    private static void drawSegment(GuiGraphics graphics, WheelGeometry.Ring ring, int slot,
+    private static int drawSegment(GuiGraphics graphics, WheelGeometry.Ring ring, int slot,
             float alpha, boolean centreFilled, int selected) {
         boolean occupied = ClientPartyCache.slot(slot).isPresent();
         int rgb = !occupied ? EMPTY_RGB : (slot == selected ? HOVER_RGB : BAND_RGB);
-        GuiShapes.band(graphics, ring.centerX(), ring.centerY(),
+        return GuiShapes.band(graphics, ring.centerX(), ring.centerY(),
                 WheelGeometry.plateInnerRadius(ring, centreFilled), ring.outerRadius(),
                 WheelGeometry.segmentStartDegrees(slot), WheelGeometry.segmentEndDegrees(slot),
                 argb(alpha, rgb));
@@ -156,20 +171,22 @@ public final class WheelOverlay {
      * Draws the sector's edges only, so a selected or preset sector is marked without its fill getting
      * a different alpha from the configured one.
      */
-    private static void drawOutline(GuiGraphics graphics, WheelGeometry.Ring ring, int slot) {
+    private static int drawOutline(GuiGraphics graphics, WheelGeometry.Ring ring, int slot) {
         int colour = slot == WheelPreset.slot() ? PRESET_OUTLINE : HOVER_OUTLINE;
         double cx = ring.centerX();
         double cy = ring.centerY();
         double start = WheelGeometry.segmentStartDegrees(slot);
         double end = WheelGeometry.segmentEndDegrees(slot);
-        GuiShapes.band(graphics, cx, cy, ring.innerRadius() - OUTLINE_THICKNESS,
+        int vertices = 0;
+        vertices += GuiShapes.band(graphics, cx, cy, ring.innerRadius() - OUTLINE_THICKNESS,
                 ring.innerRadius() + OUTLINE_THICKNESS, start, end, colour);
-        GuiShapes.band(graphics, cx, cy, ring.outerRadius() - OUTLINE_THICKNESS,
+        vertices += GuiShapes.band(graphics, cx, cy, ring.outerRadius() - OUTLINE_THICKNESS,
                 ring.outerRadius() + OUTLINE_THICKNESS, start, end, colour);
-        GuiShapes.band(graphics, cx, cy, ring.innerRadius(), ring.outerRadius(), start,
+        vertices += GuiShapes.band(graphics, cx, cy, ring.innerRadius(), ring.outerRadius(), start,
                 start + RADIAL_EDGE_DEGREES, colour);
-        GuiShapes.band(graphics, cx, cy, ring.innerRadius(), ring.outerRadius(),
+        vertices += GuiShapes.band(graphics, cx, cy, ring.innerRadius(), ring.outerRadius(),
                 end - RADIAL_EDGE_DEGREES, end, colour);
+        return vertices;
     }
 
     /**
@@ -181,7 +198,7 @@ public final class WheelOverlay {
      * {@link WheelCellLayout}'s answer, which shrinks the stack with the band so a thin band cannot
      * clip it.
      */
-    private static void drawContents(GuiGraphics graphics, WheelGeometry.Ring ring, int slot,
+    private static int drawContents(GuiGraphics graphics, WheelGeometry.Ring ring, int slot,
             WheelMode mode, WheelCellLayout layout) {
         double x = mode == WheelMode.DISC
                 ? WheelGeometry.segmentCentroidX(ring, slot)
@@ -194,50 +211,24 @@ public final class WheelOverlay {
         if (id.isEmpty()) {
             graphics.drawCenteredString(Minecraft.getInstance().font, Component.literal("-"),
                     (int) x, (int) (y + layout.labelOffsetY()), EMPTY_NAME_COLOR);
-            return;
+            return 0;
         }
 
         boolean enhanced = ClientPartyCache.enhanced(slot);
         Optional<CharacterDef> def = definition(id.get());
         WheelIcon icon = WheelIcon.of(def.flatMap(CharacterDef::portrait), enhanced);
+        int vertices = 0;
         if (layout.showIcon()) {
-            drawIcon(graphics, x, y + layout.iconOffsetY(), icon, def, layout.iconRadius());
+            // The icon itself is drawn by WheelIconDraw, which the cast pad also uses: the rings, the
+            // glyph fallback and the tier-3 marker exist once, so the two overlays cannot drift apart.
+            vertices += WheelIconDraw.draw(graphics, x, y + layout.iconOffsetY(), icon, def,
+                    layout.iconRadius());
         }
 
         String name = def.map(CharacterDef::displayName).orElse(id.get().getPath());
         graphics.drawCenteredString(Minecraft.getInstance().font, Component.literal(name),
                 (int) x, (int) (y + layout.labelOffsetY()), NAME_COLOR);
-    }
-
-    /**
-     * Draws one icon: its ring(s), the portrait or a glyph disc, and the tier-3 marker.
-     *
-     * <p>The rings and the marker are what make tier 3 visible when a pack ships no portrait art:
-     * gold instead of white, two rings instead of one, and the {@code II} marker.
-     */
-    private static void drawIcon(GuiGraphics graphics, double x, double y, WheelIcon icon,
-            Optional<CharacterDef> def, double iconRadius) {
-        for (int ringIndex = 0; ringIndex < icon.rings(); ringIndex++) {
-            GuiShapes.outline(graphics, x, y, iconRadius + 1.0 + ringIndex * 1.5, 1.0, icon.tint());
-        }
-        if (icon.texture().isPresent()) {
-            ResourceLocation texture = icon.texture().get();
-            int diameter = (int) (iconRadius * 2);
-            graphics.blit(texture, (int) (x - iconRadius), (int) (y - iconRadius), 0, 0,
-                    diameter, diameter, diameter, diameter);
-        } else {
-            GuiShapes.disc(graphics, x, y, iconRadius, icon.tint());
-            String glyph = def.map(CharacterDef::displayName).filter(text -> !text.isEmpty())
-                    .map(text -> text.substring(0, 1)).orElse("?");
-            graphics.drawCenteredString(Minecraft.getInstance().font, Component.literal(glyph),
-                    (int) x, (int) (y - Minecraft.getInstance().font.lineHeight / 2.0), 0xFF101010);
-        }
-        if (!icon.marker().isEmpty()) {
-            graphics.drawCenteredString(Minecraft.getInstance().font,
-                    Component.literal(icon.marker()), (int) (x + iconRadius),
-                    (int) (y - iconRadius - Minecraft.getInstance().font.lineHeight / 2.0),
-                    0xFF101010);
-        }
+        return vertices;
     }
 
     /** {@return the character definition, if the pack still defines it and the client has the registry} */
@@ -245,8 +236,16 @@ public final class WheelOverlay {
         return AstrumApi.characters().flatMap(registry -> Optional.ofNullable(registry.get(id)));
     }
 
+    /** {@return an ARGB colour as a printable {@code #AARRGGBB}, for the per-frame diagnostic} */
+    private static String hex(int argb) {
+        return String.format("#%08X", argb);
+    }
+
     private static int argb(float alpha, int rgb) {
         int a = Math.round(Math.max(0.0f, Math.min(1.0f, alpha)) * 255.0f);
         return (a << 24) | (rgb & 0x00FFFFFF);
     }
 }
+
+
+

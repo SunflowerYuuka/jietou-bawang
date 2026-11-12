@@ -79,10 +79,11 @@ public final class ClientConfigScreen {
      *
      * <p>Every value is read from the spec at the moment it is drawn
      * ({@code ClientConfig.WHEEL.wheelMode.get()} in the renderer), and the screen writes through the
-     * same {@code ConfigValue.set}, so a CLIENT edit is visible on the next frame. The SERVER edit
-     * writes {@code astrum-server.toml} on close; the file is read again when a world is entered, which
-     * is what the screen's own section titles say (NeoForge 21.1.265 says nothing for the SERVER type —
-     * {@code ConfigurationSectionScreen.needsRestart} is only set for {@code STARTUP}).
+     * same {@code ConfigValue.set}, so a CLIENT edit is visible on the next frame. A SERVER edit is just as
+     * immediate — one static spec, every read lazy — and it writes {@code astrum-server.toml} on close;
+     * only that <em>file</em> is read again when a world is entered, which is what the section titles now
+     * say (spec §8.2.1: 别在界面上写假话 — the old wording claimed the values waited for a world
+     * re-entry, which was false in single-player).
      *
      * @param minecraft the client
      * @return whether a screen was opened; {@code false} when another GUI already owns the keyboard

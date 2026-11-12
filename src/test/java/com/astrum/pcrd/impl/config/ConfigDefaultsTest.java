@@ -1,9 +1,11 @@
 package com.astrum.pcrd.impl.config;
 
+import com.astrum.pcrd.impl.client.WheelGeometry;
 import com.electronwill.nightconfig.core.CommentedConfig;
 import com.electronwill.nightconfig.core.io.ParsingMode;
 import com.electronwill.nightconfig.toml.TomlFormat;
 import com.electronwill.nightconfig.toml.TomlWriter;
+import net.neoforged.neoforge.common.ModConfigSpec;
 import java.io.StringWriter;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
@@ -136,6 +138,45 @@ class ConfigDefaultsTest {
         assertEquals("BOTTOM_LEFT", toml.get("hud.hudAnchor"));
         assertEquals(0, toml.<Number>get("hud.hudOffsetX").intValue());
         assertEquals(0, toml.<Number>get("hud.hudOffsetY").intValue());
+    }
+
+    /**
+     * The declared range of a numeric option must be the range the code actually honours (spec §8.3:
+     * 配置声明的范围必须等于代码实际允许的范围，否则界面会骗人).
+     *
+     * <p>This is the assertion the {@code wheelOpacity} defect was missing and that {@code wheelScale}
+     * then repeated: the file declared {@code 0.0 ~ 1.0} while {@code WheelGeometry.clampRadiusFraction}
+     * rewrote everything into 0.20–0.33, so a player who typed {@code 0.8} silently got {@code 0.33}.
+     * The clamp window is a deliberate §5.5 design decision, so the declaration is what moves — and it
+     * now moves to <em>the clamp's own constants</em>, so the two cannot drift apart again.
+     *
+     * <p>Read out of the spec through {@code ValueSpec.getRange()}, i.e. the range NeoForge itself
+     * enforces when the file is loaded, not a copy of the numbers in a comment.
+     */
+    @Test
+    void theDeclaredWheelScaleWindowIsTheOneTheClampEnforces() {
+        ModConfigSpec.Range<Double> range = ClientConfig.WHEEL.wheelScale.getSpec().getRange();
+        assertEquals(WheelGeometry.RADIUS_FRACTION_MIN, range.getMin(), 1e-9,
+                "wheelScale must declare the clamp's own lower bound");
+        assertEquals(WheelGeometry.RADIUS_FRACTION_MAX, range.getMax(), 1e-9,
+                "wheelScale must declare the clamp's own upper bound");
+        // Both ends of the declared window are legal values and must arrive unchanged: that is exactly
+        // what "the declaration is the truth" means.
+        assertEquals(0.20, WheelGeometry.clampRadiusFraction(0.20), 1e-9);
+        assertEquals(0.33, WheelGeometry.clampRadiusFraction(0.33), 1e-9);
+        assertEquals(0.27, WheelGeometry.clampRadiusFraction(
+                        (Double) ClientConfig.WHEEL.wheelScale.getSpec().getDefault()), 1e-9,
+                "the default has to be inside the window it is declared in");
+    }
+
+    /** The same rule for the other double, which was fixed in the previous round (0.00 ~ 1.00). */
+    @Test
+    void theDeclaredWheelOpacityWindowIsTheOneTheClampEnforces() {
+        ModConfigSpec.Range<Double> range = ClientConfig.WHEEL.wheelOpacity.getSpec().getRange();
+        assertEquals(WheelGeometry.BAND_ALPHA_MIN, range.getMin(), 1e-9);
+        assertEquals(WheelGeometry.BAND_ALPHA_MAX, range.getMax(), 1e-9);
+        assertEquals(0.0, WheelGeometry.clampAlpha(range.getMin()), 1e-9);
+        assertEquals(1.0, WheelGeometry.clampAlpha(range.getMax()), 1e-9);
     }
 
     /**
