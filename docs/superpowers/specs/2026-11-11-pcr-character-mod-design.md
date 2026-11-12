@@ -265,7 +265,7 @@ CD 期间或槽未满时按释放键必须给明确反馈（音效 + 槽位抖�
 
 **表现要求**：
 - 环半径 = 屏高 **27%**（范围 20–33%），环带宽度 ≈ 屏高 **8%**（范围 6–10%）
-- 环带背景 alpha **0.55**（范围 0.45–0.70），深色底（`0x16203A`），图标与文字不透明
+- 环带/盘面背景 alpha **0.75**（范围 **0.00–1.00**，可按玩家口味从全透明调到全不透明），深色底（`0x16203A`），图标与文字不透明
 - **两种布局模式，玩家在 `ClientConfig` 的 `wheelMode` 里自选**：
   - **`RING`（环形）**：中心镂空，扇区色块、图标、文字都画在**环带**上（`innerRadius..outerRadius`）
   - **`DISC`（圆盘）**：中心填充同色半透明底，整块是一枚完整圆盘，扇区色块铺满整个扇形，**图标与文字画在扇形自身的中心点**
@@ -489,8 +489,7 @@ NeoForge 的 `ConfigTracker.resolveBasePath` 逻辑是：
 ```toml
 [balance]
 enableDiminishingReturns = true      # 同维度递减开关
-diminishingBase = 0.7                # 倍率 = base^(n-1)，clamp [0.1, 1.0]
-stackTtlTicks = 100                  # 叠层惰性过期时长（tick）；只在被攻击时判定，无 tick 轮询。下限 1
+diminishingBase = 0.7                # 倍率 = base^(n-1)，clamp [0.1, 1.0]stackTtlTicks = 100                  # 叠层惰性过期时长（tick）；只在被攻击时判定，无 tick 轮询。下限 1
 comboWindowTicks = 40                # combo_n 的连击窗口（tick）。语义：链内每第 N 次命中即触发一次（N = triggerParams.hits），
                                      # 故 6 连击会让 hits=3 的 hook 触发两次；hits ≤ 0 视为无效配置 → 不触发 + WARN（不得 fail-open）
 
@@ -515,6 +514,18 @@ areaChargeReceiveCapPerSecond = 6.0      # 每个接收者每秒从 area_charge 
 > - **TOML 文件**（持久、可审计）：`areaChargePairCooldownTicks` 与 `areaChargeReceiveCapPerSecond` 都允许填 `0`，语义都是「我明确要关掉这项」——CD 填 0 = 无成对冷却；上限填 0 = `area_charge` 不再给任何人充能（等同关掉该效果）。两者都是深思熟虑的文件编辑，保留。
 > - **运行时 OP 覆盖**（`/astrum`，即时生效）：两项都必须拒绝非法值——`pairCooldownTicks` 必须 **≥ 1**，`receiveCapPerSecond` 必须 **> 0 且有限**。填 0 / 负数 / NaN 一律抛异常且不改变现状，**不允许**用覆盖把刹车关掉。
 >
+
+#### 8.2.1 SERVER 配置到底什么时候生效（别在界面上写假话）
+
+实测结论：
+- **单人 / 局域网主机**：`SERVER` 配置项在界面上改完**立刻生效**——它是同一个静态 spec，各处都是懒读，不存在"等重进世界"。
+- **只有那份 toml 文件**会在进世界时被重新读取（所以手改文件后才需要重进）。
+- 专服：玩家改不到服务端配置；改文件需重启或重载。
+
+因此配置界面的分组标题**不能**写「重进世界后重新读取」——那是把"文件何时重读"说成了"值何时生效"。
+正确措辞示例：`服务端设置（单人即时生效；手改文件需重进世界）`。
+
+> 若不希望单人下即时生效（例如想让数值改动必须"落定"一次），正确工具是给每个 server 值加 `builder.worldRestart()`，NeoForge 会自己弹重启提示。本项目**不采用**：即时生效对调试更友好，改措辞即可。
 > 理由：改文件是**深思熟虑**的动作（还会留在 git 里可审计），打字是一条命令、极易手抖。要让护栏失效，请改文件；不要让 `/astrum` 一条命令把防充能闭环的刹车弄没。
 maxActiveShowcaseEntities = 8            # 同世界演出实体上限，超限只结算伤害不生成实体
 ```
@@ -524,12 +535,24 @@ maxActiveShowcaseEntities = 8            # 同世界演出实体上限，超限�
 ```toml
 [wheel]
 enableScrollSwitching = false
-wheelScale = 0.27
-wheelOpacity = 0.55
-
+wheelMode = "DISC"                   # RING / DISC（§5.5）
+wheelScale = 0.27                    # 取值 0.20–0.33（屏高比例），越界会被夹回，见下方护栏
+wheelOpacity = 0.75                  # 取值 0.00–1.00
+[hud]
+enableUbHud = true
+hudAnchor = "BOTTOM_LEFT"
+hudOffsetX = 0
+hudOffsetY = 0
 [camera]
 ubCameraPush = false                 # 演出时轻微镜头反馈，默认关
 ```
+
+> ⚠️ **配置声明的范围必须等于代码实际允许的范围，否则界面会骗人。**
+> 已经踩过一次：`wheelOpacity` 声明 0.0–1.0，但 `WheelGeometry.clampAlpha` 把值夹到 0.45–0.70，
+> 玩家填 0.9 实际生效 0.70 且毫无提示。已修（现在声明 0.00–1.00 且真的生效）。
+> 同类风险：**`wheelScale` 的配置范围必须与 `clampRadiusFraction` 的 0.20–0.33 一致**，
+> 不能一边声明 0.0–1.0 一边夹回。规则：**要么放宽夹取范围，要么把声明范围改成夹取范围，绝不允许两者不一致**。
+> 新增任何数值型配置项时，都在界面上验证一次「填边界值 → 读回来是否原样」。
 
 ### 8.4 两个必须做的护栏
 
