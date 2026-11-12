@@ -47,6 +47,15 @@ JOBS = [
     ("image-67697a0d.png", "item/theme_forest/character_card.png", (32, 32), True, 0.04),
     ("image-ffb10cfd.png", "item/theme_forest/character_book.png", (32, 32), True, 0.04),
     ("image-ca427696.png", "gui/forest_divider.png", (256, 16), False, 0.0),
+    # mod 图标：横幅做 logoFile（128x128 是模组列表的显示上限）
+    ("image-a22a9c64.png", "logo.png", (128, 128), False, 0.0),
+]
+
+# 需要先裁区域再缩放的：源图 -> (左, 上, 右, 下) 比例，目标路径, 尺寸
+CROPS = [
+    # 创造标签只有 16x16。从横幅裁头部会糊成一团（细节密度太高），
+    # 所以标签图标是专门按 16x16 可读性另画的一张：整张缩到 16x16。
+    ("image-2a1fd26b.png", (0.0, 0.0, 1.0, 1.0), "gui/tab_icon.png", (16, 16)),
 ]
 
 # 九宫格：源图 -> 目标前缀, 每片边长
@@ -155,6 +164,18 @@ def main() -> int:
             dest.parent.mkdir(parents=True, exist_ok=True)
             to_target(Image.open(SRC / src_name), target, pixel_art, margin).save(dest, "PNG", optimize=True)
             shrink(dest)
+        written.append(dest)
+
+    for src_name, box, rel, target in CROPS:
+        dest = OUT / rel
+        if not dry:
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            src = Image.open(SRC / src_name).convert("RGBA")
+            w, h = src.size
+            l, t, r, b = box
+            piece = src.crop((int(w * l), int(h * t), int(w * r), int(h * b)))
+            # 像素画：NEAREST 缩，保住硬边
+            piece.resize(target, Image.NEAREST).save(dest, "PNG", optimize=True)
         written.append(dest)
 
     for src_name, prefix, size in NINESLICE:
