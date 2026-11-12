@@ -213,7 +213,7 @@ PCR 的爽点是五人同时在打，所以**默认全部触发**，不用数量
 |---|---|---|
 | 单次 UB 伤害 ≈ 该角色平时 15–25 秒的附着总输出 | 15–25s | 否则玩家只堆 UB，附着系统沦为攒槽工具 |
 | 同维度倍率下限 | 0.1 | 配置项填 0 会导致效果全废 |
-| 每角色每类 trigger 每次攻击最多触发一次 | 1 | 防止同一事件被重复计入 |
+| 每角色每类 trigger 每次攻击最多**求值**一次 | 1 | 防止同一事件被重复计入。⚠️ **这只限制「trigger 被求值几次」，不限制「一个 trigger 能挂几个 effect」**——同一 trigger 上的**所有** effect 都必须执行（见 §6.4）。早期实现把这条误读成「每类 trigger 只跑第一个 effect」，导致姬塔的 `area_charge` 被静默丢弃，已修正 |
 
 ### 5.4 UB
 
@@ -433,7 +433,8 @@ NeoForge 的 `ConfigTracker.resolveBasePath` 逻辑是：
 enableDiminishingReturns = true      # 同维度递减开关
 diminishingBase = 0.7                # 倍率 = base^(n-1)，clamp [0.1, 1.0]
 stackTtlTicks = 100                  # 叠层惰性过期时长（tick）；只在被攻击时判定，无 tick 轮询。下限 1
-comboWindowTicks = 40                # combo_n 的连击窗口（tick）；窗口内累计命中数达到 triggerParams.hits 即触发
+comboWindowTicks = 40                # combo_n 的连击窗口（tick）。语义：链内每第 N 次命中即触发一次（N = triggerParams.hits），
+                                     # 故 6 连击会让 hits=3 的 hook 触发两次；hits ≤ 0 视为无效配置 → 不触发 + WARN（不得 fail-open）
 
 [ub]
 ubGlobalCooldownTicks = 100
