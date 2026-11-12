@@ -148,8 +148,9 @@ public final class ClientEvents {
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Post.class, ClientEvents::onClientTick);
         NeoForge.EVENT_BUS.addListener(ScreenEvent.Opening.class, ClientEvents::onScreenOpening);
         Astrum.LOGGER.info(
-                "astrum: client UB input wired (press/hold/release {}, threshold {} ms, wheel on a GUI layer)",
-                ClientKeyBindings.UB_WHEEL_KEY, WheelInputMachine.HOLD_THRESHOLD_MILLIS);
+                "astrum: client UB input wired (press/hold/release {}, threshold {} ms, wheel on a GUI layer, config screen on {})",
+                ClientKeyBindings.UB_WHEEL_KEY, WheelInputMachine.HOLD_THRESHOLD_MILLIS,
+                ClientKeyBindings.CONFIG_KEY);
     }
 
     private static void onRegisterGuiLayers(RegisterGuiLayersEvent event) {
@@ -174,6 +175,17 @@ public final class ClientEvents {
     static void onKey(InputEvent.Key event) {
         int action = event.getAction();
         boolean down = action != InputConstants.RELEASE;
+
+        // The config key is observed, never intercepted: InputEvent.Key is a notification at the end of
+        // vanilla's keyboard handling, so there is nothing here to cancel and nothing we need to.
+        // Repeats and releases are ignored; open() itself refuses while another GUI is up, which is what
+        // keeps a K typed into chat or into a config text box from opening a second screen.
+        if (ClientKeyBindings.matchesConfig(event.getKey(), event.getScanCode())) {
+            if (action == InputConstants.PRESS) {
+                ClientConfigScreen.open(Minecraft.getInstance());
+            }
+            return;
+        }
 
         if (down && MACHINE.capturesHotbarDigits()) {
             int digit = WheelDigits.digitForKey(event.getKey());

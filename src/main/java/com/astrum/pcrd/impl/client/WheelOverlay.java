@@ -29,7 +29,7 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Shape of the thing</h2>
  * Segment {@code i} is party slot {@code i}. {@link WheelGeometry} says where the ring is, so the
- * "ring radius 27% of screen height, band 8%, alpha 0.55" claims are the same numbers the tests assert;
+ * "ring radius 27% of screen height, band 8%, alpha 0.75" claims are the same numbers the tests assert;
  * this class is quads and text on top of those answers and computes no geometry of its own.
  *
  * <p>Two layouts, chosen by the player in {@code [wheel] wheelMode} (spec §5.5):

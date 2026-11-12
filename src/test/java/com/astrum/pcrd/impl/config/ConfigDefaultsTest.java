@@ -122,9 +122,11 @@ class ConfigDefaultsTest {
         CommentedConfig toml = reload(toToml(writtenDefaults(ClientConfig.SPEC)));
 
         assertEquals(false, toml.get("wheel.enableScrollSwitching"));
-        // Spec §5.5/§8.3 after the 2026-11-12 playtest: 0.27 radius (was 0.40), 0.55 alpha (was 0.30).
+        // Spec §5.5/§8.3 after the 2026-11-12 playtest: 0.27 radius (was 0.40), then alpha 0.75 (was
+        // 0.55, and 0.30 before that) after the second look at it in a real game — 0.55 still read as
+        // transparent over a busy background, and the clamp window is now the declared 0.00 ~ 1.00.
         assertEquals(0.27, toml.<Number>get("wheel.wheelScale").doubleValue(), 1e-9);
-        assertEquals(0.55, toml.<Number>get("wheel.wheelOpacity").doubleValue(), 1e-9);
+        assertEquals(0.75, toml.<Number>get("wheel.wheelOpacity").doubleValue(), 1e-9);
         // The player picks the layout (spec §5.5); the shipped default is the filled disc the human chose.
         assertEquals("DISC", toml.get("wheel.wheelMode"));
         assertEquals(false, toml.get("camera.ubCameraPush"));

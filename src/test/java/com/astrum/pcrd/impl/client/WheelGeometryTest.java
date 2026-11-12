@@ -97,11 +97,16 @@ class WheelGeometryTest {
         assertEquals(WheelGeometry.BAND_FRACTION_MIN, WheelGeometry.clampBandFraction(0.01), 1e-9);
         assertEquals(WheelGeometry.BAND_FRACTION_MAX, WheelGeometry.clampBandFraction(0.5), 1e-9);
         assertEquals(WheelGeometry.BAND_ALPHA_DEFAULT, WheelGeometry.clampAlpha(Double.NaN), 1e-9);
-        assertEquals(0.45, WheelGeometry.clampAlpha(0.0), 1e-9);
-        assertEquals(0.70, WheelGeometry.clampAlpha(1.0), 1e-9);
-        assertEquals(0.55, WheelGeometry.clampAlpha(0.55), 1e-9);
-        // 0.30 was the old default and is now below the spec floor: it must be lifted, not honoured.
-        assertEquals(0.45, WheelGeometry.clampAlpha(0.30), 1e-9);
+        // The alpha window is exactly the range the config declares (0.00 ~ 1.00), so the two ends are
+        // legal values and must arrive unchanged. The old clamp was 0.45 ~ 0.70: 1.0 came back as 0.70
+        // and 0.0 as 0.45, i.e. a legal config value was silently rewritten and a player could not reach
+        // a fully opaque plate no matter what he typed. That is the regression these two lines pin.
+        assertEquals(0.0, WheelGeometry.clampAlpha(0.0), 1e-9);
+        assertEquals(1.0, WheelGeometry.clampAlpha(1.0), 1e-9);
+        assertEquals(0.75, WheelGeometry.clampAlpha(0.75), 1e-9);
+        // Any other value inside the window is left alone too: 0.30 and 0.90 reach the screen as typed.
+        assertEquals(0.30, WheelGeometry.clampAlpha(0.30), 1e-9);
+        assertEquals(0.90, WheelGeometry.clampAlpha(0.90), 1e-9);
         // The band is measured against the height, and the default 0.08 is inside its own window.
         assertEquals(0.08, WheelGeometry.clampBandFraction(WheelGeometry.BAND_FRACTION), 1e-9);
     }

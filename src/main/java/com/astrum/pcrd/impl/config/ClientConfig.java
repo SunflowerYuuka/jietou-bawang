@@ -77,7 +77,7 @@ public final class ClientConfig {
         /** Ring radius as a fraction of screen height (spec §5.5: 20–33%, default 27%). */
         public final ModConfigSpec.DoubleValue wheelScale;
 
-        /** Ring background alpha (spec §5.5: 0.45–0.70, default 0.55); icons and labels stay opaque. */
+        /** Ring background alpha (spec §5.5: 0.00–1.00, default 0.75); icons and labels stay opaque. */
         public final ModConfigSpec.DoubleValue wheelOpacity;
 
         private WheelOptions(ModConfigSpec.Builder builder) {
@@ -90,8 +90,9 @@ public final class ClientConfig {
                             + "WheelGeometry 会再夹一次）")
                     .defineInRange("wheelScale", 0.27, 0.0, 1.0);
             wheelOpacity = builder
-                    .comment(" 环带背景透明度（规格 0.45 ~ 0.70，默认 0.55）；图标与文字不受影响")
-                    .defineInRange("wheelOpacity", 0.55, 0.0, 1.0);
+                    .comment(" 环带背景透明度（0.00 ~ 1.00，默认 0.75，即规格 §5.5 的窗口；1.00 = 完全不透明）；"
+                            + "图标与文字不受影响")
+                    .defineInRange("wheelOpacity", 0.75, 0.0, 1.0);
             wheelMode = builder
                     .comment(" 轮盘布局：DISC = 中心填充的完整圆盘（默认），RING = 中心镂空、只画环带",
                             " 两种模式选择逻辑完全一致，都保留中心死区；RING 露出更多战场视野")

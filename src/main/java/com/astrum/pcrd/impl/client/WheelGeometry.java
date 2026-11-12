@@ -10,7 +10,7 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Why the numbers live here and not in the renderer</h2>
  * The spec makes <em>visual</em> claims — ring radius 20–33% of screen height (default 27%), band width
- * 6–10% (default 8%), band alpha 0.45–0.70 (default 0.55), and a selection that lands on exactly one
+ * 6–10% (default 8%), band alpha 0.00–1.00 (default 0.75), and a selection that lands on exactly one
  * segment — and a screenshot cannot assert any of them. As constants plus pure functions they become
  * assertions ({@code WheelGeometryTest}): a screen height maps to a measurable inner/outer radius, a
  * direction maps to a segment, and {@link #segmentCentroidX} says where a sector's centroid is.
@@ -43,6 +43,14 @@ import org.jetbrains.annotations.ApiStatus;
  * colourful background, so icons blended into the scene. Spec §5.5 carries the verdict (committed with
  * it, <em>before</em> this code): radius to two thirds (0.27), band narrowed in proportion (0.08, not
  * the old 0.12 — leaving it fat on a smaller radius reads as a small, fat wheel), alpha up to 0.55.
+ *
+ * <p><b>Second playtest (2026-11-12, fix round 4):</b> 0.55 still read as transparent over a busy
+ * background, so the default moved to 0.75 — and, more importantly, the clamp window became the whole
+ * 0.00–1.00 range the config declares. The alpha used to be clamped into a 0.45–0.70 window that the
+ * config did not declare, so a player who typed 0.9 got 0.70 with nothing to tell him why: a config
+ * value that is silently rewritten is a defect, not a guardrail. Keeping the clamp at exactly the
+ * config's own range makes "the value you set is the value you get" true, and a fully opaque plate
+ * reachable for anyone who wants one.
  *
  * <h2>The one ordering both meanings share</h2>
  * Segment {@code i} is party slot {@code i} — the order {@link Party} already owns (slot order is
@@ -94,19 +102,22 @@ public final class WheelGeometry {
     public static final double BAND_FRACTION_MAX = 0.10;
 
     /**
-     * Band background alpha. Spec §5.5: 0.45–0.70, default 0.55 = {@code ClientConfig.wheelOpacity}.
+     * Band background alpha. Spec §5.5: 0.00–1.00, default 0.75 = {@code ClientConfig.wheelOpacity}.
      *
      * <p>The dark base colour ({@code 0x16203A} in {@code WheelOverlay}) was always there; at 0.30 the
-     * human could not see it as a plate at all on a colourful background. 0.55 is the value his
-     * playtest settled on — enough to read as one surface under the icons, still see-through.
+     * human could not see it as a plate at all on a colourful background, and the 0.55 he first settled
+     * on still read as transparent over a busy scene. 0.75 is the second playtest's answer — one
+     * surface under the icons. The top of the window is 1.00 on purpose: a player who wants the plate
+     * fully opaque must be able to have it, which the old 0.70 ceiling made impossible while the config
+     * file claimed 0.0–1.0.
      */
-    public static final double BAND_ALPHA_DEFAULT = 0.55;
+    public static final double BAND_ALPHA_DEFAULT = 0.75;
 
-    /** Lowest band alpha the config is allowed to produce (spec §5.5). */
-    public static final double BAND_ALPHA_MIN = 0.45;
+    /** Lowest band alpha the config is allowed to produce (spec §5.5: fully transparent is a choice). */
+    public static final double BAND_ALPHA_MIN = 0.0;
 
-    /** Highest band alpha the config is allowed to produce (spec §5.5). */
-    public static final double BAND_ALPHA_MAX = 0.70;
+    /** Highest band alpha the config is allowed to produce (spec §5.5: 1.00 is fully opaque). */
+    public static final double BAND_ALPHA_MAX = 1.0;
 
     /** Returned by {@link #segmentAt} when the point is not over the band. */
     public static final int NO_SEGMENT = -1;
@@ -160,7 +171,13 @@ public final class WheelGeometry {
         return Math.max(BAND_FRACTION_MIN, Math.min(BAND_FRACTION_MAX, fraction));
     }
 
-    /** Clamps a configured band alpha into the spec's 0.45–0.70 window (spec §5.5). */
+    /**
+     * Clamps a configured band alpha into the config's own 0.00–1.00 range (spec §5.5).
+     *
+     * <p>Only {@code NaN} is rewritten: there is no value inside the declared range that this clamp
+     * would change, which is the point — the old 0.45–0.70 window silently overrode a legal config
+     * value (see the class javadoc).
+     */
     public static double clampAlpha(double alpha) {
         if (Double.isNaN(alpha)) {
             return BAND_ALPHA_DEFAULT;

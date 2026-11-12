@@ -1,6 +1,7 @@
 package com.astrum.pcrd;
 
 import com.astrum.pcrd.impl.attach.Attachments;
+import com.astrum.pcrd.impl.client.ClientConfigScreen;
 import com.astrum.pcrd.impl.client.ClientEvents;
 import com.astrum.pcrd.impl.combat.CombatEvents;
 import com.astrum.pcrd.impl.config.ClientConfig;
@@ -31,10 +32,12 @@ public final class Astrum {
         Attachments.register(modBus);
         AstrumNetwork.register(modBus);
         CombatEvents.register();
-        // The client half — key binding, wheel overlay, HUD — lives in impl.client and is only reached
-        // from this branch, so no client class is ever loaded on a dedicated server (spec §7 端隔离).
+        // The client half — key bindings, config screen, wheel overlay, HUD — lives in impl.client and is
+        // only reached from this branch, so no client class is ever loaded on a dedicated server
+        // (spec §7 端隔离).
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientEvents.register(modBus);
+            ClientConfigScreen.register(container);
         }
     }
 }
