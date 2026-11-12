@@ -1,0 +1,15 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "group": "astrum",
+  "category": "misc",
+  "ingredients": [
+    { "item": "minecraft:book" },
+    { "item": "minecraft:paper" },
+    { "item": "minecraft:paper" },
+    { "item": "minecraft:string" }
+  ],
+  "result": {
+    "id": "astrum:character_book",
+    "count": 1
+  }
+}

@@ -8,9 +8,9 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Registration for the mod's items — today exactly one, the character card.
+ * Registration for the mod's items — the character card and the character book.
  *
- * <h2>Why the registration lives here and not inside {@code CharacterCardItem}</h2>
+ * <h2>Why the registration lives here and not inside the item classes</h2>
  * The item class is behaviour (what a right-click does) and this class is wiring (what exists and under
  * which id). Keeping them apart means the item has no static registration state of its own, so a unit
  * test can look at the enrol rules without touching a registry, and {@code Astrum} keeps one call per
@@ -38,6 +38,17 @@ public final class AstrumItems {
     public static final DeferredItem<CharacterCardItem> CHARACTER_CARD =
             ITEMS.registerItem("character_card", CharacterCardItem::new,
                     new Item.Properties().stacksTo(16));
+
+    /**
+     * The 角色册 (character book): right-click to open the roster / party / growth screen.
+     *
+     * <p>Stacks to <b>one</b>, unlike the card: it is a personal possession rather than a ticket, so a
+     * second copy would only be an inventory slot spent on the same screen. It is also not consumed, so
+     * one book is all a player ever needs.
+     */
+    public static final DeferredItem<CharacterBookItem> CHARACTER_BOOK =
+            ITEMS.registerItem("character_book", CharacterBookItem::new,
+                    new Item.Properties().stacksTo(1));
 
     private AstrumItems() {
     }

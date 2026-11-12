@@ -9,6 +9,8 @@ import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.attach.UbState;
 import com.astrum.pcrd.impl.combat.AreaChargeTuning;
+import com.astrum.pcrd.impl.party.PartyRules;
+import com.astrum.pcrd.impl.party.PartyService;
 import com.astrum.pcrd.impl.ub.CastGate;
 import com.astrum.pcrd.impl.ub.ChargeKernel;
 import com.astrum.pcrd.impl.ub.UbService;
@@ -405,30 +407,23 @@ public final class AstrumCommand {
                         String.valueOf(rawCharacterId)));
                 return 0;
             }
-            CharacterDef def = definitionOrFail(src, characterId);
-            if (def == null) {
-                return 0;
-            }
-            Roster book = readableRoster(src, player);
-            if (book == null) {
-                return 0;
-            }
-            if (book.progressOf(characterId) == null) {
-                src.sendFailure(Component.translatable(KEY_PARTY_NOT_OWNED, def.displayName()));
-                return 0;
+            // One call, and no rule of its own: PartyService is the same code the 角色册 screen's
+            // astrum:party_edit payload runs, so "slot legal / character defined / character owned"
+            // cannot answer differently depending on which way the player asked (spec §6.3.1).
+            // The ownership question is answered there, not here; the command used to ask it itself.
+            PartyService.Result result = PartyService.edit(player, index.getAsInt(), characterId);
+            if (!result.accepted()) {
+                return refusePartyEdit(src, slotArgument, characterId, result);
             }
 
-            Party party = player.getData(Attachments.PARTY);
-            int previous = indexOfSlot(party, characterId);
-            player.setData(Attachments.PARTY, party.with(index.getAsInt(), characterId));
-
-            if (previous >= 0 && previous != index.getAsInt()) {
-                int from = commandSlot(previous);
-                src.sendSuccess(() -> Component.translatable(KEY_PARTY_MOVED, slotArgument,
-                        def.displayName(), from), true);
+            PartyRules.Edit edit = result.edit();
+            String name = displayNameOf(result.definition(), characterId);
+            if (edit.moved()) {
+                int from = commandSlot(edit.previousSlot().getAsInt());
+                src.sendSuccess(() -> Component.translatable(KEY_PARTY_MOVED, slotArgument, name,
+                        from), true);
             } else {
-                src.sendSuccess(() -> Component.translatable(KEY_PARTY_SET, slotArgument,
-                        def.displayName()), true);
+                src.sendSuccess(() -> Component.translatable(KEY_PARTY_SET, slotArgument, name), true);
             }
             return 1;
         });
@@ -440,13 +435,18 @@ public final class AstrumCommand {
             if (index.isEmpty()) {
                 return badSlot(src, slotArgument);
             }
-            Party party = player.getData(Attachments.PARTY);
-            if (party.slots().get(index.getAsInt()).isEmpty()) {
+            // A clear travels the same validated path as a placement, with no character named. It used
+            // to be a direct attachment write, which meant the screen and the command could disagree
+            // about whether a quarantined book may be written.
+            PartyService.Result result = PartyService.edit(player, index.getAsInt(), null);
+            if (!result.accepted()) {
+                return refusePartyEdit(src, slotArgument, null, result);
+            }
+            if (!result.edit().changed()) {
                 src.sendSuccess(() -> Component.translatable(KEY_PARTY_ALREADY_EMPTY, slotArgument),
                         false);
                 return 1;
             }
-            player.setData(Attachments.PARTY, party.with(index.getAsInt(), null));
             src.sendSuccess(() -> Component.translatable(KEY_PARTY_CLEARED, slotArgument), true);
             return 1;
         });
@@ -668,14 +668,44 @@ public final class AstrumCommand {
         return 0;
     }
 
-    /** {@return the index {@code characterId} currently occupies, or {@code -1}} */
-    private static int indexOfSlot(Party party, ResourceLocation characterId) {
-        for (int i = 0; i < Party.SLOTS; i++) {
-            if (party.slots().get(i).filter(characterId::equals).isPresent()) {
-                return i;
-            }
+    /**
+     * Turns a shared party-edit refusal into the line this player reads.
+     *
+     * <p>The mapping lives here rather than in {@link PartyService} because it is a <em>command</em>
+     * concern: the service returns a typed {@link PartyRules.Reason}, the command picks the sentence
+     * (its wording names the 1-5 convention), and the screen picks its own short one from the same
+     * enum through {@link PartyRules#reasonKey}. The verdict itself is shared; only the prose differs.
+     *
+     * @param source      the command source to answer
+     * @param slotArgument the slot as typed, for the range message
+     * @param characterId  the character asked for, or {@code null} for a clear
+     * @param result       the refused result; its reason is non-null by contract
+     */
+    private static int refusePartyEdit(CommandSourceStack source, int slotArgument,
+            @Nullable ResourceLocation characterId, PartyService.Result result) {
+        PartyRules.Reason reason = result.reason() == null
+                ? PartyRules.Reason.CHARACTER_UNKNOWN // unreachable: callers check accepted() first
+                : result.reason();
+        Component line = switch (reason) {
+            case BOOK_UNREADABLE -> Component.translatable(KEY_BOOK_QUARANTINED);
+            case SLOT_OUT_OF_RANGE -> Component.translatable(KEY_BAD_SLOT, slotArgument, LAST_SLOT);
+            case NO_REGISTRY -> Component.translatable(KEY_NO_REGISTRY);
+            case CHARACTER_UNKNOWN ->
+                    Component.translatable(KEY_UNKNOWN_CHARACTER, String.valueOf(characterId));
+            case NOT_OWNED -> Component.translatable(KEY_PARTY_NOT_OWNED,
+                    displayNameOf(result.definition(), characterId));
+        };
+        source.sendFailure(line);
+        return 0;
+    }
+
+    /** {@return the name to print for a character, falling back to its id when the pack does not define it} */
+    private static String displayNameOf(@Nullable CharacterDef definition,
+            @Nullable ResourceLocation characterId) {
+        if (definition != null) {
+            return definition.displayName();
         }
-        return -1;
+        return characterId == null ? "" : characterId.toString();
     }
 
     /**

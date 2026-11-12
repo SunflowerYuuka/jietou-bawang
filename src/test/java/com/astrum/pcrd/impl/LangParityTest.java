@@ -3,6 +3,7 @@ package com.astrum.pcrd.impl;
 import com.astrum.pcrd.impl.client.ClientKeyBindings;
 import com.astrum.pcrd.impl.command.AstrumCommand;
 import com.astrum.pcrd.impl.item.CharacterCardItem;
+import com.astrum.pcrd.impl.party.BookText;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -67,6 +68,8 @@ class LangParityTest {
                 ClientKeyBindings.CONFIG_KEY));
         keys.addAll(AstrumCommand.LANG_KEYS);
         keys.addAll(CharacterCardItem.LANG_KEYS);
+        // The 角色册 item and screen, including every astrum.party.reason.* key derived from the enum.
+        keys.addAll(BookText.LANG_KEYS);
         return Set.copyOf(keys);
     }
 
@@ -163,3 +166,4 @@ class LangParityTest {
         }
     }
 }
+

@@ -3,16 +3,24 @@ package com.astrum.pcrd.impl.network;
 import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.AstrumApi;
 import com.astrum.pcrd.api.v1.CharacterDef;
+import com.astrum.pcrd.api.v1.CharacterProgress;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.Party;
+import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.attach.UbState;
+import com.astrum.pcrd.impl.client.ClientBookFeedback;
 import com.astrum.pcrd.impl.client.ClientCastFeedback;
 import com.astrum.pcrd.impl.client.ClientPartyCache;
+import com.astrum.pcrd.impl.client.ClientRosterCache;
 import com.astrum.pcrd.impl.client.ClientUbCache;
+import com.astrum.pcrd.impl.growth.GrowthFacts;
+import com.astrum.pcrd.impl.party.PartyService;
 import com.astrum.pcrd.impl.ub.CastGate;
 import com.astrum.pcrd.impl.ub.SyncGate;
 import com.astrum.pcrd.impl.ub.UbService;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,6 +35,7 @@ import net.neoforged.neoforge.network.PacketDistributor;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
 import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.Nullable;
 
 /**
  * The mod's payloads, all registered here, on both sides: the charge channel (one clientbound
@@ -106,6 +115,20 @@ public final class AstrumNetwork {
      */
     private static final Map<UUID, SentParty> LAST_PARTY = new HashMap<>();
 
+    /**
+     * What each online player's client was last told about their character book, keyed by UUID.
+     *
+     * <p>Third of the same pattern. The book is mutated from outside this class (a character card, the
+     * command, later the growth task), and every one of those writes a <b>new {@link Roster}</b>
+     * instance whose entry map is a fresh immutable copy — so comparing the map <em>by reference</em> is
+     * enough to notice a change, and costs one reference compare per player per tick instead of a deep
+     * comparison of the whole book. On login the map holds nothing for this UUID, so the first tick
+     * after joining always sends, which is the "send on login" half without a separate listener.
+     *
+     * <p>Dropped on logout, so a re-join is always re-sent.
+     */
+    private static final Map<UUID, SentRoster> LAST_ROSTER = new HashMap<>();
+
     private AstrumNetwork() {
     }
 
@@ -132,9 +155,16 @@ public final class AstrumNetwork {
                 .playToServer(UbCastPayload.TYPE, UbCastPayload.STREAM_CODEC,
                         AstrumNetwork::handleUbCast)
                 .playToClient(UbCastFeedbackPayload.TYPE, UbCastFeedbackPayload.STREAM_CODEC,
-                        AstrumNetwork::handleUbCastFeedback);
+                        AstrumNetwork::handleUbCastFeedback)
+                .playToClient(RosterSyncPayload.TYPE, RosterSyncPayload.STREAM_CODEC,
+                        AstrumNetwork::handleRosterSync)
+                .playToServer(PartyEditPayload.TYPE, PartyEditPayload.STREAM_CODEC,
+                        AstrumNetwork::handlePartyEdit)
+                .playToClient(PartyEditResultPayload.TYPE, PartyEditResultPayload.STREAM_CODEC,
+                        AstrumNetwork::handlePartyEditResult);
         Astrum.LOGGER.info("astrum: payloads registered (charge_sync, party_sync, ub_cast, "
-                + "ub_cast_feedback), protocol {}", PROTOCOL_VERSION);
+                + "ub_cast_feedback, roster_sync, party_edit, party_edit_result), protocol {}",
+                PROTOCOL_VERSION);
     }
 
     /**
@@ -194,6 +224,51 @@ public final class AstrumNetwork {
     }
 
     /**
+     * Receives the server's copy of the character book on the client.
+     *
+     * <p>Display data only: the screen draws what the server says the player owns, and the two rules it
+     * would otherwise have to reimplement — the experience curve and the affection tier ladder — arrive
+     * as the numbers {@code expToNext} and {@code tier} on each entry.
+     */
+    private static void handleRosterSync(RosterSyncPayload payload, IPayloadContext context) {
+        ClientRosterCache.accept(payload);
+    }
+
+    /**
+     * Receives the client's party-edit intent and answers a refusal on the same connection.
+     *
+     * <p>Only the slot and the requested character are taken from the packet. {@link PartyService#edit}
+     * re-resolves the roster, the registry and the current party, and applies exactly the rules
+     * {@code /astrum party set} applies — that shared call is the whole point of spec §6.3.1: a client
+     * cannot name a character it does not own, a slot that does not exist, or a book it cannot read,
+     * and it cannot create a party the data layer would reject.
+     *
+     * <p>Success sends nothing: the party push diffs the attachment every tick and the roster push
+     * diffs the book, so the new state reaches this client in the same tick. A refusal goes to
+     * <b>this</b> player and nobody else — spec §5.4's 禁止静默失败 without letting one player's
+     * mistyped click shake another's screen.
+     */
+    private static void handlePartyEdit(PartyEditPayload payload, IPayloadContext context) {
+        if (!(context.player() instanceof ServerPlayer player)) {
+            // Unreachable for a playToServer payload; say so rather than throwing into the handler.
+            Astrum.LOGGER.warn("astrum: party_edit arrived without a ServerPlayer (slot {}) — dropped",
+                    payload.slot());
+            return;
+        }
+        PartyService.Result result = PartyService.edit(player, payload.slot(),
+                payload.characterId().orElse(null));
+        if (!result.accepted()) {
+            PacketDistributor.sendToPlayer(player,
+                    new PartyEditResultPayload(payload.slot(), result.reason()));
+        }
+    }
+
+    /** Receives the server's refusal for the 角色册 screen to draw. */
+    private static void handlePartyEditResult(PartyEditResultPayload payload, IPayloadContext context) {
+        ClientBookFeedback.accept(payload, context.player().level().getGameTime());
+    }
+
+    /**
      * The push loop. Runs once per player per tick on both logical sides, so the server check is the
      * {@code instanceof}: only a {@link ServerPlayer} owns an authoritative gauge.
      */
@@ -203,6 +278,7 @@ public final class AstrumNetwork {
         }
         pushCharge(player);
         pushParty(player);
+        pushRoster(player);
     }
 
     private static void pushCharge(ServerPlayer player) {
@@ -281,6 +357,74 @@ public final class AstrumNetwork {
     private static void onLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         LAST_SENT.remove(event.getEntity().getUUID());
         LAST_PARTY.remove(event.getEntity().getUUID());
+        LAST_ROSTER.remove(event.getEntity().getUUID());
+    }
+
+    /**
+     * Pushes the character book whenever it actually changed.
+     *
+     * <h2>Why a diff and not a call at the mutation site</h2>
+     * The book is written by the character card, by {@code /astrum affection}, and later by the growth
+     * task — three places today and more later. Sending from each would be N packets per change and N
+     * copies of "is this worth a packet". Instead this listener observes the attachment, like the two
+     * pushes above.
+     *
+     * <h2>What the common tick costs</h2>
+     * One attachment read, two field reads and a reference compare. The payload — which needs the
+     * character registry, one lookup and a little arithmetic per owned character — is built only when
+     * the book has actually been replaced. That is why the map is compared by <b>reference</b>:
+     * {@link Roster} freezes a fresh immutable copy on every write, so a new instance is the signal,
+     * and an equal-but-copied book costs exactly one redundant packet on the tick it appears.
+     *
+     * <h2>Quarantine</h2>
+     * A quarantined book is never read here ({@code entries()} throws), and the client is told the one
+     * thing that can be said truthfully: the save exists and this build cannot read it. That is what the
+     * screen turns into 存档读取失败, and it is why "empty book" and "unreadable book" are distinguishable
+     * at all (spec §6.3.1).
+     */
+    private static void pushRoster(ServerPlayer player) {
+        Roster roster = player.getData(Attachments.ROSTER);
+        boolean quarantined = roster.isQuarantined();
+        Map<ResourceLocation, CharacterProgress> entries = quarantined ? null : roster.entries();
+        SentRoster last = LAST_ROSTER.get(player.getUUID());
+        if (last != null && last.quarantined() == quarantined && last.entries() == entries) {
+            return;
+        }
+        RosterSyncPayload payload = buildRosterPayload(roster);
+        PacketDistributor.sendToPlayer(player, payload);
+        LAST_ROSTER.put(player.getUUID(), new SentRoster(entries, quarantined));
+        Astrum.LOGGER.debug("astrum: character book synced to {} ({} characters{})",
+                player.getGameProfile().getName(), payload.size(),
+                quarantined ? ", quarantined save" : "");
+    }
+
+    /**
+     * Snapshot of a readable book as the screen needs it, or the quarantine marker.
+     *
+     * <p>The two numbers the client cannot compute — {@code expToNext} and {@code tier} — are resolved
+     * here through {@link GrowthFacts}, the single implementation of the curve and the tier ladder, so
+     * the client never holds a second copy of either rule.
+     */
+    private static RosterSyncPayload buildRosterPayload(Roster roster) {
+        if (roster.isQuarantined()) {
+            return RosterSyncPayload.QUARANTINED;
+        }
+        Optional<Registry<CharacterDef>> registry = AstrumApi.characters();
+        List<RosterSyncPayload.Entry> entries = new ArrayList<>(roster.entries().size());
+        for (Map.Entry<ResourceLocation, CharacterProgress> owned : roster.entries().entrySet()) {
+            ResourceLocation id = owned.getKey();
+            CharacterProgress progress = owned.getValue();
+            // A character the running pack no longer defines is still owned and still shown; it just has
+            // no curve to draw, so its bar is empty rather than invented.
+            CharacterDef def = registry.map(loaded -> loaded.get(id)).orElse(null);
+            int expToNext = def == null ? 0 : GrowthFacts.expToNext(progress.level(), def.growth());
+            int tier = def == null
+                    ? GrowthFacts.FIRST_TIER
+                    : GrowthFacts.tier(progress.affection(), def.affection());
+            entries.add(new RosterSyncPayload.Entry(id, progress.level(), progress.exp(), expToNext,
+                    progress.affection(), tier));
+        }
+        return new RosterSyncPayload(entries, false);
     }
 
     /**
@@ -302,5 +446,20 @@ public final class AstrumNetwork {
      * @param enhancedMask the tier-3 bits that were pushed with them
      */
     private record SentParty(Party party, int enhancedMask) {
+    }
+
+    /**
+     * What one client was last told about its character book.
+     *
+     * <p>The entry map is held <b>by reference</b>, not copied: {@link Roster} replaces it wholesale and
+     * never mutates it, so the reference identifies the exact book that was sent. A quarantined book has
+     * no readable map, hence the separate flag rather than an empty map — the two states must not
+     * compare equal.
+     *
+     * @param entries     the entry map that was pushed, or {@code null} for a quarantined book
+     * @param quarantined whether the pushed payload was the quarantine marker
+     */
+    private record SentRoster(@Nullable Map<ResourceLocation, CharacterProgress> entries,
+                              boolean quarantined) {
     }
 }
