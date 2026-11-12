@@ -1,6 +1,7 @@
 package com.astrum.pcrd;
 
 import com.astrum.pcrd.impl.attach.Attachments;
+import com.astrum.pcrd.impl.combat.CombatEvents;
 import com.astrum.pcrd.impl.config.ClientConfig;
 import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.network.AstrumNetwork;
@@ -26,5 +27,6 @@ public final class Astrum {
         CharacterRegistry.register(modBus);
         Attachments.register(modBus);
         AstrumNetwork.register(modBus);
+        CombatEvents.register();
     }
 }
