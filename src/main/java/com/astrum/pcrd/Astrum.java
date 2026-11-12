@@ -3,6 +3,7 @@ package com.astrum.pcrd;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.config.ClientConfig;
 import com.astrum.pcrd.impl.config.ServerConfig;
+import com.astrum.pcrd.impl.network.AstrumNetwork;
 import com.astrum.pcrd.impl.registry.CharacterRegistry;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -24,5 +25,6 @@ public final class Astrum {
         ClientConfig.register(container);
         CharacterRegistry.register(modBus);
         Attachments.register(modBus);
+        AstrumNetwork.register(modBus);
     }
 }
