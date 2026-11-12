@@ -432,6 +432,8 @@ NeoForge 的 `ConfigTracker.resolveBasePath` 逻辑是：
 [balance]
 enableDiminishingReturns = true      # 同维度递减开关
 diminishingBase = 0.7                # 倍率 = base^(n-1)，clamp [0.1, 1.0]
+stackTtlTicks = 100                  # 叠层惰性过期时长（tick）；只在被攻击时判定，无 tick 轮询。下限 1
+comboWindowTicks = 40                # combo_n 的连击窗口（tick）；窗口内累计命中数达到 triggerParams.hits 即触发
 
 [ub]
 ubGlobalCooldownTicks = 100
