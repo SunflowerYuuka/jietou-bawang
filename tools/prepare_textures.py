@@ -30,6 +30,7 @@ OUT = REPO / "src" / "main" / "resources" / "assets" / "astrum" / "textures"
 
 # (源文件名, 目标相对路径, 尺寸, 是否像素画, 边距比例)
 JOBS = [
+    # 默认主题（蓝）
     ("image-e7706a1b.png", "item/character_card.png", (32, 32), True, 0.04),
     ("image-3e1932e7.png", "item/character_book.png", (32, 32), True, 0.04),
     ("image-2ed66dc1.png", "item/dish_rice_bowl.png", (32, 32), True, 0.04),
@@ -38,12 +39,21 @@ JOBS = [
     ("image-f6a07acf.png", "gui/ub_frame.png", (512, 256), False, 0.0),
     ("image-235ca18d.png", "gui/wheel_plate.png", (512, 512), False, 0.0),
     ("image-94f52940.png", "gui/divider.png", (256, 16), False, 0.0),
+    # 粉主题（二次元 / 樱花）
+    ("image-9aa05699.png", "item/theme_sakura/character_card.png", (32, 32), True, 0.04),
+    ("image-2d1d412c.png", "item/theme_sakura/character_book.png", (32, 32), True, 0.04),
+    ("image-8f3ded90.png", "gui/sakura_divider.png", (256, 16), False, 0.0),
+    # 绿主题（二次元 / 森）
+    ("image-67697a0d.png", "item/theme_forest/character_card.png", (32, 32), True, 0.04),
+    ("image-ffb10cfd.png", "item/theme_forest/character_book.png", (32, 32), True, 0.04),
+    ("image-ca427696.png", "gui/forest_divider.png", (256, 16), False, 0.0),
 ]
 
-# 九宫格：源图 -> (目标前缀, 片尺寸, 边框像素数)
-# 中间片留空（透明），运行时由代码把四个角固定、四条边与中心拉伸/平铺。
+# 九宫格：源图 -> 目标前缀, 每片边长
 NINESLICE = [
-    ("image-fe20f7f2.png", "gui/book_panel", 64, 22),
+    ("image-fe20f7f2.png", "gui/book_panel", 64),
+    ("image-19714d6a.png", "gui/book_panel_sakura", 64),
+    ("image-0561a08f.png", "gui/book_panel_forest", 64),
 ]
 
 
@@ -70,7 +80,7 @@ def to_target(im: Image.Image, target: tuple[int, int], pixel_art: bool, margin:
     return canvas
 
 
-def nine_slice(src: Path, prefix: str, size: int, border: int, dry: bool) -> list[Path]:
+def nine_slice(src: Path, prefix: str, size: int, dry: bool) -> list[Path]:
     """切成 3x3 共 9 片。角与边的片含边框纹理，中间片保持原样（可平铺）。
 
     命名：<prefix>_tl/_t/_tr/_l/_c/_r/_bl/_b/_br.png
@@ -147,8 +157,8 @@ def main() -> int:
             shrink(dest)
         written.append(dest)
 
-    for src_name, prefix, size, border in NINESLICE:
-        written += nine_slice(SRC / src_name, prefix, size, border, dry)
+    for src_name, prefix, size in NINESLICE:
+        written += nine_slice(SRC / src_name, prefix, size, dry)
 
     for p in written:
         print(" ", report(p) if p.is_file() else f"缺少 {p}")
