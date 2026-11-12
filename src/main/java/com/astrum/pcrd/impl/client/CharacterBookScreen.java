@@ -70,7 +70,10 @@ public final class CharacterBookScreen extends Screen {
 
     // Opaque-enough surfaces over the world (spec §5.5: 图标与文字不透明 — the panel must not let a
     // bright sky through the text).
-    private static final int COLOR_PANEL = 0xF00E1018;
+    private static final int COLOR_PANEL = 0xFF0E1018;
+
+    /** Flat dim behind the panel; replaces vanilla's full-screen blur (see {@link #renderBackground}). */
+    private static final int COLOR_DIM_BACKDROP = 0x90000000;
     private static final int COLOR_FRAME = 0xFF2E3A58;
     private static final int COLOR_CELL = 0xFF1B2336;
     private static final int COLOR_CELL_HOVER = 0xFF283552;
@@ -152,6 +155,24 @@ public final class CharacterBookScreen extends Screen {
                 layout.panel().x(), layout.panel().y(), ClientRosterCache.size(),
                 ClientPartyCache.latest().slots().stream().filter(Optional::isPresent).count(),
                 ClientRosterCache.quarantined() ? ", quarantined save" : "");
+    }
+
+    /**
+     * Overrides vanilla's background so the world behind the book is <b>not blurred</b>.
+     *
+     * <p>{@code Screen.renderBackground} calls {@code renderBlurredBackground} whenever
+     * {@code minecraft.level != null}, which runs a full-screen post-process blur over the already
+     * rendered frame. The effect is not a property of our panel — it blurs <em>everything</em>, so the
+     * whole screen (grass, hotbar, sky) looked soft the moment the book opened. A test run on the
+     * user's machine showed plain grass without its 16x16 texture, which is the signature of that blur.
+     *
+     * <p>A 1.21 {@code Screen} cannot opt out of the blur through {@code isPauseScreen()} or any flag;
+     * not calling {@code super.renderBackground} is the way out. We draw a flat dim instead: it still
+     * separates the panel from the world without touching the frame's sharpness.
+     */
+    @Override
+    public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
+        graphics.fill(0, 0, width, height, COLOR_DIM_BACKDROP);
     }
 
     @Override
@@ -546,12 +567,12 @@ public final class CharacterBookScreen extends Screen {
     private void drawClipped(GuiGraphics graphics, Component text, BookLayout.Box box, int colour) {
         String plain = text.getString();
         if (font.width(plain) <= box.width()) {
-            graphics.drawString(font, plain, box.x(), box.y(), colour, false);
+            graphics.drawString(font, plain, box.x(), box.y(), colour, true);
             return;
         }
         String truncated = font.plainSubstrByWidth(plain, Math.max(0, box.width() - font.width("…")))
                 + "…";
-        graphics.drawString(font, truncated, box.x(), box.y(), colour, false);
+        graphics.drawString(font, truncated, box.x(), box.y(), colour, true);
     }
 
     /** Draws a component centred horizontally in a box, vertically centred too. */
@@ -559,6 +580,6 @@ public final class CharacterBookScreen extends Screen {
         String plain = text.getString();
         int x = box.x() + (box.width() - font.width(plain)) / 2;
         int y = box.y() + (box.height() - font.lineHeight) / 2;
-        graphics.drawString(font, plain, x, y, colour, false);
+        graphics.drawString(font, plain, x, y, colour, true);
     }
 }
