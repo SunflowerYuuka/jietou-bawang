@@ -37,7 +37,7 @@ import org.jetbrains.annotations.Nullable;
  *       are expressed as mob effects, never as rewritten damage).</li>
  *   <li>{@code lifesteal} — heals the <b>attacker</b> for a fraction of the health the hit removed.</li>
  *   <li>{@code gain_charge} — the attacker's own gauge, through {@link UbCharge}.</li>
- *   <li>{@code area_charge} — through {@link AreaChargeSink}, which Task 11 replaces.</li>
+ *   <li>{@code area_charge} — through {@link AreaChargeSink}, the guarded sink of spec §7.4.</li>
  *   <li>{@code splash} — other entities around the target, via {@link DamageToTarget}.</li>
  *   <li>{@code stack} — {@link StackRuntime}: per attacker, per stack kind, lazily expired.</li>
  *   <li>{@code detonate} — consumes the stack and deals {@code stacks × perStack × multiplier}.</li>

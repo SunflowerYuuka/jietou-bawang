@@ -215,6 +215,19 @@ public final class ServerConfig {
         /** Accepted values of {@link #allyMode}. */
         public static final List<String> ALLY_MODES = List.of("ALL_PLAYERS", "SAME_TEAM_ONLY");
 
+        /**
+         * Documented default of {@link #areaChargePairCooldownTicks}.
+         *
+         * <p>A named constant rather than a literal repeated in the definition and in
+         * {@code AreaChargeBudget}'s no-config fallback: the fallback exists for the one moment no
+         * loaded file can answer (a unit test, or a call before the config is loaded), and it must
+         * agree with this file or the guard would differ between production and its tests.
+         */
+        public static final int DEFAULT_PAIR_COOLDOWN_TICKS = 20;
+
+        /** Documented default of {@link #areaChargeReceiveCapPerSecond}; see the note above. */
+        public static final double DEFAULT_RECEIVE_CAP_PER_SECOND = 6.0;
+
         /** {@code ALL_PLAYERS} / {@code SAME_TEAM_ONLY}; never {@code isAlliedTo()} alone. */
         public final ModConfigSpec.ConfigValue<String> allyMode;
 
@@ -234,10 +247,10 @@ public final class ServerConfig {
                     .define("allyMode", "ALL_PLAYERS", inList(ALLY_MODES));
             areaChargePairCooldownTicks = builder
                     .comment(" 同一施放者 → 同一接收者的 area_charge 内部 CD（tick）")
-                    .defineInRange("areaChargePairCooldownTicks", 20, 0, 72_000);
+                    .defineInRange("areaChargePairCooldownTicks", DEFAULT_PAIR_COOLDOWN_TICKS, 0, 72_000);
             areaChargeReceiveCapPerSecond = builder
                     .comment(" 每个接收者每秒从 area_charge 获得的上限")
-                    .defineInRange("areaChargeReceiveCapPerSecond", 6.0, 0.0, 100.0);
+                    .defineInRange("areaChargeReceiveCapPerSecond", DEFAULT_RECEIVE_CAP_PER_SECOND, 0.0, 100.0);
             maxActiveShowcaseEntities = builder
                     .comment(" 同世界演出实体上限，超限只结算伤害不生成实体")
                     .defineInRange("maxActiveShowcaseEntities", 8, 0, 256);

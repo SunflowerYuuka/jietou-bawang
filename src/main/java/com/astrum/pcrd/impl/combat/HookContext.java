@@ -32,7 +32,7 @@ import org.jetbrains.annotations.ApiStatus;
  * @param characterId the character owning the hook being evaluated (attribution, never a selector)
  * @param batch       the damage accumulator this hit will be flushed from
  * @param otherTargets where an effect that hits a different entity files its damage
- * @param areaCharge  the {@code area_charge} seam Task 11 fills in
+ * @param areaCharge  the {@code area_charge} seam (guarded by spec §7.4)
  */
 @ApiStatus.Internal
 public record HookContext(ServerPlayer attacker, LivingEntity target, DamageSource source, float dealt,

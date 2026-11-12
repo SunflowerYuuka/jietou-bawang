@@ -117,6 +117,16 @@ public final class CombatEvents {
     /** Players already warned about a quarantined roster, so the warning is one line, not per hit. */
     private final Set<UUID> warnedQuarantine = new HashSet<>();
 
+    /**
+     * The one {@code area_charge} sink of this server session (spec §7.4).
+     *
+     * <p>Owned here so its pair table and per-receiver windows die with the session: {@link
+     * #onServerStopping} resets it together with the other per-session state. It is not a static
+     * field, so the guide's "no per-entity state in a static container" rule holds, and it is not
+     * rebuilt per hit, which would silently defeat both guards.
+     */
+    private final GuardedAreaChargeSink areaCharge = new GuardedAreaChargeSink();
+
     private CombatEvents() {
     }
 
@@ -413,6 +423,10 @@ public final class CombatEvents {
         preHitHealth.clear();
         landedCrits.clear();
         warnedQuarantine.clear();
+        areaCharge.reset();   // pair timestamps and per-second windows belong to one world's clock
+        // An operator-tuned guard must not silently govern the next world (spec §8.4): the override
+        // is session state, not a persisted value. Task 14's command sets it; this clears it.
+        AreaChargeTuning.clearOverride();
     }
 
     // ------------------------------------------------------------------ hook evaluation
@@ -460,11 +474,11 @@ public final class CombatEvents {
         }
 
         // The hit, once; each wheel slot derives its own view (multiplier + character attribution).
-        // The area_charge sink is the Task 11 seam and is constructed in exactly one place.
+        // The area_charge sink is constructed in exactly one place, and it is the guarded one.
         HookContext hit = new HookContext(attacker, target, source, dealt,
                 Balance.MAX_MULTIPLIER, NO_CHARACTER, batch,
                 (other, type, amount) -> queueDamage(attacker, other, type, amount),
-                AreaChargeSink.DIRECT);
+                areaCharge);
         for (int slot = 0; slot < Party.SLOTS; slot++) {
             Optional<ResourceLocation> slotValue = party.slots().get(slot);
             if (slotValue.isEmpty()) {
