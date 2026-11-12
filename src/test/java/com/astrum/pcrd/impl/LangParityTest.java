@@ -1,6 +1,8 @@
 package com.astrum.pcrd.impl;
 
 import com.astrum.pcrd.impl.client.ClientKeyBindings;
+import com.astrum.pcrd.impl.command.AstrumCommand;
+import com.astrum.pcrd.impl.item.CharacterCardItem;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -47,11 +49,26 @@ class LangParityTest {
     private static final String REFERENCE = "en_us";
 
     /** The names the code asks for by constant, plus the category the bindings are filed under. */
-    private static final Set<String> REQUIRED_KEYS = new TreeSet<>(Set.of(
-            ClientKeyBindings.CATEGORY,
-            ClientKeyBindings.UB_CAST_KEY,
-            ClientKeyBindings.UB_PRESET_KEY,
-            ClientKeyBindings.CONFIG_KEY));
+    private static final Set<String> REQUIRED_KEYS = requiredKeys();
+
+    /**
+     * Collects the keys the code names, from every class that holds them.
+     *
+     * <p>Sourced from the owning classes rather than retyped here: the item and the command each expose
+     * a {@code LANG_KEYS} set containing exactly what their branches ask for, so adding a message
+     * without a translation — or renaming a key and leaving the old one behind — fails this test instead
+     * of showing a raw {@code astrum.card.*} string to a player.
+     */
+    private static Set<String> requiredKeys() {
+        Set<String> keys = new TreeSet<>(Set.of(
+                ClientKeyBindings.CATEGORY,
+                ClientKeyBindings.UB_CAST_KEY,
+                ClientKeyBindings.UB_PRESET_KEY,
+                ClientKeyBindings.CONFIG_KEY));
+        keys.addAll(AstrumCommand.LANG_KEYS);
+        keys.addAll(CharacterCardItem.LANG_KEYS);
+        return Set.copyOf(keys);
+    }
 
     private static JsonObject lang(String code) {
         String path = "/assets/astrum/lang/" + code + ".json";

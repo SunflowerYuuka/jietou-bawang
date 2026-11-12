@@ -4,8 +4,10 @@ import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.client.ClientConfigScreen;
 import com.astrum.pcrd.impl.client.ClientEvents;
 import com.astrum.pcrd.impl.combat.CombatEvents;
+import com.astrum.pcrd.impl.command.AstrumCommand;
 import com.astrum.pcrd.impl.config.ClientConfig;
 import com.astrum.pcrd.impl.config.ServerConfig;
+import com.astrum.pcrd.impl.item.AstrumItems;
 import com.astrum.pcrd.impl.network.AstrumNetwork;
 import com.astrum.pcrd.impl.registry.CharacterRegistry;
 import net.neoforged.api.distmarker.Dist;
@@ -16,9 +18,7 @@ import net.neoforged.fml.loading.FMLEnvironment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Entry point of the Astrum mod. Wiring only: every feature lives in {@code impl} (plan R1).
- */
+/** Entry point of the Astrum mod. Wiring only: every feature lives in {@code impl} (plan R1). */
 @Mod(Astrum.MOD_ID)
 public final class Astrum {
     public static final String MOD_ID = "astrum";
@@ -30,11 +30,12 @@ public final class Astrum {
         ClientConfig.register(container);
         CharacterRegistry.register(modBus);
         Attachments.register(modBus);
+        AstrumItems.register(modBus);
         AstrumNetwork.register(modBus);
         CombatEvents.register();
-        // The client half — key bindings, config screen, wheel overlay, HUD — lives in impl.client and is
-        // only reached from this branch, so no client class is ever loaded on a dedicated server
-        // (spec §7 端隔离).
+        AstrumCommand.register();
+        // The client half (keys, config screen, wheel, HUD) lives in impl.client and is only reached
+        // from this branch, so no client class is loaded on a dedicated server (spec §7 端隔离).
         if (FMLEnvironment.dist == Dist.CLIENT) {
             ClientEvents.register(modBus);
             ClientConfigScreen.register(container);
