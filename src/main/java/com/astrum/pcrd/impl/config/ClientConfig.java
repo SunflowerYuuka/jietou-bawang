@@ -11,7 +11,7 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Why CLIENT and not COMMON</h2>
  * Every option here is pure presentation — wheel size, opacity and layout, where the gauge is drawn,
- * whether a cast's screen effect is drawn. The server never reads them, so putting them in a server file
+ * whether a cast's particle burst is drawn. The server never reads them, so putting them in a server file
  * would let a server operator change another player's screen; {@code CLIENT} puts
  * {@code config/astrum-client.toml} in each player's own install (spec §8.1, §7.4).
  *
@@ -149,28 +149,32 @@ public final class ClientConfig {
     }
 
     /**
-     * {@code [effect]} section: the visual a UB cast produces (规格 2026-11-13: 使用UB仅展示特效).
+     * {@code [effect]} section: the particle burst a UB cast spawns at the caster (规格 2026-11-13:
+     * 使用UB仅展示特效).
      *
      * <h2>Why the switch is client-side</h2>
-     * The effect is drawn on the caster's own screen and affects nothing else: the damage, the cooldown
-     * and the gauge are decided on the server whether or not this is on. A full-screen flash is also
-     * exactly the kind of thing a player with photosensitivity, or one who records video, must be able
-     * to turn off without asking a server operator — so it lives in {@code astrum-client.toml}.
+     * The burst is spawned by the server in world space, but it only ever matters on the caster's own
+     * client: the damage, the cooldown and the gauge are decided on the server whether or not this is on.
+     * A bright particle flash is also exactly the kind of thing a player with photosensitivity, or one
+     * who records video, must be able to turn off without asking a server operator — so it lives in
+     * {@code astrum-client.toml}. The client's particle provider reads this value lazily for every
+     * particle it is asked to create, so turning it off takes effect immediately and stops the next
+     * cast from drawing anything; it never asks the server and never touches the cast.
      *
      * <p>Default on, because "使用UB仅展示特效" means the effect <em>is</em> the ultimate's visible half;
      * a default of off would make a cast look like nothing happened.
      */
     public static final class EffectOptions {
 
-        /** Draw the UB's screen effect when a cast is accepted. */
+        /** Draw the UB's particle burst when a cast is accepted. */
         public final ModConfigSpec.BooleanValue enableUbCastEffect;
 
         private EffectOptions(ModConfigSpec.Builder builder) {
             builder.push("effect");
             enableUbCastEffect = builder
-                    .comment(" 释放 UB 时是否绘制全屏特效（金白剑光 + 爆发 + 角色切入图）",
-                            " 关掉只是不画：伤害、冷却、充能都由服务端决定，不受影响",
-                            " 特效约 1 秒淡出，不挡输入、不暂停游戏")
+                    .comment(" 释放 UB 时是否显示粒子爆发（官方特效贴图切出的斩击环 + 上浮光点，世界坐标、约 1 秒）",
+                            " 关掉只是不生成粒子：伤害、冷却、充能都由服务端决定，不受影响",
+                            " 粒子不挡输入、不暂停游戏，随视角转、会被方块遮挡")
                     .define("enableUbCastEffect", true);
             builder.pop();
         }

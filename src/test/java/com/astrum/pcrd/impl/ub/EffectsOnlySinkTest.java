@@ -27,7 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <ol>
  *   <li><b>Behaviour</b>: the once-latch runs the settlement exactly once however many times its
  *       {@link Runnable} is invoked, and {@link EffectsOnlySink#settleWith} runs the damage before the
- *       client cue and runs both once.</li>
+ *       particle burst, and runs both once.</li>
  *   <li><b>Structure</b>: the shipped sink's own class file mentions no type from
  *       {@code impl.showcase}, and no class in the install path reaches {@code ShowcaseManager}. This is
  *       the half a behavioural test cannot see — a future edit could reintroduce a spawn inside a branch
@@ -89,32 +89,32 @@ class EffectsOnlySinkTest {
     /**
      * The sink's two halves, in order, once each — the composition {@code settle} performs.
      *
-     * <p>The damage must go first: the client cue draws a picture of a hit that has to have already
+     * <p>The damage must go first: the particle burst is the visible half of a hit that has to have already
      * happened (and its log line says so).
      */
     @Test
-    void theCastSettlesDamageBeforeTellingTheClient() {
+    void theCastSettlesDamageBeforeEmittingTheBurst() {
         List<String> order = new ArrayList<>();
         EffectsOnlySink.settleWith(
                 UbDamageSettlement.once(() -> order.add("damage")),
-                () -> order.add("effect cue"));
+                () -> order.add("particle burst"));
 
-        assertEquals(List.of("damage", "effect cue"), order,
-                "damage is settled first, then the client is told to draw it");
+        assertEquals(List.of("damage", "particle burst"), order,
+                "damage is settled first, then the particle burst is spawned");
     }
 
-    /** Called once per accepted cast, the composition settles exactly once and cues exactly once. */
+    /** Called once per accepted cast, the composition settles exactly once and emits particles exactly once. */
     @Test
-    void oneAcceptedCastSettlesOnceAndCuesOnce() {
+    void oneAcceptedCastSettlesOnceAndEmitsOnce() {
         int[] damage = {0};
-        int[] cues = {0};
+        int[] bursts = {0};
         Runnable settlement = UbDamageSettlement.once(() -> damage[0]++);
 
         // What UbTransaction.commit does for one accepted cast: the sink runs exactly once.
-        EffectsOnlySink.settleWith(settlement, () -> cues[0]++);
+        EffectsOnlySink.settleWith(settlement, () -> bursts[0]++);
 
         assertEquals(1, damage[0], "exactly one settlement for one cast");
-        assertEquals(1, cues[0], "exactly one client cue for one cast");
+        assertEquals(1, bursts[0], "exactly one particle burst for one cast");
     }
 
     // ------------------------------------------------------------------ no entity, structurally
@@ -200,3 +200,5 @@ class EffectsOnlySinkTest {
         }
     }
 }
+
+

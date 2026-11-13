@@ -12,6 +12,7 @@ import com.astrum.pcrd.impl.item.AstrumItems;
 import com.astrum.pcrd.impl.network.AstrumNetwork;
 import com.astrum.pcrd.impl.registry.CharacterRegistry;
 import com.astrum.pcrd.impl.showcase.ShowcaseTypes;
+import com.astrum.pcrd.impl.ub.UbParticles;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
@@ -33,6 +34,7 @@ public final class Astrum {
         AstrumItems.register(modBus);
         AstrumNetwork.register(modBus);
         ShowcaseTypes.register(modBus);
+        UbParticles.register(modBus);
         CombatEvents.register();
         GrowthEvents.register();
         AstrumCommand.register();

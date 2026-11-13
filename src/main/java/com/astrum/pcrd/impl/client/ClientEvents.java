@@ -16,10 +16,11 @@ import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.bus.api.IEventBus;
-import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.GatherEffectScreenTooltipsEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
+import net.neoforged.neoforge.client.extensions.common.RegisterClientExtensionsEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
 import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.gui.VanillaGuiLayers;
@@ -123,16 +124,6 @@ public final class ClientEvents {
     /** The cast pad's id: above the wheel layer, as the pad is the smaller, closer-to-the-action hint. */
     private static final ResourceLocation CAST_PAD_LAYER = CastPadOverlay.LAYER_ID;
 
-    /**
-     * The UB effect's id: directly above the hotbar and <b>below</b> every widget of this mod.
-     *
-     * <p>That order is a decision, not an accident. The effect is a full-screen flash; the gauge, the wheel
-     * and the pad are the things a player reads <em>while</em> it happens, so they are drawn over it. Above
-     * the hotbar because the effect belongs over the world, not under the HUD, and below this mod's own
-     * layers so one second of golden light cannot hide the cooldown the player is watching.
-     */
-    private static final ResourceLocation EFFECT_LAYER = UbEffectOverlay.LAYER_ID;
-
     /** The machine behind the cast key: tap casts, hold raises the pad, a digit casts that slot. */
     private static final WheelInputMachine CAST_MACHINE = new WheelInputMachine(Purpose.CAST);
 
@@ -171,12 +162,16 @@ public final class ClientEvents {
         modBus.addListener(RegisterKeyMappingsEvent.class, ClientKeyBindings::onRegisterKeyMappings);
         modBus.addListener(RegisterGuiLayersEvent.class, ClientEvents::onRegisterGuiLayers);
         ShowcaseRenderer.register(modBus);
+        UbParticleProviders.register(modBus);
+        // The party effects' visible half: avatar icons in vanilla's effect HUD/inventory and the
+        // skill name in the inventory list and its tooltip. Client-only, so registered here.
+        modBus.addListener(RegisterClientExtensionsEvent.class, PartyEffectClient::registerExtensions);
+        NeoForge.EVENT_BUS.addListener(GatherEffectScreenTooltipsEvent.class,
+                PartyEffectClient::onEffectTooltip);
         NeoForge.EVENT_BUS.addListener(InputEvent.Key.class, ClientEvents::onKey);
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Pre.class, ClientEvents::onClientTickPre);
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Post.class, ClientEvents::onClientTick);
         NeoForge.EVENT_BUS.addListener(ScreenEvent.Opening.class, ClientEvents::onScreenOpening);
-        NeoForge.EVENT_BUS.addListener(ClientPlayerNetworkEvent.LoggingOut.class,
-                ClientEvents::onLoggingOut);
         Astrum.LOGGER.info(
                 "astrum: client UB input wired (cast key {} / preset wheel key {}, threshold {} ms, both overlays on GUI layers, config screen on {})",
                 ClientKeyBindings.UB_CAST_KEY, ClientKeyBindings.UB_PRESET_KEY,
@@ -184,12 +179,12 @@ public final class ClientEvents {
     }
 
     private static void onRegisterGuiLayers(RegisterGuiLayersEvent event) {
-        event.registerAbove(VanillaGuiLayers.HOTBAR, EFFECT_LAYER, UbEffectOverlay::render);
-        event.registerAbove(EFFECT_LAYER, HUD_LAYER, UbHud::render);
+        event.registerAbove(VanillaGuiLayers.HOTBAR, HUD_LAYER, UbHud::render);
         event.registerAbove(HUD_LAYER, WHEEL_LAYER, WheelOverlay::render);
         event.registerAbove(WHEEL_LAYER, CAST_PAD_LAYER, CastPadOverlay::render);
-        Astrum.LOGGER.info("astrum: UB layers registered above the hotbar ({}, {}, {}, {})",
-                EFFECT_LAYER, HUD_LAYER, WHEEL_LAYER, CAST_PAD_LAYER);
+        Astrum.LOGGER.info("astrum: UB layers registered above the hotbar ({}, {}, {}) — no UB visual "
+                + "layer: the cast effect is real world particles, not a GUI blit",
+                HUD_LAYER, WHEEL_LAYER, CAST_PAD_LAYER);
     }
 
     /**
@@ -372,23 +367,6 @@ public final class ClientEvents {
     /** {@return whether the ring wheel is up, i.e. the preset wheel key is held past its threshold} */
     static boolean presetWheelUp() {
         return PRESET_MACHINE.state() == State.ACTIVE;
-    }
-
-    /**
-     * The client left a world: forget any effect that was running.
-     *
-     * <p>The effect's fade is a difference of two <b>game times</b>, and a new world starts its own clock.
-     * A timestamp carried across would therefore be either far in the future (the effect never starts) or
-     * far in the past (it starts again on rejoin) — both look like a rendering fault and neither is worth
-     * debugging from a screenshot.
-     *
-     * <p>It also runs when the connection drops, which is the interesting case: a player who quits mid-cast
-     * would otherwise still hold a live effect for the join screen.
-     *
-     * @param event the disconnect event
-     */
-    static void onLoggingOut(ClientPlayerNetworkEvent.LoggingOut event) {
-        ClientCastEffect.clear();
     }
 
     /** {@return whether either overlay is up} */

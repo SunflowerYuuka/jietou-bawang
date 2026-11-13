@@ -9,7 +9,6 @@ import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.attach.UbState;
 import com.astrum.pcrd.impl.client.ClientBookFeedback;
-import com.astrum.pcrd.impl.client.ClientCastEffect;
 import com.astrum.pcrd.impl.client.ClientCastFeedback;
 import com.astrum.pcrd.impl.client.ClientPartyCache;
 import com.astrum.pcrd.impl.client.ClientRosterCache;
@@ -42,22 +41,21 @@ import org.jetbrains.annotations.Nullable;
  * The mod's payloads, all registered here, on both sides: the charge channel (one clientbound
  * payload, pushed to a player only when the server's copy of their gauge actually changed), the party
  * channel ({@link PartySyncPayload}, clientbound, the ordered slot contents plus their tier-3 bits, so
- * the client can draw the wheel), the UB cast request ({@link UbCastPayload}, serverbound) with its
- * typed refusal ({@link UbCastFeedbackPayload}, clientbound, back to that one player) and its effect cue
- * ({@link UbCastEffectPayload}, clientbound, also to that one player).
+ * the client can draw the wheel), the UB cast request ({@link UbCastPayload}, serverbound) and its typed
+ * refusal ({@link UbCastFeedbackPayload}, clientbound, back to that one player).
  *
- * <h2>The cast pair: one request up, one reason down — and now one effect down</h2>
+ * <h2>The cast pair: one request up, one reason down</h2>
  * The client says only <em>which slot</em>; {@link UbService#tryCast} re-decides everything on the
  * server and answers through {@link CastGate.Reason}. A <b>refusal</b> is answered on the same connection,
  * to the asking player only ({@code PacketDistributor.sendToPlayer}), never broadcast — spec §5.4's
  * 禁止静默失败 without letting one player's cooldown shake another's slot.
  *
- * <p>A <b>success</b> used to send nothing at all: the gauge push carried the cleared bar and the new
- * cooldown. Since 2026-11-13 it sends {@link UbCastEffectPayload}, because the ultimate no longer spawns
- * an entity and the effect is drawn on the client — the client has to be <em>told</em> a cast happened, and
- * "the bar went to zero" cannot distinguish a cast from any other way the bar can change. The two
- * clientbound messages are not two refusal channels: one says "no, and here is why", the other says
- * "yes, draw it", and a refused cast sends only the first.
+ * <p>A <b>success</b> sends nothing on this channel: the gauge push carries the cleared bar and the new
+ * cooldown, and the visible half is <b>not a custom payload</b>. It is vanilla particles — see
+ * {@code UbCastParticles}, which calls {@code ServerLevel.sendParticles} from the server. That is why
+ * {@code ub_cast_effect} no longer exists: the effect needs no mod protocol to describe it. The one
+ * clientbound mod message that remains in the cast path is the refusal, and a refused cast sends it
+ * alone.
  *
  * <h2>Why the registration is one call, on the mod bus, in common code</h2>
  * {@link RegisterPayloadHandlersEvent} is an {@code IModBusEvent} fired by
@@ -87,7 +85,7 @@ import org.jetbrains.annotations.Nullable;
 public final class AstrumNetwork {
 
     /** Negotiated payload version; bump when any payload registered here changes shape. */
-    public static final String PROTOCOL_VERSION = "2";
+    public static final String PROTOCOL_VERSION = "3";
 
     /**
      * How often the party's tier-3 mask is re-resolved when the party itself has not changed.
@@ -163,8 +161,6 @@ public final class AstrumNetwork {
                         AstrumNetwork::handleUbCast)
                 .playToClient(UbCastFeedbackPayload.TYPE, UbCastFeedbackPayload.STREAM_CODEC,
                         AstrumNetwork::handleUbCastFeedback)
-                .playToClient(UbCastEffectPayload.TYPE, UbCastEffectPayload.STREAM_CODEC,
-                        AstrumNetwork::handleUbCastEffect)
                 .playToClient(RosterSyncPayload.TYPE, RosterSyncPayload.STREAM_CODEC,
                         AstrumNetwork::handleRosterSync)
                 .playToServer(PartyEditPayload.TYPE, PartyEditPayload.STREAM_CODEC,
@@ -172,8 +168,9 @@ public final class AstrumNetwork {
                 .playToClient(PartyEditResultPayload.TYPE, PartyEditResultPayload.STREAM_CODEC,
                         AstrumNetwork::handlePartyEditResult);
         Astrum.LOGGER.info("astrum: payloads registered (charge_sync, party_sync, ub_cast, "
-                + "ub_cast_feedback, ub_cast_effect, roster_sync, party_edit, party_edit_result), "
-                + "protocol {}", PROTOCOL_VERSION);
+                + "ub_cast_feedback, roster_sync, party_edit, party_edit_result) — no UB effect "
+                + "payload; the burst is vanilla ServerLevel.sendParticles, protocol {}",
+                PROTOCOL_VERSION);
     }
 
     /**
@@ -230,26 +227,6 @@ public final class AstrumNetwork {
      */
     private static void handleUbCastFeedback(UbCastFeedbackPayload payload, IPayloadContext context) {
         ClientCastFeedback.accept(payload, context.player().level().getGameTime());
-    }
-
-    /**
-     * Receives "your ultimate fired, draw it" on the caster's client.
-     *
-     * <p>Stamps the effect with the client's own game time here rather than inside {@link ClientCastEffect}
-     * — the cache must stay a plain value holder, so this class can be loaded on a dedicated server
-     * without dragging a level (let alone a client level) into its types.
-     *
-     * <p>The one log line per cast lives here, not in the renderer: it records the <b>payload's arrival</b>,
-     * which is the half of "the effect was triggered" a log can prove. The other half — that the layer then
-     * drew frames of it — is {@code UbEffectOverlay}'s per-frame DEBUG line, which names the same
-     * {@code gameTime} as this line's {@code start client tick}.
-     */
-    private static void handleUbCastEffect(UbCastEffectPayload payload, IPayloadContext context) {
-        long now = context.player().level().getGameTime();
-        ClientCastEffect.accept(payload, now);
-        Astrum.LOGGER.info("astrum: ub_cast_effect received — character {}, {} (effect #{}), start "
-                        + "client tick {}", payload.characterId(),
-                payload.enhanced() ? "enhanced" : "base", ClientCastEffect.received(), now);
     }
 
     /**
@@ -492,3 +469,4 @@ public final class AstrumNetwork {
                               boolean quarantined) {
     }
 }
+

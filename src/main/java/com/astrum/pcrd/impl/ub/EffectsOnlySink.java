@@ -3,16 +3,14 @@ package com.astrum.pcrd.impl.ub;
 import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.api.v1.UbTier;
-import com.astrum.pcrd.impl.network.UbCastEffectPayload;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.network.PacketDistributor;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * What a UB cast does now: <b>effects only</b> — it settles the damage and tells the caster's client to
- * draw the effect, and puts <b>no entity</b> in the world.
+ * What a UB cast does now: <b>effects only</b> — it settles the damage and spawns the caster's particle
+ * burst, and puts <b>no entity</b> in the world.
  *
  * <h2>Why this replaced the entity sink</h2>
  * 使用UB仅展示特效 / 不需要实体，但是实体的相关代码保留. The showcase entity
@@ -42,14 +40,14 @@ import org.jetbrains.annotations.ApiStatus;
  * <p>The once-only guarantee is unchanged and still one {@link SettleOnce} per cast — it is now created
  * by {@link UbDamageSettlement#once} so the retained entity sink and this one cannot disagree about it.
  *
- * <h2>The client half</h2>
- * The cast is announced with {@link UbCastEffectPayload}, a <b>success</b> payload. The existing
- * {@code UbCastFeedbackPayload} is the <em>refusal</em> channel and is only sent when a cast is
- * rejected ("success sends nothing back: the gauge sync already carries it"), so there was no existing
- * success channel to reuse; the effect had to be told to the client somehow. The payload goes to the
- * caster only — a screen-space effect is unavoidable and personal, and broadcasting a full-screen flash
- * to bystanders is a decision this task deliberately does not make. Each player can also switch it off
- * locally ({@code [effect] enableUbCastEffect}).
+ * <h2>The visible half: real particles, not a screen blit</h2>
+ * The cast's effect is spawned by {@link UbCastParticles}: {@code ServerLevel.sendParticles} sends the
+ * custom {@code astrum:ub_spark}/{@code astrum:ub_mote} types to the <b>caster's own client</b>, where
+ * they tick in world space. There is no effect payload any more, and there is no rectangle: the server
+ * call is the whole cue. Caster-only is deliberate (a teammate should not have their view flashed by
+ * someone else's ultimate), and the client-side {@code [effect] enableUbCastEffect} toggle is applied
+ * by the particle provider, which spawns nothing when it is off. Damage and the effect remain
+ * independent: turning the toggle off does not change the cast or its damage.
  */
 @ApiStatus.Internal
 public final class EffectsOnlySink implements ShowcaseSink {
@@ -68,7 +66,7 @@ public final class EffectsOnlySink implements ShowcaseSink {
         installed = sink;
         UbService.installShowcase(sink);
         Astrum.LOGGER.info("astrum: UB cast sink installed = effects only (no entity is spawned; damage "
-                + "settles on the cast; the caster's client is told to draw the effect)");
+                + "settles on the cast; the caster sees real particles in world space)");
     }
 
     /** {@return the installed sink, or {@code null} before {@link #install()} */
@@ -77,7 +75,7 @@ public final class EffectsOnlySink implements ShowcaseSink {
     }
 
     /**
-     * Settles one accepted ultimate: damage first, then the client's cue, and nothing in the world.
+     * Settles one accepted ultimate: damage first, then the particle burst, and nothing in the world.
      *
      * <p>Never throws. {@code UbService.settle} already wraps a throwing sink, but a cast has spent the
      * player's gauge by the time this runs, so both halves are guarded here too and a failure is reported
@@ -88,45 +86,40 @@ public final class EffectsOnlySink implements ShowcaseSink {
             CharacterDef def, UbTier tier, boolean enhanced) {
         settleWith(
                 UbDamageSettlement.once(level, caster, characterId, def, tier),
-                () -> notifyClient(caster, characterId, enhanced, def, tier));
+                () -> emitParticles(level, caster, characterId, enhanced, def));
     }
 
     /**
      * One cast, as the two things it is made of, in order — the seam a unit test drives.
      *
      * <p>Split out because the two halves have different reasons to exist and both must run in this
-     * order: the damage because a double settlement reads as extra hits, the cue because a double cue
-     * would restart the fade. Neither touches an entity, which is the whole point of the swap — and
-     * {@code EffectsOnlySinkTest} holds that as a fact about the <b>class file</b>: the constant pool of
-     * {@code EffectsOnlySink} mentions no type from {@code impl.showcase}, so no future edit can quietly
-     * make this sink spawn the entity again.
+     * order: the damage because a double settlement reads as extra hits, the particles because a second
+     * emission would double the burst. Neither touches an entity, which is the whole point of the swap —
+     * and {@code EffectsOnlySinkTest} holds that as a fact about the <b>class file</b>: the constant pool
+     * of {@code EffectsOnlySink} mentions no type from {@code impl.showcase}, so no future edit can
+     * quietly make this sink spawn the entity again.
      *
-     * @param damage   this cast's once-guarded settlement
-     * @param feedback this cast's client cue
+     * @param damage    this cast's once-guarded settlement
+     * @param particles this cast's particle burst
      */
-    static void settleWith(Runnable damage, Runnable feedback) {
+    static void settleWith(Runnable damage, Runnable particles) {
         damage.run();
-        feedback.run();
+        particles.run();
     }
 
     /**
-     * Tells the caster's client to draw the effect.
+     * Spawns the caster's particle burst.
      *
-     * <p>Swallows and reports a send failure: a player who left in the same tick, or a connection that is
-     * already closing, must not turn a settled cast into a logged error with a stack trace. The damage is
-     * already applied by the time this runs.
+     * <p>{@link UbCastParticles#emit} already catches its own failures for the same reason this sink
+     * does: the damage has landed by the time the effect runs, so a cosmetic failure must not surface
+     * as a failed cast. This method adds the cast's identity to the DEBUG trail, not a second try/catch.
      */
-    private static void notifyClient(ServerPlayer caster, ResourceLocation characterId, boolean enhanced,
-            CharacterDef def, UbTier tier) {
-        try {
-            PacketDistributor.sendToPlayer(caster, new UbCastEffectPayload(characterId, enhanced));
-            Astrum.LOGGER.debug("astrum: UB effect cue for {} ({}) sent to {} — no entity, damage already "
-                            + "settled", displayName(def, characterId), enhanced ? "enhanced" : "base",
-                    caster.getGameProfile().getName());
-        } catch (RuntimeException e) {
-            Astrum.LOGGER.warn("astrum: could not send the UB effect cue to {}; the cast itself is "
-                    + "unaffected and its damage is settled", caster.getGameProfile().getName(), e);
-        }
+    private static void emitParticles(ServerLevel level, ServerPlayer caster, ResourceLocation characterId,
+            boolean enhanced, CharacterDef def) {
+        UbCastParticles.emit(level, caster, enhanced);
+        Astrum.LOGGER.debug("astrum: UB particle burst for {} ({}) at {} — no entity, damage already "
+                        + "settled", displayName(def, characterId), enhanced ? "enhanced" : "base",
+                caster.getGameProfile().getName());
     }
 
     /** {@return the name used in log lines, falling back to the id when the pack has no definition} */
@@ -134,3 +127,4 @@ public final class EffectsOnlySink implements ShowcaseSink {
         return def == null ? String.valueOf(characterId) : def.displayName();
     }
 }
+
