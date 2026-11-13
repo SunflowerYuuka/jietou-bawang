@@ -201,6 +201,7 @@ class KillExperienceTest {
                         new com.astrum.pcrd.api.v1.UbTier("enhanced", 4, 20.0,
                                 java.util.OptionalDouble.empty(), java.util.OptionalDouble.empty(), 0,
                                 java.util.OptionalDouble.empty(), java.util.Optional.empty())),
-                GROWTH, affection);
+                GROWTH, affection,
+                java.util.Optional.empty(), java.util.Optional.empty());
     }
 }

@@ -7,6 +7,7 @@ import com.astrum.pcrd.api.v1.RegistryKeys;
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
 import java.io.InputStream;
+import javax.imageio.ImageIO;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import net.minecraft.core.registries.Registries;
@@ -61,6 +62,32 @@ class DjeetaResourceTest {
             assertEquals(4, def.ub().enhanced().hits());
             assertEquals(1, def.affection().tier2HookModifiers().get(0).hookIndex());
             assertEquals(1.5, def.affection().tier2HookModifiers().get(0).mult());
+        }
+    }
+
+    /**
+     * The shipped character names a skill and the official avatar, and that avatar is really packaged
+     * — this is the pair the party effect shows in vanilla's HUD, so a missing texture here would be
+     * the purple checker as a buff icon.
+     */
+    @Test
+    void shippedCharacterNamesHerSkillAndShipsHerAvatar() throws Exception {
+        try (InputStream in = DjeetaResourceTest.class.getResourceAsStream(DJEETA_JSON)) {
+            var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+            var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
+            assertEquals("广域斩击", def.effectiveSkillName(),
+                    "djeeta's skill name is what the party effect shows");
+            assertEquals("astrum:textures/item/character_card.png", def.avatar().orElseThrow().toString());
+        }
+        assertEquals(32, avatarSize(), "the card/avatar texture is the official 32x32 resample");
+    }
+
+    private static int avatarSize() throws Exception {
+        try (InputStream in = DjeetaResourceTest.class.getResourceAsStream(
+                "/assets/astrum/textures/item/character_card.png")) {
+            assertNotNull(in, "the avatar texture must be packaged");
+            var image = ImageIO.read(in);
+            return image.getWidth();
         }
     }
 }

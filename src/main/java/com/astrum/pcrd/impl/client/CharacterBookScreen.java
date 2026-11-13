@@ -3,6 +3,7 @@ package com.astrum.pcrd.impl.client;
 import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.AstrumApi;
 import com.astrum.pcrd.api.v1.CharacterDef;
+import com.astrum.pcrd.api.v1.EffectHook;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.growth.DishFeedHook;
 import com.astrum.pcrd.impl.growth.GrowthFacts;
@@ -365,12 +366,30 @@ public final class CharacterBookScreen extends Screen {
         CharacterDef definition = definitionOf(entry.id());
         String name = nameOf(definition, entry.id());
 
-        drawClipped(graphics, Component.translatable(BookText.KEY_GROWTH_LEVEL, name, entry.level()),
-                layout.levelLine(), COLOR_TEXT);
+        // The experience numbers share the level row, right-aligned, instead of taking a line of their
+        // own: that line's eleven pixels are what pays for the skills list below. Both halves still say
+        // what they said before — the level on the left, "exp x / y" on the right — and the bar between
+        // them is unchanged. The level text is clipped to what the numbers leave, so a long name can
+        // never draw over them.
+        String expText = Component.translatable(BookText.KEY_GROWTH_EXP, entry.exp(),
+                entry.expToNext()).getString();
+        BookLayout.Box levelBox = layout.levelLine();
+        int expWidth = font.width(expText);
+        if (expWidth < levelBox.width()) {
+            graphics.drawString(font, expText, levelBox.right() - expWidth, levelBox.y(), COLOR_DIM,
+                    true);
+            drawClipped(graphics, Component.translatable(BookText.KEY_GROWTH_LEVEL, name,
+                            entry.level()),
+                    new BookLayout.Box(levelBox.x(), levelBox.y(),
+                            levelBox.width() - expWidth - 4, levelBox.height()), COLOR_TEXT);
+        } else {
+            // Numbers wider than the column: the level wins the row and the numbers are dropped rather
+            // than drawn over it. Unreachable with the shipped curve (five digits), kept so a pack with
+            // an absurd expToNext cannot draw text past the panel.
+            graphics.drawString(font, expText, levelBox.x(), levelBox.y(), COLOR_DIM, true);
+        }
         drawBar(graphics, layout.expBar(),
                 GrowthFacts.expFraction(entry.exp(), entry.expToNext()), COLOR_EXP_BAR);
-        drawClipped(graphics, Component.translatable(BookText.KEY_GROWTH_EXP, entry.exp(),
-                entry.expToNext()), layout.expLine(), COLOR_DIM);
 
         drawClipped(graphics, Component.translatable(BookText.KEY_GROWTH_AFFECTION, entry.affection(),
                 entry.tier()), layout.affectionLine(), COLOR_TEXT);
@@ -401,6 +420,62 @@ public final class CharacterBookScreen extends Screen {
         } else {
             drawClipped(graphics, Component.translatable(BookText.KEY_FEED_ROUTE), feed, COLOR_DIM);
         }
+
+        drawSkills(graphics, definition);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // ③b The selected character's skills: one official skill icon + "trigger · effect" per hook
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * Draws the hook list: the character's effect hooks, each as an official skill icon plus one
+     * clipped line.
+     *
+     * <h2>What a row says</h2>
+     * {@code trigger · effect} — e.g. "melee · gain charge". The parameters (amounts, radii) are
+     * deliberately not in the row: at 112 pixels wide the line only fits ~11 CJK characters, and a
+     * truncated "splash 3.0/" is worse than no number at all. The numbers stay where they are
+     * authoritative, in the datapack JSON and on the hook records.
+     *
+     * <h2>Why the icon can be drawn from a 64x64 file into a 9x9 row</h2>
+     * The blit passes {@code uWidth == textureWidth}, which normalises the source to 0..1 and so
+     * samples the whole texture whatever its resolution. The alternative, vanilla's 7-argument blit,
+     * assumes a 256x256 sheet and would show the top-left ninth of each icon.
+     *
+     * <p>Hooks beyond the three rows are summarised by {@code astrum.book.skills.more} rather than
+     * dropped: {@code SkillIcons.rows} decides the split and is unit-tested.
+     */
+    private void drawSkills(GuiGraphics graphics, @Nullable CharacterDef definition) {
+        drawClipped(graphics, Component.translatable(BookText.KEY_SECTION_SKILLS),
+                layout.skillsHeading(), COLOR_TITLE);
+        if (definition == null) {
+            return;
+        }
+        List<EffectHook> hooks = definition.effects();
+        SkillIcons.Rows rows = SkillIcons.rows(hooks.size());
+        for (int i = 0; i < rows.shownHooks(); i++) {
+            drawHookRow(graphics, layout.hookRow(i), hooks.get(i));
+        }
+        if (rows.overflowRow()) {
+            drawClipped(graphics, Component.translatable(BookText.KEY_SKILLS_MORE, rows.overflow()),
+                    layout.hookRow(rows.shownHooks()), COLOR_DIM);
+        }
+    }
+
+    /** One hook: its effect type's icon on the left, the trigger and effect names to its right. */
+    private void drawHookRow(GuiGraphics graphics, @Nullable BookLayout.Box row, EffectHook hook) {
+        if (row == null) {
+            return;
+        }
+        graphics.blit(SkillIcons.iconFor(hook), row.x(), row.y(), SkillIcons.ROW_ICON,
+                SkillIcons.ROW_ICON, 0.0F, 0.0F, SkillIcons.ROW_ICON, SkillIcons.ROW_ICON,
+                SkillIcons.ROW_ICON, SkillIcons.ROW_ICON);
+        Component text = Component.translatable(BookText.triggerKey(hook.trigger()))
+                .append(Component.literal(" · "))
+                .append(Component.translatable(BookText.effectKey(hook.type())));
+        drawClipped(graphics, text, new BookLayout.Box(row.x() + SkillIcons.ROW_ICON + 2, row.y(),
+                row.width() - SkillIcons.ROW_ICON - 2, row.height()), COLOR_TEXT);
     }
 
     // -----------------------------------------------------------------------------------------

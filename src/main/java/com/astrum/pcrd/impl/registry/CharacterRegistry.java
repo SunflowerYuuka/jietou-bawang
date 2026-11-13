@@ -104,7 +104,8 @@ public final class CharacterRegistry {
                     new UbTier("", 0, 0.0, OptionalDouble.empty(), OptionalDouble.empty(), 0,
                             OptionalDouble.empty(), Optional.empty())),
             new GrowthDef(0, 0.0, 0),
-            new AffectionDef(0, 0, List.of()));
+            new AffectionDef(0, 0, List.of()),
+            Optional.empty(), Optional.empty());
 
     /**
      * Codec the registry is built with, for both disk and network: decodes like

@@ -25,11 +25,17 @@ import org.jetbrains.annotations.ApiStatus;
  * @param ub            both UB tiers
  * @param growth        experience curve
  * @param affection     affection tiers
+ * @param skillName     the character's skill name, shown on her party effect; empty falls back to
+ *                      {@link #displayName()}
+ * @param avatar        the official avatar drawn as her party effect icon, as a full texture path
+ *                      ({@code astrum:textures/item/character_card.png}); empty falls back to the
+ *                      effect's own sprite
  */
 @ApiStatus.Experimental
 public record CharacterDef(int schemaVersion, String displayName, Dimension dimension,
                            Optional<ResourceLocation> portrait, Optional<ResourceLocation> model,
-                           List<EffectHook> effects, UbDef ub, GrowthDef growth, AffectionDef affection) {
+                           List<EffectHook> effects, UbDef ub, GrowthDef growth, AffectionDef affection,
+                           Optional<String> skillName, Optional<ResourceLocation> avatar) {
 
     public static final Codec<CharacterDef> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("schemaVersion").forGetter(CharacterDef::schemaVersion),
@@ -40,6 +46,19 @@ public record CharacterDef(int schemaVersion, String displayName, Dimension dime
             EffectHook.CODEC.listOf().fieldOf("effects").forGetter(CharacterDef::effects),
             UbDef.CODEC.fieldOf("ub").forGetter(CharacterDef::ub),
             GrowthDef.CODEC.fieldOf("growth").forGetter(CharacterDef::growth),
-            AffectionDef.CODEC.fieldOf("affection").forGetter(CharacterDef::affection)
+            AffectionDef.CODEC.fieldOf("affection").forGetter(CharacterDef::affection),
+            Codec.STRING.optionalFieldOf("skillName").forGetter(CharacterDef::skillName),
+            ResourceLocation.CODEC.optionalFieldOf("avatar").forGetter(CharacterDef::avatar)
     ).apply(instance, CharacterDef::new));
+
+    /**
+     * {@return the name to show as this character's skill, falling back to {@link #displayName()}}
+     *
+     * <p>One rule, used by both the party effect and anything else that names a skill: a pack that
+     * predates {@code skillName} keeps working, and a pack that writes a blank one is treated as if it
+     * had omitted the field rather than showing an empty buff name.
+     */
+    public String effectiveSkillName() {
+        return skillName.filter(name -> !name.isBlank()).orElse(displayName());
+    }
 }

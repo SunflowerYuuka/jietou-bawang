@@ -28,6 +28,9 @@ import org.jetbrains.annotations.ApiStatus;
  *   | | cell cell                        |  level / exp bar      |
  *   | +----------------------------------+  affection / bar       |
  *   |                                       feed entry           |
+ *   |                                       skills heading       |
+ *   |                                       [icon] trigger · effect|
+ *   |                                       [icon] trigger · effect|
  *   | refusal line (only while a refusal is fresh)               |
  *   +------------------------------------------------------------+
  * </pre>
@@ -96,6 +99,19 @@ public final class BookLayout {
 
     /** Height of the feeding entry point. */
     public static final int FEED_HEIGHT = 12;
+
+    /**
+     * Hook rows the growth column shows.
+     *
+     * <p>Three is what is left after the party row, the growth view and the feeding entry in a
+     * 227-pixel panel: the strip under the feeding entry is 39 pixels, i.e. a 10-pixel heading and
+     * three 9-pixel rows. A character with more hooks gets an overflow row instead of silent
+     * truncation ({@code SkillIcons.rows}).
+     */
+    public static final int HOOK_ROWS = 3;
+
+    /** Height of one hook row: one font line, no gap, so three fit in the strip. */
+    public static final int HOOK_ROW_HEIGHT = 9;
 
     /** Gap between two lines inside the growth view. */
     public static final int LINE_GAP = 1;
@@ -248,14 +264,9 @@ public final class BookLayout {
         return new Box(rightLeft(), levelLine().bottom() + LINE_GAP, RIGHT_WIDTH, BAR_HEIGHT);
     }
 
-    /** {@return the line under the experience bar (numbers)} */
-    public Box expLine() {
-        return new Box(rightLeft(), expBar().bottom() + LINE_GAP, RIGHT_WIDTH, LINE_HEIGHT);
-    }
-
     /** {@return the affection line} */
     public Box affectionLine() {
-        return new Box(rightLeft(), expLine().bottom() + LINE_GAP, RIGHT_WIDTH, LINE_HEIGHT);
+        return new Box(rightLeft(), expBar().bottom() + LINE_GAP, RIGHT_WIDTH, LINE_HEIGHT);
     }
 
     /** {@return the affection bar} */
@@ -271,6 +282,35 @@ public final class BookLayout {
     /** {@return the feeding entry point: a button when a dish handler is installed, text otherwise} */
     public Box feedEntry() {
         return new Box(rightLeft(), nextTierLine().bottom() + LINE_GAP, RIGHT_WIDTH, FEED_HEIGHT);
+    }
+
+    /**
+     * {@return the box the "skills" heading occupies}
+     *
+     * <p>The skills list lives in the free strip under the feeding entry, in the right-hand column:
+     * it belongs to the selected character, next to her level and affection, and it is the only place
+     * in the panel with room left. The experience numbers moved into the level row
+     * ({@link #levelLine()}) to free the eleven pixels this heading and its rows need.
+     */
+    public Box skillsHeading() {
+        return new Box(rightLeft(), feedEntry().bottom() + LINE_GAP, RIGHT_WIDTH, LINE_HEIGHT);
+    }
+
+    /**
+     * {@return the box of hook row {@code index}, or {@code null} past the last row}
+     *
+     * <p>Rows are {@link #HOOK_ROW_HEIGHT} tall — a font line, no gap — because three of them plus the
+     * heading have to fit exactly in the strip that is left; {@code BookLayoutTest} asserts they end
+     * inside the body.
+     *
+     * @param index 0-based row within the list, {@code 0 <= index < HOOK_ROWS}
+     */
+    public Box hookRow(int index) {
+        if (index < 0 || index >= HOOK_ROWS) {
+            return null;
+        }
+        return new Box(rightLeft(), skillsHeading().bottom() + index * HOOK_ROW_HEIGHT, RIGHT_WIDTH,
+                HOOK_ROW_HEIGHT);
     }
 
     /**

@@ -1,6 +1,8 @@
 {
   "schemaVersion": 1,
   "displayName": "姬塔",
+  "skillName": "广域斩击",
+  "avatar": "astrum:textures/item/character_card.png",
   "dimension": "charge",
   "effects": [
     { "trigger": "melee_hit", "effect": "gain_charge",

@@ -89,8 +89,9 @@ class BookLayoutTest {
         BookLayout.Box panel = layout.panel();
         List<BookLayout.Box> parts = List.of(layout.title(), layout.divider(), layout.rosterGrid(),
                 layout.partyHeading(), layout.partyRow(), layout.growthHeading(), layout.levelLine(),
-                layout.expBar(), layout.expLine(), layout.affectionLine(), layout.affectionBar(),
-                layout.nextTierLine(), layout.feedEntry());
+                layout.expBar(), layout.affectionLine(), layout.affectionBar(),
+                layout.nextTierLine(), layout.feedEntry(), layout.skillsHeading(),
+                layout.hookRow(0), layout.hookRow(1), layout.hookRow(2));
         for (BookLayout.Box part : parts) {
             assertTrue(part.x() >= panel.x() && part.right() <= panel.right(),
                     "a part sticks out horizontally: " + part);
@@ -175,6 +176,47 @@ class BookLayoutTest {
                 "the right column must fit inside the body the grid defines");
     }
 
+    /**
+     * The skills strip is the free space the experience line used to take: heading + three rows must
+     * end inside the body, above the footer.
+     *
+     * <p>Arithmetic, not taste: the panel is 227px tall at the GUI scale the human plays at, so a row
+     * that runs one pixel past the body is content drawn on the footer, and that is the failure this
+     * pins.
+     */
+    @Test
+    void theSkillsStripFitsUnderTheFeedEntryInsideTheBody() {
+        BookLayout layout = small();
+        BookLayout.Box heading = layout.skillsHeading();
+        assertTrue(layout.feedEntry().bottom() <= heading.y(), "the strip starts under the feed entry");
+        assertTrue(heading.bottom() <= layout.refusalLine().y(), "the heading stays above the footer");
+        for (int i = 0; i < BookLayout.HOOK_ROWS; i++) {
+            BookLayout.Box row = layout.hookRow(i);
+            assertNotNull(row, "row " + i + " is within the row budget");
+            assertEquals(BookLayout.HOOK_ROW_HEIGHT, row.height());
+            assertTrue(row.y() >= heading.bottom(), "row " + i + " is under the heading");
+            assertTrue(row.bottom() <= layout.refusalLine().y(), "row " + i + " stays inside the body");
+            assertEquals(layout.partyHeading().x(), row.x(), "rows share the right column");
+            assertEquals(layout.partyHeading().width(), row.width());
+        }
+        assertNull(layout.hookRow(BookLayout.HOOK_ROWS), "there is no row past the budget");
+        assertNull(layout.hookRow(-1));
+    }
+
+    /** Rows tile downward without overlapping each other or the parts above them. */
+    @Test
+    void theHookRowsDoNotOverlapEachOther() {
+        BookLayout layout = small();
+        BookLayout.Box previous = layout.skillsHeading();
+        for (int i = 0; i < BookLayout.HOOK_ROWS; i++) {
+            BookLayout.Box row = layout.hookRow(i);
+            assertFalse(overlaps(previous, row), "row " + i + " overlaps the row above it");
+            previous = row;
+        }
+        assertTrue(previous.bottom() <= layout.rosterGrid().bottom(),
+                "the last row stays inside the body the grid defines");
+    }
+
     @Test
     void theGrowthPartsAreStackedInOrder() {
         BookLayout layout = small();
@@ -182,8 +224,7 @@ class BookLayoutTest {
         assertTrue(layout.partyRow().bottom() <= layout.growthHeading().y());
         assertTrue(layout.growthHeading().bottom() <= layout.levelLine().y());
         assertTrue(layout.levelLine().bottom() <= layout.expBar().y());
-        assertTrue(layout.expBar().bottom() <= layout.expLine().y());
-        assertTrue(layout.expLine().bottom() <= layout.affectionLine().y());
+        assertTrue(layout.expBar().bottom() <= layout.affectionLine().y());
         assertTrue(layout.affectionLine().bottom() <= layout.affectionBar().y());
         assertTrue(layout.affectionBar().bottom() <= layout.nextTierLine().y());
         assertTrue(layout.nextTierLine().bottom() <= layout.feedEntry().y());

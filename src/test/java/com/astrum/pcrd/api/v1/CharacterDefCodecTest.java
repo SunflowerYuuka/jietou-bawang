@@ -118,4 +118,29 @@ class CharacterDefCodecTest {
         var bad = JsonParser.parseString(DJEETA.replace("\"trigger\":\"melee_hit\"", "\"trigger\":\"nonexistent\""));
         assertTrue(CharacterDef.CODEC.parse(JsonOps.INSTANCE, bad).error().isPresent());
     }
+
+    /**
+     * The two fields the party effect reads are optional: an older pack keeps loading, and its buff is
+     * named after the character instead of failing to render.
+     */
+    @Test
+    void skillNameAndAvatarAreOptionalAndDefaultToEmpty() {
+        var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(DJEETA)).getOrThrow();
+        assertTrue(def.skillName().isEmpty());
+        assertTrue(def.avatar().isEmpty());
+        assertEquals("姬塔", def.effectiveSkillName(), "no skill name means the display name");
+
+        String withBoth = DJEETA.replace("\"dimension\":\"charge\",",
+                "\"dimension\":\"charge\",\"skillName\":\"广域斩击\","
+                        + "\"avatar\":\"astrum:textures/item/character_card.png\",");
+        var named = CharacterDef.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(withBoth)).getOrThrow();
+        assertEquals("广域斩击", named.skillName().orElseThrow());
+        assertEquals("astrum:textures/item/character_card.png", named.avatar().orElseThrow().toString());
+        assertEquals("广域斩击", named.effectiveSkillName());
+
+        // A blank skill name is not a name: the fallback rule (effectiveSkillName) is the single copy.
+        var blank = CharacterDef.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(
+                withBoth.replace("\"skillName\":\"广域斩击\"", "\"skillName\":\"  \""))).getOrThrow();
+        assertEquals("姬塔", blank.effectiveSkillName());
+    }
 }

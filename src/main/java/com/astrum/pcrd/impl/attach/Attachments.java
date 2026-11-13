@@ -1,6 +1,8 @@
 package com.astrum.pcrd.impl.attach;
 
 import com.astrum.pcrd.Astrum;
+import com.astrum.pcrd.impl.effect.PartyBuffEvents;
+import com.astrum.pcrd.impl.effect.PartyEffects;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.neoforge.attachment.AttachmentType;
 import net.neoforged.neoforge.registries.DeferredHolder;
@@ -176,5 +178,11 @@ public final class Attachments {
      */
     public static void register(IEventBus modBus) {
         ATTACHMENT_TYPES.register(modBus);
+        // The party's visible half: five per-slot effects that make the equipped characters appear in
+        // vanilla's effect HUD, and the two events that restore them after a login or a death. Wired
+        // here rather than from Astrum so the entry point keeps one call per subsystem and stays
+        // wiring-only; the pairing is genuine — the effects exist to show PARTY and nothing else.
+        PartyEffects.register(modBus);
+        PartyBuffEvents.register();
     }
 }

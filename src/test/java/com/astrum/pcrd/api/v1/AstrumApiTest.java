@@ -66,6 +66,7 @@ class AstrumApiTest {
                         new UbTier("seiga_itten", 4, 20.0, OptionalDouble.empty(), OptionalDouble.empty(), 0,
                                 OptionalDouble.empty(), Optional.empty())),
                 new GrowthDef(100, 1.15, 30),
-                new AffectionDef(3, 8, List.of()));
+                new AffectionDef(3, 8, List.of()),
+                Optional.empty(), Optional.empty());
     }
 }

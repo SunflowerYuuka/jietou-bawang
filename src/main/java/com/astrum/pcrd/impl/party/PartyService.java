@@ -6,6 +6,7 @@ import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
+import com.astrum.pcrd.impl.effect.PartyBuffs;
 import java.util.Optional;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceLocation;
@@ -107,6 +108,11 @@ public final class PartyService {
         if (edit.changed()) {
             player.setData(Attachments.PARTY, edit.after());
         }
+        // The visible half of the party: one HUD effect per occupied slot, removed for a cleared one.
+        // Idempotent and cheap (an existing instance is left alone), so it runs on every accepted edit
+        // and not only on a change — a party written by an older build is then repaired by the next
+        // edit instead of waiting for the next login.
+        PartyBuffs.apply(player);
         Astrum.LOGGER.info("astrum: party edit accepted for {} slot {} -> {} (previous slot {}, "
                         + "changed {}, {} characters equipped)", who, slot, characterId,
                 edit.previousSlot().isPresent() ? edit.previousSlot().getAsInt() : -1,

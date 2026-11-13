@@ -75,6 +75,34 @@ public final class BookText {
     /** Section heading: the selected character's progress. */
     public static final String KEY_SECTION_GROWTH = "astrum.book.section.growth";
 
+    /** Section heading: the selected character's effect hooks, one icon row each. */
+    public static final String KEY_SECTION_SKILLS = "astrum.book.section.skills";
+
+    /** One row of the skills list when a character has more hooks than the column shows. */
+    public static final String KEY_SKILLS_MORE = "astrum.book.skills.more";
+
+    /**
+     * {@return the name key of a trigger, for a hook row}
+     *
+     * <p>Derived from the enum's serialized name, the same string the datapack JSON uses, so a new
+     * {@link com.astrum.pcrd.api.v1.Trigger} cannot be added without the parity test asking for its
+     * translation.
+     *
+     * @param trigger the hook's trigger
+     */
+    public static String triggerKey(com.astrum.pcrd.api.v1.Trigger trigger) {
+        return "astrum.trigger." + trigger.getSerializedName();
+    }
+
+    /**
+     * {@return the name key of an effect type, for a hook row}
+     *
+     * @param type the hook's effect type
+     */
+    public static String effectKey(com.astrum.pcrd.api.v1.EffectType type) {
+        return "astrum.effect." + type.getSerializedName();
+    }
+
     /** Shown when the roster is readable but empty. */
     public static final String KEY_ROSTER_EMPTY = "astrum.book.roster.empty";
 
@@ -129,10 +157,20 @@ public final class BookText {
         Set<String> keys = new LinkedHashSet<>(List.of(KEY_ITEM, KEY_TOOLTIP, KEY_TITLE, KEY_QUARANTINED,
                 KEY_SECTION_ROSTER, KEY_SECTION_PARTY, KEY_SECTION_GROWTH, KEY_ROSTER_EMPTY, KEY_PARTY_HINT, KEY_GROWTH_NONE, KEY_GROWTH_LEVEL,
                 KEY_GROWTH_EXP, KEY_GROWTH_AFFECTION, KEY_GROWTH_NEXT, KEY_GROWTH_MAX,
-                KEY_FEED_AVAILABLE, KEY_FEED_ROUTE, KEY_UNKNOWN_CHARACTER, KEY_REFUSED));
+                KEY_FEED_AVAILABLE, KEY_FEED_ROUTE, KEY_UNKNOWN_CHARACTER, KEY_REFUSED,
+                KEY_SECTION_SKILLS, KEY_SKILLS_MORE));
         keys.addAll(itemKeys());
         for (PartyRules.Reason reason : PartyRules.Reason.values()) {
             keys.add(PartyRules.reasonKey(reason));
+        }
+        // The skills list names every trigger and every effect type. Walking the enums (rather than
+        // listing strings) is what makes a new enum constant fail the parity test instead of shipping
+        // a row whose label is a raw "astrum.effect.something" key.
+        for (com.astrum.pcrd.api.v1.Trigger trigger : com.astrum.pcrd.api.v1.Trigger.values()) {
+            keys.add(triggerKey(trigger));
+        }
+        for (com.astrum.pcrd.api.v1.EffectType type : com.astrum.pcrd.api.v1.EffectType.values()) {
+            keys.add(effectKey(type));
         }
         return Set.copyOf(keys);
     }
