@@ -9,7 +9,7 @@
 > worked example. The vertical slice covers the whole loop: craft a character card, enrol the
 > character, build a party on a radial wheel, fight for experience, feed her dishes to raise affection,
 > and fire an ultimate that shows a screen effect and settles its damage. Zero Mixins; every hook is a
-> NeoForge event. Verified with 656 automated tests and a recorded acceptance matrix
+> NeoForge event. Verified with 657 automated tests and a recorded acceptance matrix
 > ([docs/acceptance.md](docs/acceptance.md)).
 
 ---
