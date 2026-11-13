@@ -5,11 +5,14 @@ import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.api.v1.UbTier;
 import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.ub.ShowcaseSink;
+import com.astrum.pcrd.impl.ub.SettleOnce;
+import com.astrum.pcrd.impl.ub.UbDamageSettlement;
 import com.astrum.pcrd.impl.ub.UbService;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
@@ -33,7 +36,9 @@ import org.jetbrains.annotations.Nullable;
  * <h2>The cap: the entity is dropped, the effect never is</h2>
  * Spec §5.6 and the {@link ShowcaseSink} contract both say 功能不断，画面不炸: when the level already
  * holds {@code maxActiveShowcaseEntities} showcases, a new cast settles <b>no entity</b> and the cast
- * still succeeds. So {@link #spawn} answers {@link Optional#empty()} in that case — it does not throw,
+ * still succeeds — <b>and its damage is settled inline</b> ({@code settle} runs the same
+ * {@link com.astrum.pcrd.impl.ub.SettleOnce}-guarded callback the entity would have run). So
+ * {@link #spawn} answers {@link Optional#empty()} in that case — it does not throw,
  * does not warn, and does not refuse the cast. The count comes from the level's live entities rather
  * than from a counter, because a counter drifts the first time a showcase dies by any other path (a
  * chunk unload, {@code /kill}, a dimension change), and a stuck counter would silently switch the
@@ -53,10 +58,12 @@ import org.jetbrains.annotations.Nullable;
  *
  * <h2>What is deliberately not here</h2>
  * No tick listener (the lifetime is the entity's own {@code tick()}, the cap is read at spawn), and no
- * damage settlement: the tier's {@code damage} is a datapack number the effect pipeline owns, so
- * settling it again from a cutscene would double the ultimate's output. What this class adds over the
- * placeholder is the visible half plus the budget — exactly the gap the placeholder's javadoc
- * describes.
+ * damage arithmetic: the tier's {@code hits} / {@code damage} / {@code radius} are turned into a plan by
+ * {@code UbDamage} and into real {@code hurt()} calls by {@code UbDamageSettlement}. What this class
+ * contributes to the damage half is the <b>timing and the once-only guarantee</b> — it arms one
+ * {@code SettleOnce} per cast and hands the same {@link Runnable} to the entity (which runs it at its
+ * strike frame, or at its removal if the clip is cut short) or runs it inline when the entity budget
+ * forbids a showcase. So "the ultimate deals 20" is true whether or not anything is drawn.
  */
 @ApiStatus.Internal
 public final class ShowcaseManager implements ShowcaseSink {
@@ -119,28 +126,59 @@ public final class ShowcaseManager implements ShowcaseSink {
     // ------------------------------------------------------------------ the sink
 
     /**
-     * Settles one accepted ultimate: spawn the showcase, or don't.
+     * Settles one accepted ultimate: arm the damage, then spawn the showcase — or don't.
+     *
+     * <p><b>The damage is settled either way.</b> Spec §5.6 and the {@link ShowcaseSink} contract both
+     * say 功能不断，画面不炸: when the level is at {@code maxActiveShowcaseEntities} the <i>entity</i> is
+     * dropped and the ultimate still lands. So the settlement is not a side effect of a successful
+     * spawn — when there is no entity to own it, it runs here, inline, and the cast is indistinguishable
+     * to the player except that nothing is drawn.
      *
      * <p>Never throws. {@code UbService.settle} wraps a throwing sink already, but a showcase must not
-     * be able to fail a cast whose gauge is spent, so the spawn is guarded here too and reported at WARN
+     * be able to fail a cast whose gauge is spent, so everything is guarded here too and reported at WARN
      * rather than escaping.
      */
     @Override
-    public void settle(ServerLevel level, ServerPlayer caster, CharacterDef def, UbTier tier,
-            boolean enhanced) {
+    public void settle(ServerLevel level, ServerPlayer caster, ResourceLocation characterId,
+            CharacterDef def, UbTier tier, boolean enhanced) {
+        Runnable damage = damageFor(level, caster, characterId, def, tier);
         try {
             int cap = ServerConfig.MULTIPLAYER.maxActiveShowcaseEntities.get();
             int active = activeCount(level);
-            Optional<ShowcaseEntity> spawned = spawn(level, caster, tier, active, cap);
+            Optional<ShowcaseEntity> spawned = spawn(level, caster, tier, active, cap, damage);
             if (spawned.isEmpty()) {
                 Astrum.LOGGER.debug("astrum: no showcase for {} ({}) — {} of {} already active; the "
-                        + "cast itself still resolved", def.displayName(),
-                        enhanced ? "enhanced" : "base", active, cap);
+                        + "cast itself still resolved and its damage is settled inline",
+                        def.displayName(), enhanced ? "enhanced" : "base", active, cap);
+                damage.run();
             }
         } catch (RuntimeException e) {
             Astrum.LOGGER.warn("astrum: the showcase for {} could not spawn; the cast itself is "
-                    + "unaffected", def.displayName(), e);
+                    + "unaffected and its damage was settled inline", def.displayName(), e);
+            damage.run();
         }
+    }
+
+    /**
+     * {@return the one settlement of this cast, shared by every site that may run it}
+     *
+     * <p>A single {@link SettleOnce} makes the three possible moments — the entity's strike frame, the
+     * entity's removal if the clip is cut short, and the inline call above when no entity exists — add
+     * up to one settlement rather than up to three.
+     */
+    private static Runnable damageFor(ServerLevel level, ServerPlayer caster,
+            ResourceLocation characterId, CharacterDef def, UbTier tier) {
+        SettleOnce once = new SettleOnce();
+        return () -> {
+            if (!once.claim()) {
+                return;
+            }
+            try {
+                UbDamageSettlement.apply(level, caster, characterId, def, tier);
+            } finally {
+                once.done();
+            }
+        };
     }
 
     // ------------------------------------------------------------------ the factory
@@ -148,18 +186,22 @@ public final class ShowcaseManager implements ShowcaseSink {
     /**
      * {@return the showcase that was spawned, or empty when the budget forbids one}
      *
-     * <p>The signature the plan names. Split from {@link #settle} so the budget decision is a value a
-     * caller (and a test) can drive with an explicit {@code activeCount}/{@code maxActive}, with no
-     * config and no level in play for the decision itself.
+     * <p>The signature the plan names, plus the settlement the spawn must own. Split from
+     * {@link #settle} so the budget decision is a value a caller (and a test) can drive with an explicit
+     * {@code activeCount}/{@code maxActive}, with no config and no level in play for the decision itself.
+     *
+     * <p>The damage is armed <b>before</b> {@code addFreshEntity}, so the entity cannot tick without it:
+     * an entity that ticked first would miss the strike frame of a very short clip.
      *
      * @param level       the level to spawn into
      * @param caster      the player whose ultimate fired; the showcase stands in front of them
      * @param tier        the tier that fired, whose {@code animation} names what should play
      * @param activeCount how many showcases that level already holds
      * @param maxActive   the configured cap; {@code <= 0} means "never spawn one"
+     * @param damage      what settles the cast's damage, or {@code null} for a showcase that only plays
      */
     public static Optional<ShowcaseEntity> spawn(ServerLevel level, ServerPlayer caster, UbTier tier,
-            int activeCount, int maxActive) {
+            int activeCount, int maxActive, Runnable damage) {
         if (!ShowcaseLifetime.maySpawn(activeCount, maxActive)) {
             return Optional.empty();
         }
@@ -171,6 +213,7 @@ public final class ShowcaseManager implements ShowcaseSink {
         }
         entity.configure(tier.animation(), castAnimationTicks());
         entity.setOwner(caster.getUUID());
+        entity.settleDamageOnStrike(damage);
         entity.placeInFrontOf(caster);
         if (!level.addFreshEntity(entity)) {
             Astrum.LOGGER.warn("astrum: the level refused the showcase entity for {}; the cast is "
@@ -178,10 +221,17 @@ public final class ShowcaseManager implements ShowcaseSink {
             return Optional.empty();
         }
         Astrum.LOGGER.debug("astrum: showcase {} spawned for {} at {} (declared animation '{}', "
-                        + "playing '{}', {}t, {} of {} active)", entity.getId(),
+                        + "playing '{}', {}t, strike at {}t, {} of {} active)", entity.getId(),
                 caster.getGameProfile().getName(), entity.position(), entity.declaredAnimation(),
-                entity.animation(), entity.animationTicks(), activeCount + 1, maxActive);
+                entity.animation(), entity.animationTicks(), entity.strikeTick(), activeCount + 1,
+                maxActive);
         return Optional.of(entity);
+    }
+
+    /** {@return a showcase that plays {@code tier}'s animation and settles nothing} */
+    static Optional<ShowcaseEntity> spawn(ServerLevel level, ServerPlayer caster, UbTier tier,
+            int activeCount, int maxActive) {
+        return spawn(level, caster, tier, activeCount, maxActive, null);
     }
 
     /**

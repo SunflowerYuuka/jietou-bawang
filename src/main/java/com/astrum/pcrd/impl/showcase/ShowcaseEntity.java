@@ -129,6 +129,30 @@ public class ShowcaseEntity extends Entity implements GeoEntity {
     private int animationTicks;
 
     /**
+     * What settles this cast's damage, run from the entity's own {@link #tick()} at the strike frame
+     * and again — never twice — when the entity leaves the level.
+     *
+     * <p>Carried on the entity rather than in a side table for the same reason {@link #owner} is: the
+     * fact is about one cast, and it must die with the entity. A side table would need pruning per
+     * cast, which is the leak Task 13's probe already caught once.
+     *
+     * <p>{@code null} means "this showcase settles nothing", which is the honest default for an
+     * entity constructed by the entity type (a corrupted save, a probe, a future caller that only wants
+     * the visual). It is <b>not</b> synched: the client never decides damage.
+     */
+    private Runnable onStrike;
+
+    /**
+     * The one-shot latch shared by the two moments that may settle ({@code null} before
+     * {@link #settleDamageOnStrike}).
+     *
+     * <p>The strike frame is the ordinary moment and the removal is the fallback for a clip that was
+     * cut short. Both ask the same latch, so an interrupted ultimate deals its damage exactly once and
+     * a normal one is not settled a second time when its entity despawns 4 ticks later.
+     */
+    private com.astrum.pcrd.impl.ub.SettleOnce settlement;
+
+    /**
      * The player whose ultimate this showcase plays, or {@code null} for none.
      *
      * <p>Held on the entity rather than in a side table keyed by entity id, so it cannot outlive the
@@ -220,6 +244,76 @@ public class ShowcaseEntity extends Entity implements GeoEntity {
         return this.animationTicks;
     }
 
+    /** {@return the tick at which this showcase's clip reads as having landed} */
+    public int strikeTick() {
+        return com.astrum.pcrd.impl.ub.UbDamage.strikeTick(this.animationTicks);
+    }
+
+    /**
+     * Arms this showcase to settle one ultimate's damage at its strike frame.
+     *
+     * <p>Called by {@code ShowcaseManager} right after {@link #configure}, before the entity is added,
+     * so the settlement is armed before the entity can tick even once — an entity that ticked first
+     * would miss a two-tick clip's strike frame.
+     *
+     * @param settlement what to run, exactly once; {@code null} disarms it
+     */
+    public void settleDamageOnStrike(Runnable settlement) {
+        if (settlement == null) {
+            this.onStrike = null;
+            this.settlement = null;
+            return;
+        }
+        this.onStrike = settlement;
+        this.settlement = new com.astrum.pcrd.impl.ub.SettleOnce();
+    }
+
+    /** {@return whether this showcase still owes its damage; for the log and for probes} */
+    public boolean damagePending() {
+        return this.settlement != null && this.settlement.isPending();
+    }
+
+    /**
+     * Runs the armed settlement if this tick is the strike frame, and only once per cast.
+     *
+     * <p>This is the whole reason the settlement lives on the entity: the moment "the animation has
+     * landed" is the entity's own age against its own clip, and it needs no second clock. The guard is
+     * {@link com.astrum.pcrd.impl.ub.SettleOnce}, shared with the removal fallback below.
+     */
+    private void settleAtStrikeFrame() {
+        if (this.onStrike == null || this.settlement == null || !this.settlement.isPending()) {
+            return;
+        }
+        if (this.tickCount < strikeTick()) {
+            return;
+        }
+        settleNow("strike frame at tick " + this.tickCount);
+    }
+
+    /**
+     * Settles the cast's damage now, if it is still owed.
+     *
+     * <p>Split from {@link #tick()} so the two moments (strike frame, removal) and the no-entity path in
+     * {@code ShowcaseManager} all go through one guarded call. The latch is taken <b>before</b> the work
+     * runs, so a damage listener that reached back into this cast could not re-enter it; a throwing run
+     * still counts as spent, because whatever landed before the failure is on the victim's health
+     * already.
+     *
+     * @param moment why it is being settled now, for the log
+     */
+    private void settleNow(String moment) {
+        if (this.onStrike == null || this.settlement == null || !this.settlement.claim()) {
+            return;
+        }
+        try {
+            Astrum.LOGGER.debug("astrum: showcase {} settling its UB damage at the {}",
+                    this.getId(), moment);
+            this.onStrike.run();
+        } finally {
+            this.settlement.done();
+        }
+    }
+
     // ------------------------------------------------------------------ lifetime
 
     /**
@@ -239,12 +333,34 @@ public class ShowcaseEntity extends Entity implements GeoEntity {
      */
     @Override
     public void tick() {
-        if (!this.level().isClientSide && ShowcaseLifetime.shouldDespawn(
+        if (this.level().isClientSide) {
+            return;
+        }
+        settleAtStrikeFrame();
+        if (ShowcaseLifetime.shouldDespawn(
                 this.tickCount, this.animationTicks, ShowcaseLifetime.MAX_LIFETIME_TICKS)) {
             Astrum.LOGGER.debug("astrum: showcase {} despawning at tick {} (animation {}t, cap {}t)",
                     this.getId(), this.tickCount, this.animationTicks,
                     ShowcaseLifetime.MAX_LIFETIME_TICKS);
             this.discard();
+        }
+    }
+
+    /**
+     * The fallback moment: a showcase that leaves the level before its strike frame still settles.
+     *
+     * <p>Three real ways to get here without a strike: the owner logged out, the server stopped, the
+     * chunk unloaded, or the hard deadline fired on an unknown clip length. Without this the ultimate
+     * would spend the bar, play half a clip, and deal <b>nothing</b> — spec §5.6's 动画被打断就丢伤害.
+     *
+     * <p>Deliberately on the entity's own lifecycle rather than on a level tick: {@code setRemoved} →
+     * {@code levelCallback.onRemove} → {@link #onRemovedFromLevel()} happens once, synchronously, for
+     * every removal path, and costs one virtual call. The latch makes "once" true across both moments.
+     */
+    @Override
+    public void onRemovedFromLevel() {
+        if (!this.level().isClientSide) {
+            settleNow("interrupted clip (entity removed)");
         }
     }
 

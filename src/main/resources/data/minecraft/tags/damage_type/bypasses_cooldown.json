@@ -1,6 +1,7 @@
 {
   "replace": false,
   "values": [
-    "astrum:hook_damage"
+    "astrum:hook_damage",
+    "astrum:ub_damage"
   ]
 }

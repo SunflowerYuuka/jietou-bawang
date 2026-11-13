@@ -129,13 +129,13 @@ public final class UbService {
         UbTransaction.commit(paid,
                 next -> player.setData(Attachments.UB_STATE, next),
                 () -> announce(new UbActivatedEvent(characterId, slot, enhanced)),
-                () -> settle(player, def, tier, enhanced));
+                () -> settle(player, characterId, def, tier, enhanced));
         Astrum.LOGGER.debug("astrum: UB {} fired by {} from slot {}{}",
                 characterId, player.getGameProfile().getName(), slot, enhanced ? " (enhanced)" : "");
 
-        // Hand-off to the showcase is the third effect inside commit(): whether anything happens in
-        // the world is the sink's business, and until Task 13 installs one,
-        // ShowcaseSink.NO_SHOWCASE_YET does nothing at all.
+        // Hand-off to the showcase is the third effect inside commit(): the sink spawns the figure AND
+        // settles the tier's damage (once, at the animation's strike frame or inline when the entity
+        // budget forbids one).
         return Optional.empty();
     }
 
@@ -155,12 +155,13 @@ public final class UbService {
         }
     }
 
-    private static void settle(ServerPlayer player, CharacterDef def, UbTier tier, boolean enhanced) {
+    private static void settle(ServerPlayer player, ResourceLocation characterId, CharacterDef def,
+            UbTier tier, boolean enhanced) {
         if (!(player.level() instanceof ServerLevel level)) {
             return;
         }
         try {
-            showcase.settle(level, player, def, tier, enhanced);
+            showcase.settle(level, player, characterId, def, tier, enhanced);
         } catch (RuntimeException e) {
             // A failing showcase must not take down a cast whose gauge is already spent.
             Astrum.LOGGER.error("astrum: showcase failed for {} — damage may not have been settled",
