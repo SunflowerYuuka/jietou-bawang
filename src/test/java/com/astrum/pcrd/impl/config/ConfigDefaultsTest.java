@@ -82,7 +82,7 @@ class ConfigDefaultsTest {
     @Test
     void serverTomlHasEverySpecSection() {
         String text = toToml(writtenDefaults(ServerConfig.SPEC));
-        for (String section : new String[] { "[balance]", "[ub]", "[wheel]", "[multiplayer]" }) {
+        for (String section : new String[] { "[balance]", "[ub]", "[multiplayer]" }) {
             assertTrue(text.contains(section), "生成的 toml 缺少小节 " + section + "\n" + text);
         }
     }
@@ -90,7 +90,7 @@ class ConfigDefaultsTest {
     @Test
     void clientTomlHasEverySpecSection() {
         String text = toToml(writtenDefaults(ClientConfig.SPEC));
-        for (String section : new String[] { "[wheel]", "[camera]", "[hud]", "[effect]" }) {
+        for (String section : new String[] { "[wheel]", "[hud]", "[effect]" }) {
             assertTrue(text.contains(section), "生成的 toml 缺少小节 " + section + "\n" + text);
         }
     }
@@ -108,8 +108,6 @@ class ConfigDefaultsTest {
         assertEquals(20.0, toml.<Number>get("ub.ubChargePerKill").doubleValue(), 1e-9);
         assertEquals(0.2, toml.<Number>get("ub.ubChargePerSecond").doubleValue(), 1e-9);
 
-        assertEquals("ALLOW", toml.get("wheel.scrollSwitchPolicy"));
-
         assertEquals("ALL_PLAYERS", toml.get("multiplayer.allyMode"));
         assertEquals(20, toml.<Number>get("multiplayer.areaChargePairCooldownTicks").intValue());
         assertEquals(6.0, toml.<Number>get("multiplayer.areaChargeReceiveCapPerSecond").doubleValue(), 1e-9);
@@ -123,7 +121,6 @@ class ConfigDefaultsTest {
     void clientDefaultsMatchSpec() {
         CommentedConfig toml = reload(toToml(writtenDefaults(ClientConfig.SPEC)));
 
-        assertEquals(false, toml.get("wheel.enableScrollSwitching"));
         // Spec §5.5/§8.3 after the 2026-11-12 playtest: 0.27 radius (was 0.40), then alpha 0.75 (was
         // 0.55, and 0.30 before that) after the second look at it in a real game — 0.55 still read as
         // transparent over a busy background, and the clamp window is now the declared 0.00 ~ 1.00.
@@ -131,7 +128,6 @@ class ConfigDefaultsTest {
         assertEquals(0.75, toml.<Number>get("wheel.wheelOpacity").doubleValue(), 1e-9);
         // The player picks the layout (spec §5.5); the shipped default is the filled disc the human chose.
         assertEquals("DISC", toml.get("wheel.wheelMode"));
-        assertEquals(false, toml.get("camera.ubCameraPush"));
 
         // [hud] holds spec §7's "位置可配置、可整体关闭" — not in §8.3's sketch, added with the HUD itself.
         assertEquals(true, toml.get("hud.enableUbHud"));
@@ -184,11 +180,7 @@ class ConfigDefaultsTest {
     }
 
     /**
-     * No key beyond the spec's two tables: an accidental extra option is as much a spec violation as
-     * a missing one.
-     */
-    /**
-     * Every leaf key the file contains, exactly — not just the sections.
+     * Every leaf key the server file contains, exactly — not just the sections.
      *
      * <p>This is the strict half of the spec check: an accidental extra option anywhere in the file is
      * as much a spec violation as a missing one, and a section-only comparison would happily accept a
@@ -207,7 +199,6 @@ class ConfigDefaultsTest {
                 "ub.ubChargePerDamageTaken",
                 "ub.ubChargePerKill",
                 "ub.ubChargePerSecond",
-                "wheel.scrollSwitchPolicy",
                 "multiplayer.allyMode",
                 "multiplayer.areaChargePairCooldownTicks",
                 "multiplayer.areaChargeReceiveCapPerSecond",
@@ -215,11 +206,33 @@ class ConfigDefaultsTest {
                 leafKeys(writtenDefaults(ServerConfig.SPEC)));
     }
 
+    /**
+     * The client file, key for key.
+     *
+     * <p>The counterpart of {@link #theServerConfigHasExactlyTheSpecKeys()}, and the reason
+     * {@code [camera]} can no longer come back: a section that promises a mechanism nobody implemented
+     * (there is no camera code at all) is a key the config screen shows and the game ignores, which is
+     * exactly what this project calls a lie in the UI. Adding one has to fail here first.
+     */
+    @Test
+    void theClientConfigHasExactlyTheSpecKeys() {
+        assertEquals(Set.of(
+                "wheel.wheelScale",
+                "wheel.wheelOpacity",
+                "wheel.wheelMode",
+                "hud.enableUbHud",
+                "hud.hudAnchor",
+                "hud.hudOffsetX",
+                "hud.hudOffsetY",
+                "effect.enableUbCastEffect"),
+                leafKeys(writtenDefaults(ClientConfig.SPEC)));
+    }
+
     @Test
     void noKeysBeyondSpec() {
-        assertEquals(Set.of("balance", "ub", "wheel", "multiplayer"),
+        assertEquals(Set.of("balance", "ub", "multiplayer"),
                 topLevelKeys(writtenDefaults(ServerConfig.SPEC)));
-        assertEquals(Set.of("wheel", "camera", "hud", "effect"),
+        assertEquals(Set.of("wheel", "hud", "effect"),
                 topLevelKeys(writtenDefaults(ClientConfig.SPEC)));
     }
 

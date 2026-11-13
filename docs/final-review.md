@@ -4,6 +4,13 @@
 - **但工作树不干净**，简报里"tree clean"这一条与事实不符：有 4 个未跟踪文件（三个 100 KB+ 的特效 png 和 `tools/fx_from_ai.py`）。已发布的 `astrum-0.1.0-FINAL.jar` 已开箱核对，那三张 png **不在里面**，所以发布物本身没被污染；但仓库状态需要人在发布前做个决定（见"发布前必须处理"第 7 条）。
 - 本文件**不改任何代码**。每条结论都带文件:行，读者可自行复核。
 
+> **处理状态（2026-11-13，本文件保留为当时的记录，不回改结论）。** 第 1–6 条已经落地：
+> 第 1 条（README 组队路径）由 `2e6fe3f` 修正；第 4 条（acceptance 的假 PASS）改为 HUMAN 并给出
+> 真实步骤；第 6 条那四个键里，`ubChargePerSecond` 被**实现**（`impl.ub.PassiveCharge`），
+> 另外三个（`ubCameraPush`、`enableScrollSwitching`、`scrollSwitchPolicy`）被**删除**。
+> 下面每条里引用的行号是 `d123166` 时的行号，现在对不上了——这是有意的：审查记录不该被后来的
+> 修改改写成"当时就对"。
+
 ---
 
 ## 结论
@@ -142,6 +149,7 @@
    - `ClientConfig` `ubCameraPush`（`ClientConfig.java:121`）—— 零读者，无任何镜头逻辑；
    - `ClientConfig` `enableScrollSwitching`（`:68`）+ `ServerConfig` `scrollSwitchPolicy`（`:198`）—— **滚轮切换完全没有实现**（全库无滚轮输入监听，除角色册分页外）。而"滚轮切换作为可选配置项"是规格决策 #12，`scrollSwitchPolicy` 还专门有 ALLOW/DENY/FORCE 三个取值。
    后果：这些旋钮在设置界面里可以被玩家拖动、在 TOML 里可以填、永远没有任何效果。要么实现，要么从 spec/界面里撤掉（撤掉是一行级别的代码改动，但本审查不改代码）。
+   **→ 已处理（2026-11-13）**：`ubChargePerSecond` 实现（`PassiveCharge`，`PlayerTickEvent.Post` 上按整点入账）；其余三个删除，`[wheel]` 服务端小节与 `[camera]` 客户端小节一并消失。
 
 7. **工作区有 4 个未跟踪文件，发布前必须定去留。**
    `src/main/resources/assets/astrum/textures/effect/ub_burst.png`（223 KB）、`ub_flare.png`（124 KB）、`ub_strike.png`（138 KB）、`tools/fx_from_ai.py`。

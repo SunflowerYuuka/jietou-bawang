@@ -47,9 +47,6 @@ public final class ServerConfig {
     /** {@code [ub]} — charge gain and the shared cooldown. */
     public static final UbOptions UB;
 
-    /** {@code [wheel]} — wheel input policy. */
-    public static final WheelOptions WHEEL;
-
     /** {@code [multiplayer]} — ally selection and the area-charge guards. */
     public static final MultiplayerOptions MULTIPLAYER;
 
@@ -57,7 +54,6 @@ public final class ServerConfig {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
         BALANCE = new BalanceOptions(builder);
         UB = new UbOptions(builder);
-        WHEEL = new WheelOptions(builder);
         MULTIPLAYER = new MultiplayerOptions(builder);
         SPEC = builder.build();
     }
@@ -159,7 +155,14 @@ public final class ServerConfig {
         /** Flat charge for a kill. */
         public final ModConfigSpec.DoubleValue ubChargePerKill;
 
-        /** Trickle charge per second, so the gauge is never permanently stuck. */
+        /**
+         * Trickle charge per second, so the gauge is never permanently stuck.
+         *
+         * <p>Paid by {@code impl.ub.PassiveCharge} on {@code PlayerTickEvent.Post} — an event the engine
+         * posts per player, not a polling loop — so a player who never fights still gets their ultimate
+         * back. It is read lazily at that call site, like every other value here, and {@code 0} is a
+         * supported setting that turns the trickle off (spec §5.4, §8.4).
+         */
         public final ModConfigSpec.DoubleValue ubChargePerSecond;
 
         private UbOptions(ModConfigSpec.Builder builder) {
@@ -177,31 +180,9 @@ public final class ServerConfig {
                     .comment(" 击杀固定充能")
                     .defineInRange("ubChargePerKill", 20.0, 0.0, 100.0);
             ubChargePerSecond = builder
-                    .comment(" 每秒自然回复充能（兜底）")
+                    .comment(" 每秒自然回复充能（兜底）：在线即生效，不需要战斗；0 = 关闭",
+                            " 每 tick 只累积、攒满 1 点才入账，小数余数不会丢")
                     .defineInRange("ubChargePerSecond", 0.2, 0.0, 100.0);
-            builder.pop();
-        }
-    }
-
-    /**
-     * {@code [wheel]} section: what the mouse wheel does while the wheel is open.
-     *
-     * <p>The value stays a string here; {@code impl.ub} parses it and owns the enum, so this file
-     * holds no behaviour and adding a policy later needs no second source of truth.
-     */
-    public static final class WheelOptions {
-
-        /** Accepted values of {@link #scrollSwitchPolicy}. */
-        public static final List<String> SCROLL_SWITCH_POLICIES = List.of("ALLOW", "DENY", "FORCE");
-
-        /** {@code ALLOW} / {@code DENY} / {@code FORCE}. */
-        public final ModConfigSpec.ConfigValue<String> scrollSwitchPolicy;
-
-        private WheelOptions(ModConfigSpec.Builder builder) {
-            builder.push("wheel");
-            scrollSwitchPolicy = builder
-                    .comment(" 滚轮切换预设策略：ALLOW / DENY / FORCE")
-                    .define("scrollSwitchPolicy", "ALLOW", inList(SCROLL_SWITCH_POLICIES));
             builder.pop();
         }
     }

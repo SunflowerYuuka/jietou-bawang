@@ -70,9 +70,9 @@
 | 9 | 递减开关实现 | **ModConfig `SERVER`**，不用命令 + SavedData |
 | 10 | 递减系数 | 配置项 `diminishingBase`，默认 0.7 |
 | 11 | UB 是否吃递减 | **不吃**（一次只能放一个，天然互斥）；改用全局 CD 控制 |
-| 12 | 轮盘交互 | **A（径向菜单）+ 数字键直放**；滚轮切换作为可选配置项 |
+| 12 | 轮盘交互 | **A（径向菜单）+ 数字键直放**；滚轮切换作为可选配置项 —— **2026-11-13 作废**：滚轮切换没实现，配置键已删除，见 §8.3 |
 | 13 | 演出实现 | **GeckoLib 4 `required`**，一期不做软降级 |
-| 14 | 演出期间玩家 | **不锁定**，仅可选轻微镜头反馈（默认关） |
+| 14 | 演出期间玩家 | **不锁定**，仅可选轻微镜头反馈（默认关）—— **2026-11-13 修正**：镜头反馈从未实现，`ubCameraPush` 已删除，见 §8.3 |
 | 15 | 角色获取 | **合成角色卡 → 右键入册（消耗卡）** |
 | 16 | 养成维度 | 仅**等级**（数值）+ **好感度**（三阶：白板 / 强化附着 / 强化 UB） |
 | 17 | 动画数量 | 每角色 **2 套**（基础 UB / 强化 UB），共用 1 个模型 |
@@ -220,7 +220,7 @@ PCR 的爽点是五人同时在打，所以**默认全部触发**，不用数量
 
 | 项 | 规则 |
 |---|---|
-| 充能来源 | 造成伤害（主）+ 受到伤害（次，≈1/3 系数）+ 击杀（固定）+ 每秒微量自然回复（兜底） |
+| 充能来源 | 造成伤害（主）+ 受到伤害（次，≈1/3 系数）+ 击杀（固定）+ 每秒微量自然回复（兜底，`ubChargePerSecond`，由 `PassiveCharge` 在 `PlayerTickEvent.Post` 上按整点入账） |
 | 消耗 | 放出一个 = 清空 100%（不做分段消耗） |
 | 递减 | **不适用**（一次只能放一个，天然互斥） |
 | 冷却 | **全局共享一条**，配置项 `ubGlobalCooldownTicks`。CD 期间**照常充能**，满了也放不出，UI 显示冷却环 |
@@ -291,6 +291,13 @@ CD 期间或槽未满时按释放键必须给明确反馈（音效 + 槽位抖�
 
 ### 5.6 演出
 
+> **2026-11-13 现状（先读这段，下面的图是原始设计）。** 出厂构建**不生成演出实体**：`astrum:showcase`
+> 仍然注册、`ShowcaseEntity` / 渲染器 / 动画仍在树里，但施放路径装的是 `EffectsOnlySink`——伤害在
+> **施放瞬间**结算一次，然后给施放者本人的客户端发一条 `ub_cast_effect` 去画屏幕特效。实体实现
+> （`ShowcaseManager`）作为同一个 `ShowcaseSink` 接口的第二种实现保留，切回去是 `ShowcaseTypes.register`
+> 里的一行。下面的原始设计因此有三处与实际不同：没有实体、没有「播完再自毁」、旁观者收不到特效
+> （只发给施放者本人）。`docs/acceptance.md` §5 记录了这个口径变化。
+
 ```
 服务端：收到 UB 请求 → 校验 → 扣充能、置 CD
         → 生成演出实体（noGravity / invulnerable / 无碰撞）
@@ -307,6 +314,10 @@ CD 期间或槽未满时按释放键必须给明确反馈（音效 + 槽位抖�
 1. 演出实体不可交互、不可被攻击、不参与世界 tick 逻辑（否则挡路、被别的玩家打、掉虚空）
 2. **必须有 `maxLifetime` 兜底自毁**（区块卸载/传送/卡顿导致动画中断时，否则永久留下一个角色站那）
 3. 伤害在服务端一次性结算，**不等动画播完**（否则像"伤害有延迟"，且动画被打断就丢伤害）
+
+> 第 3 条是今天唯一仍然成立的一条，而且比原始设计更彻底：没有实体就没有 tick 源，所以伤害**在施放
+> 那一刻**就结算完，不存在"打断"这类失败模式。第 1、2 条描述的是保留代码的行为，出厂构建里没有
+> 实例被生成，因此不构成承诺。原始设计里的「可选镜头微推」**从未实现**，`ubCameraPush` 已删除。
 
 ---
 
@@ -516,10 +527,7 @@ ubGlobalCooldownTicks = 100
 ubChargePerDamage = 1.0
 ubChargePerDamageTaken = 0.33
 ubChargePerKill = 20.0
-ubChargePerSecond = 0.2
-
-[wheel]
-scrollSwitchPolicy = "ALLOW"         # ALLOW / DENY / FORCE
+ubChargePerSecond = 0.2              # 每秒自然回能（兜底）。0 = 关闭
 
 [multiplayer]
 allyMode = "ALL_PLAYERS"                 # ALL_PLAYERS / SAME_TEAM_ONLY
@@ -552,7 +560,6 @@ maxActiveShowcaseEntities = 8            # 同世界演出实体上限，超限�
 
 ```toml
 [wheel]
-enableScrollSwitching = false
 wheelMode = "DISC"                   # RING / DISC（§5.5）
 wheelScale = 0.27                    # 取值 0.20–0.33（屏高比例），越界会被夹回，见下方护栏
 wheelOpacity = 0.75                  # 取值 0.00–1.00
@@ -561,9 +568,24 @@ enableUbHud = true
 hudAnchor = "BOTTOM_LEFT"
 hudOffsetX = 0
 hudOffsetY = 0
-[camera]
-ubCameraPush = false                 # 演出时轻微镜头反馈，默认关
+[effect]
+enableUbCastEffect = true            # 释放 UB 时是否绘制全屏特效
 ```
+
+> **2026-11-13 删除的三个键（不要加回来）。** 它们曾经注册在 `ModConfigSpec` 里、出现在配置界面上，
+> 但**没有任何代码读它们**——一个能被改、改了什么也不发生的键，比一个缺失的功能更糟：玩家会以为
+> 自己设错了或者 mod 坏了。
+>
+> | 键 | 删除理由 |
+> |---|---|
+> | `[wheel] enableScrollSwitching`（客户端） | 滚轮切换预设**没有实现**。它的继任者已经上线并被测试钉住：`B` 长按呼出轮盘，数字键切换预设。 |
+> | `[wheel] scrollSwitchPolicy`（服务端） | 同上，`ALLOW/DENY/FORCE` 三个取值描述的是一个被替换掉的机制。整个 `[wheel]` 服务端小节随之消失。 |
+> | `[camera] ubCameraPush` | 本 mod **没有任何镜头代码**。整个 `[camera]` 小节随之消失。 |
+>
+> `[ub] ubChargePerSecond` 当时也在同一份清单上（`ChargeKernel.naturalRegen` 零生产调用）。它没有被删，
+> 而是**被实现**了：`impl.ub.PassiveCharge` 在 `PlayerTickEvent.Post` 上按每秒值累积、攒满整点入账、
+> 小数余数跨 tick 保留、气槽满时停止（`0` = 关闭）。这是事件而不是 tick 轮询循环，所以不违反 §4.4 的
+> 红线；具体理由见该类的 javadoc 与 §8.4 下方。
 
 > ⚠️ **配置声明的范围必须等于代码实际允许的范围，否则界面会骗人。**
 > 已经踩过一次：`wheelOpacity` 声明 0.0–1.0，但 `WheelGeometry.clampAlpha` 把值夹到 0.45–0.70，

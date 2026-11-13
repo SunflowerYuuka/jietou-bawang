@@ -81,6 +81,11 @@ public final class ChargeKernel {
      * <p>The division by {@link #TICKS_PER_SECOND} happens here and nowhere else: callers pass the
      * config's per-second number and add the result once per tick. Dividing again at the call site
      * would multiply the trickle by 400.
+     *
+     * <p>{@code impl.ub.PassiveCharge} is the production caller: it accumulates this share per tick and
+     * credits whole points, so the 0.01 a default {@code ubChargePerSecond} of 0.2 produces is not
+     * rounded away. {@code ChargeKernelTest} pins the division; the accumulation is pinned by
+     * {@code PassiveChargeTest}.
      */
     public static double naturalRegen(double perSecond) {
         return perSecond / TICKS_PER_SECOND;

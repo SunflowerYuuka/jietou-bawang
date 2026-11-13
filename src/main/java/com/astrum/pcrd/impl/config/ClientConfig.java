@@ -10,8 +10,8 @@ import org.jetbrains.annotations.ApiStatus;
  * Client-side configuration (spec §8.3), registered as {@link ModConfig.Type#CLIENT}.
  *
  * <h2>Why CLIENT and not COMMON</h2>
- * Every option here is pure presentation — wheel size and opacity, whether the wheel scrolls,
- * whether casting nudges the camera. The server never reads them, so putting them in a server file
+ * Every option here is pure presentation — wheel size, opacity and layout, where the gauge is drawn,
+ * whether a cast's screen effect is drawn. The server never reads them, so putting them in a server file
  * would let a server operator change another player's screen; {@code CLIENT} puts
  * {@code config/astrum-client.toml} in each player's own install (spec §8.1, §7.4).
  *
@@ -26,11 +26,8 @@ public final class ClientConfig {
     /** The whole {@code astrum-client.toml} spec. */
     public static final ModConfigSpec SPEC;
 
-    /** {@code [wheel]} — appearance and scroll behaviour. */
+    /** {@code [wheel]} — layout, size and opacity. */
     public static final WheelOptions WHEEL;
-
-    /** {@code [camera]} — optional feedback during a cast. */
-    public static final CameraOptions CAMERA;
 
     /** {@code [hud]} — where the UB gauge sits, and whether it is drawn at all. */
     public static final HudOptions HUD;
@@ -41,7 +38,6 @@ public final class ClientConfig {
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
         WHEEL = new WheelOptions(builder);
-        CAMERA = new CameraOptions(builder);
         HUD = new HudOptions(builder);
         EFFECT = new EffectOptions(builder);
         SPEC = builder.build();
@@ -62,14 +58,11 @@ public final class ClientConfig {
     /**
      * {@code [wheel]} section.
      *
-     * <p>{@code enableScrollSwitching} defaults to {@code false} while the server's
-     * {@code scrollSwitchPolicy} defaults to {@code ALLOW}: the server grants permission for the
-     * wheel to scroll, and the player still opts in locally (spec §5.5, §8.2-8.3).
+     * <p>Holds no input policy: scroll-wheel preset switching is not implemented, and the wheel is
+     * driven by {@code B} (hold, then a digit) — so there is no key here that would promise a
+     * mechanism which does not exist. See {@code WheelInputMachine}.
      */
     public static final class WheelOptions {
-
-        /** Player-side opt-in for using the mouse wheel to change preset while the wheel is open. */
-        public final ModConfigSpec.BooleanValue enableScrollSwitching;
 
         /**
          * Layout of the wheel (spec §5.5): a hollow {@code RING} or one complete {@code DISC}.
@@ -87,9 +80,6 @@ public final class ClientConfig {
 
         private WheelOptions(ModConfigSpec.Builder builder) {
             builder.push("wheel");
-            enableScrollSwitching = builder
-                    .comment(" 是否允许用滚轮切换预设（服务端 scrollSwitchPolicy 另有一道许可）")
-                    .define("enableScrollSwitching", false);
             // The declared range is WheelGeometry's own clamp window, not a wider guess: the spec's
             // 20–33% is a design decision (spec §5.5), so the config must declare exactly it. Declaring
             // 0.0 ~ 1.0 while the clamp rewrote everything into 0.20–0.33 is the defect the previous round
@@ -114,29 +104,9 @@ public final class ClientConfig {
     }
 
     /**
-     * {@code [camera]} section.
-     *
-     * <p>Off by default: spec §5.6 keeps the player unlocked during a cast, and an unrequested
-     * camera push on top of that reads as a bug rather than as feedback.
-     */
-    public static final class CameraOptions {
-
-        /** Slight camera push during a UB cast; default off. */
-        public final ModConfigSpec.BooleanValue ubCameraPush;
-
-        private CameraOptions(ModConfigSpec.Builder builder) {
-            builder.push("camera");
-            ubCameraPush = builder
-                    .comment(" 演出时轻微镜头反馈，默认关")
-                    .define("ubCameraPush", false);
-            builder.pop();
-        }
-    }
-
-    /**
      * {@code [hud]} section (spec §7: HUD 位置可配置、可整体关闭、默认避开 hotbar 与右上角).
      *
-     * <p>Not in spec §8.3's sketch, which stops at {@code [wheel]}/{@code [camera]}; the positional
+     * <p>Not in spec §8.3's sketch, which stops at {@code [wheel]}; the positional
      * requirement in §7 needs somewhere to live, and a client file is the only place it can: the
      * server must not decide where another player's gauge is drawn.
      *

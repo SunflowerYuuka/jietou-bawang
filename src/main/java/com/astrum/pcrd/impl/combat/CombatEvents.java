@@ -14,6 +14,7 @@ import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.growth.ContributionTracker;
 import com.astrum.pcrd.impl.growth.GrowthMultiplier;
 import com.astrum.pcrd.impl.growth.KillExperience;
+import com.astrum.pcrd.impl.ub.PassiveCharge;
 import com.astrum.pcrd.impl.ub.UbCharge;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -134,9 +135,22 @@ public final class CombatEvents {
     private CombatEvents() {
     }
 
-    /** Subscribes this listener to the game bus. Called once, from the mod constructor. */
+    /**
+     * Subscribes this class's listener, and the passive-charge listener beside it, to the game bus.
+     * Called once, from the mod constructor.
+     *
+     * <p>Two listeners, one call, deliberately: {@link com.astrum.pcrd.impl.ub.PassiveCharge} is the
+     * <b>fourth</b> charge source, after damage dealt, damage taken and a kill — all three of which are
+     * this class's — and the two share a lifecycle (server-side only, both read the same per-player
+     * gauge). A build that registered one without the other would either tick and pay nobody or charge
+     * on hits while the trickle silently never runs, which is exactly the defect this class's sibling
+     * was added to fix. Keeping it in one call also keeps {@code Astrum.java} wiring-only at its
+     * current length (plan R1); {@code ShowcaseTypes.register} makes the same two-halves-one-call
+     * argument for the entity type and the cast sink.
+     */
     public static void register() {
         NeoForge.EVENT_BUS.register(new CombatEvents());
+        PassiveCharge.register();
     }
 
     // ------------------------------------------------------------------ damage landing

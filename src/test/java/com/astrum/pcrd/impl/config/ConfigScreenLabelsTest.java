@@ -84,8 +84,8 @@ class ConfigScreenLabelsTest {
     }
 
     /**
-     * The three options the player must be able to change without typing go through the cycling
-     * widgets. {@code wheelMode} and {@code hudAnchor} are {@code EnumValue}; {@code enableUbHud} is a
+     * The options the player must be able to change without typing go through the cycling widgets.
+     * {@code wheelMode} and {@code hudAnchor} are {@code EnumValue}; {@code enableUbHud} is a
      * {@code BooleanValue} — both branches of {@code rebuild}'s switch.
      */
     @Test
@@ -96,8 +96,9 @@ class ConfigScreenLabelsTest {
                 "hudAnchor must stay an EnumValue, or the player has to type BOTTOM_LEFT correctly");
         assertEquals(ModConfigSpec.BooleanValue.class, ClientConfig.HUD.enableUbHud.getClass(),
                 "enableUbHud must stay a BooleanValue: it renders as an on/off cycle button");
-        // Not a new option, but the same requirement: the third cyclable value in [wheel].
-        assertEquals(ModConfigSpec.BooleanValue.class, ClientConfig.WHEEL.enableScrollSwitching.getClass());
+        // Added 2026-11-13 with the key itself: the screen is generated from the spec, so this row is
+        // the proof that the [effect] switch reaches the player as a button and not as a text field.
+        assertEquals(ModConfigSpec.BooleanValue.class, ClientConfig.EFFECT.enableUbCastEffect.getClass());
     }
 
     /**

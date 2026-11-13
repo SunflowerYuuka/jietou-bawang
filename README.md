@@ -7,9 +7,9 @@
 > a datapack registry: it declares how it charges its ultimate, what it does on hit, what its ultimate
 > looks like and what each affection tier unlocks. The mod ships exactly one — 姬塔 (Djeeta) — as a
 > worked example. The vertical slice covers the whole loop: craft a character card, enrol the
-> character, build a party on a radial wheel, fight for experience, feed her dishes to raise affection,
-> and fire an ultimate that shows a screen effect and settles its damage. Zero Mixins; every hook is a
-> NeoForge event. Verified with 657 automated tests and a recorded acceptance matrix
+> character, build a party in the character book, fight for experience, feed her dishes to raise
+> affection, and fire an ultimate that shows a screen effect and settles its damage. Zero Mixins; every
+> hook is a NeoForge event. Verified with 663 automated tests and a recorded acceptance matrix
 > ([docs/acceptance.md](docs/acceptance.md)).
 
 ---
@@ -72,7 +72,8 @@ gradlew test
 3. **编队（必做）**：在角色册的**编队**区，点选一个已拥有的角色，再点某个槽位把他放进去
    （也支持拖拽；右键点槽位清空）。**一个角色不会同时占两个槽**——放到别处会自动从原槽移走。
    命令行玩家也可以用 `/astrum party set <1-5> <角色id>`。
-4. **打架攒气**：命中、被击、连击都会充能。充满后按 `V` 放**必杀**（UB）。
+4. **打架攒气**：命中、被击、击杀都会充能；不打的时候也有 `ubChargePerSecond` 的每秒微量自然回能
+   （默认 0.2/秒，约 8 分钟回满一条，填 0 可关）。充满后按 `V` 放**必杀**（UB）。
 5. **升级**：击杀按受害者最大生命值给经验，经验在参战角色间**均分**。等级只改数值，不改招式。
 6. **送料理涨好感**：把料理（如「米饭」，碗 + 小麦×2）拿在手上**右键方块**喂给队伍，好感 +1。
    **同一份料理每天只能喂一次**，好感每升一阶的效果写在角色 JSON 里；达到 3 阶时 UB **换成强化版**。
@@ -117,9 +118,16 @@ tick 轮询，所以「立刻结算」是唯一不需要新子系统的选择—
 - **游戏内**：模组列表里本 mod 的「Config」按钮，或直接按 `K`。
 - **文件**：`config/astrum-client.toml`（客户端）与 `config/astrum-server.toml`（服务端）。
 
-`astrum-server.toml` 分为 `[balance]`（充能/伤害系数）、`[ub]`（必杀参数）、`[wheel]`（轮盘行为）、
-`[multiplayer]`（`allyMode`、`maxActiveShowcaseEntities` 等）。`astrum-client.toml` 分为 `[wheel]`
-（轮盘手感）、`[camera]`、`[hud]`、`[effect]`（`enableUbCastEffect`，关掉全屏必杀特效）。
+`astrum-server.toml` 分为 `[balance]`（充能/伤害系数）、`[ub]`（必杀参数）、`[multiplayer]`
+（`allyMode`、`maxActiveShowcaseEntities` 等）。`astrum-client.toml` 分为 `[wheel]`（轮盘手感）、
+`[hud]`（充能条位置）、`[effect]`（`enableUbCastEffect`，关掉全屏必杀特效）。
+
+> **每个键都真的有效。** 这一轮删掉了三个 nobody-reads 的键：`[camera] ubCameraPush`（没有任何
+> 镜头代码）、`[wheel] enableScrollSwitching` 与 `[wheel] scrollSwitchPolicy`（滚轮换预设没实现，
+> 已被 `B` 长按 + 数字键取代）。留着只会让玩家以为自己设错了。规则是本项目 §8.3 的那条：
+> **配置声明的范围必须等于代码实际允许的范围**，否则界面就在骗人。
+> `[ub] ubChargePerSecond`（每秒自然回能）原本也在这份清单上——现在它**真的生效**：
+> 在线即按每秒这么多点回能，攒满整点才入账，小数余数不丢，气槽满时停止累积，填 `0` 就是关闭。
 
 > `[effect]` 只在**你自己的客户端**生效：特效纯展示，不影响伤害、冷却和充能。整合包里想让所有
 > 玩家都关掉，就分发一份带 `enableUbCastEffect = false` 的 `astrum-client.toml`（客户端配置不会被

@@ -4,7 +4,7 @@
 
 - 版本：`0.1.0`，MC 1.21.1 + NeoForge 21.1.265，GeckoLib 4.9.3（**外部依赖，不内嵌**）
 - 测量时间：2026-11-13
-- 单元/集成测试：**657 通过，0 失败**（`gradlew test`，73 个测试类）
+- 单元/集成测试：**663 通过，0 失败**（`gradlew test`，74 个测试类）
 
 ## 状态总览
 
@@ -18,7 +18,11 @@
 | 6 | 完整可玩循环（5 分钟人肉清单） | **HUMAN** |
 | 7 | UB 特效长什么样 | **HUMAN** |
 
-四行 PASS、零行 FAIL、两行 HUMAN、一行部分 PASS（§5 说明口径变化）。
+三行 PASS、零行 FAIL、三行 HUMAN、一行部分 PASS（§5 说明口径变化）。
+
+**自动化能证明什么，不能证明什么。** 名字带 PASS 的行，证据都是日志原文或测试名。凡是「要有人
+看着屏幕、按住一个键、点一个格子」才能确认的事，一律写在 HUMAN 行里并给出照着做就能复现的步骤——
+**没有一条 PASS 是靠「代码里写了这个分支」撑起来的**。
 
 ---
 
@@ -108,7 +112,10 @@
 ```
 
 > 最后一条里的 `showcases=3` 是**变更前**的实体计数；今天同一个场景下这个数字恒为 0，而「照常能放」
-> 这一半（`refusal=Optional.empty`）仍然成立。
+> 这一半（`refusal=Optional.empty`）仍然成立。**这一行的 PASS 只依赖 `refusal=Optional.empty` 与
+> `targetHealth` / `victimAlive` 这些数值**，不依赖任何实体计数——2026-11-13 的 effects-only 构建
+> 把实体整个从施放路径上拿掉了，所以「删档后不崩」这件事的形态是：**伤害照常结算、拒绝仍是带类型的**，
+> 而不是「演出实体仍然生成」。
 
 要点：拒绝是**带类型的**（`CHARACTER_UNKNOWN`），不是异常；气槽没被扣（`chargeLeft=100.0`）；名册推送把 `expToNext` 报成 0 而不假装有曲线；同一个会话里仍定义的角色照常能放 UB —— 是降级，不是瘫掉。
 
@@ -120,7 +127,7 @@
 
 **这一行没有测，因为 JEI 不在这个环境里。** 本仓库的依赖只有 NeoForge 与 GeckoLib；`build.gradle` 里 JEI 的三行是 ModDevGradle 模板自带的注释，全部被注释掉，没有任何 `mezz.jei` 制品在类路径上。
 
-能说的只有一件事，而且已经测过：**JEI 缺席时一切正常**——上面第 1–3、5、6 行的全部运行都是在没有 JEI 的环境里跑的，657 个测试也在这个环境里全绿。
+能说的只有一件事，而且已经测过：**JEI 缺席时一切正常**——上面第 1–3、5、6 行的全部运行都是在没有 JEI 的环境里跑的，663 个测试也在这个环境里全绿。
 
 **不声称 JEI 兼容性。** 要验证需要由人来做：
 
@@ -234,24 +241,124 @@ astrum: UB 姬塔 of Dev settled 4 of 4 declared hits on 1 target(s), 80.0 damag
 | 1 | 合成角色卡：纸 + 金粒 + 青金石（无序） | 得到「姬塔」角色卡 | ✅ `character_id=astrum:djeeta` |
 | 2 | 合成角色册：书 + 纸×2 + 线（无序） | 得到角色册（另有两种主题：加粉色染料 / 加绿色染料） | ✅ 三种主题都验过 |
 | 3 | 手持角色卡右键 | 聊天栏「姬塔 加入了你的角色册（等级 1，好感 1）」，卡被消耗 | ✅ 原文照录 |
-| 4 | 手持角色册右键 | 打开角色册界面，能看到姬塔 | ✅ 服务端 use 不消耗 |
-| 5 | 按 `B`，把姬塔放进 1 号位 | 轮盘 1 号位显示姬塔 | ✅ 走真实 `party_edit` 包 |
+| 4 | 手持角色册右键 | 打开角色册界面，能看到姬塔 | ⚠️ 屏幕未人肉目视（见下方第 4 条说明） |
+| 5 | 在角色册里点「姬塔」格，再点 `② 编队` 的 1 号槽 | 格子上出现绿色「在队」角标，1 号槽画出姬塔头像 | ⚠️ **HUMAN**：只验过服务端那一侧（见 §6.1） |
 | 6 | 打怪（约 10 只僵尸） | 经验上涨，升级时聊天栏「姬塔 升到 2 级」 | ✅ `kills=10 now=level 2` |
 | 7 | 合成料理：碗 + 小麦×2；手持右键方块 | 「吃下…，N 名角色好感提升」；同一料理同一天再喂会被拒 | ✅ 好感 +1，同日再喂被拒且不扣 |
 | 8 | 连续几天各喂一份 | 好感达到 8 → 3 阶 | ✅ `affection=8 threshold=8 daysFed=6` |
 | 9 | 充满气槽，按 `V` | 屏幕上一道金白剑气 + 爆环 + 姬塔切入图，约 1 秒淡出；伤害**立刻**落到目标 | ✅ 21 项探针（§5.1）：0 实体、20 点伤害、特效层绘制 |
 | 10 | 好感 3 阶后按 `V` | 强化 UB：4 段，共 80 点；特效层同样触发（`enhanced` 位为真） | ✅ 探针实测 4×20 = 80；⚠️ 特效**好不好看**未人肉目视 |
-| 11 | 按 `K` 打开设置界面 | 四个分页（轮盘/镜头/HUD/UB 特效）可改，改完立刻生效 | ⚠️ 未人肉目视 |
+| 11 | 按 `K` 打开设置界面 | 三个小节（轮盘/HUD/UB 特效）可改，改完立刻生效 | ⚠️ 未人肉目视（键集可由日志证明，见 §6.2） |
+
+**关于第 4、5 步——组队走的是角色册，不是 `B`。** `B` 是**预设轮盘**（按住 → 数字键切换预设），
+它**不改队伍**；改队伍的唯一入口是角色册的 `② 编队` 区域（先点一个角色格，再点槽位放入；右键槽位清空）。
+旧版这一行写的是「按 `B`，把姬塔放进 1 号位」并标 PASS，那是错的，两处都错：`B` 不做这件事，
+而当时的「证据」其实是一次**直接发 `party_edit` 包**的探针——它证明了服务端接受这个包（那是 §6.1 的
+`PartyService` 路径，真实且仍然成立），但**没有**证明玩家能在界面上点出来。所以这一行现在是 HUMAN。
 
 **关于第 9、10 步**：「伤害落到目标」现在是**施放瞬间**结算（没有实体就没有 tick 源，见 task-17 报告），
 所以第 9 步的「1.4 秒后」已不成立。「特效长什么样」只有人能判断——见 §7。
 
 **关于第 10、11 步**：强化 UB 的**数据**在 `astrum:djeeta` 的 `ub.enhanced` 里、**判定**由
 `AffectionKernel.usesEnhancedUb` 单一实现，单测覆盖了阶梯，探针也实测了 4×20 = 80 点伤害；但
-「按 `V` 肉眼看到的那一秒值不值得看」需要人看屏幕。第 11 步的界面同理——`K` 键绑定与界面注册在代码里
-存在，但没有一次人肉点击验证。
+「按 `V` 肉眼看到的那一秒值不值得看」需要人看屏幕。
 
 判定标准很简单：**任何一步与「应当看到」不符，就是缺陷，请连同日志一起报。**
+
+### 6.1 组队这条路径：自动化验到哪里，人还要验什么
+
+**已验（服务端，`PartyRulesTest` 18 个用例 + `PartyEditPayloadTest` 10 个，都在 `gradlew test` 里）**：
+`PartyService.edit` 是 `/astrum party set` 和 `party_edit` 包**共用的那一个**实现，测试钉住了
+「不拥有 → `NOT_OWNED`、槽位越界 → `SLOT_OUT_OF_RANGE`、角色不存在 → `CHARACTER_UNKNOWN`、
+书读不懂 → `BOOK_UNREADABLE`、同一个角色不能占两个槽 → 后一次是**移动**」这些判定。
+也就是说：**只要那个包发得对，队伍一定对。**
+
+> **为什么这里没有日志原文。** 旧版这一行标 PASS，依据是一次直接发 `party_edit` 包的探针。
+> 那次探针的日志在本仓库里**没有留存**（`run/logs/` 被后续运行覆盖，`.superpowers/sdd/.../logs/`
+> 只有 t7/t8 的）。既然拿不出原文，就不能在这里引用它——引用一段自己无法指认的日志，正是这一行
+> 原本失真的一半原因。可复核的替代品是上面两个测试类的名字，它们随时可以重跑。
+
+**未验（也就是 HUMAN 的那一半）**：玩家的鼠标能不能走到这条路径上。具体是
+
+1. 右键角色册 → `CharacterBookScreen` 打开，`① 角色册` 格里出现「姬塔」；
+2. 左键点姬塔格 → 该格高亮，`③ 养成` 开始显示她的等级 / 经验 / 好感；
+3. 左键点 `② 编队` 的 1 号槽 → 槽里出现头像，角色格右上出绿色「在队」角标；
+4. 右键那个槽 → 槽清空，角标消失；
+5. 把姬塔从格子里**拖**到 2 号槽 → 与第 3 步同样的结果（拖拽与点击发的是同一个包）。
+
+几何本身有单测（`BookLayoutTest` 断言格与槽矩形不重叠、点击坐标映射到哪一个格），但「画出来的东西
+和算出来的矩形一致」只有眼睛能确认。
+
+### 6.2 配置界面这次由日志证明的部分
+
+配置界面是**从 spec 生成的**（`ConfigurationScreen` 遍历 `ModConfigSpec`），所以「界面上有没有某个键」
+等价于「spec 里有没有某个键」，后者可以打日志。这一轮删掉三个没人读的键之后，实际写进
+`config/astrum-client.toml` 的键集是：
+
+```
+client keys = [hud.enableUbHud, hud.hudAnchor, hud.hudOffsetX, hud.hudOffsetY,
+               wheel.wheelMode, wheel.wheelOpacity, wheel.wheelScale,
+               effect.enableUbCastEffect]
+```
+
+`[camera]` 整节、`enableScrollSwitching` 都不在其中——`ConfigDefaultsTest.theClientConfigHasExactlyTheSpecKeys`
+把这份键集**逐字**钉住，多一个键就红。**但「界面上看起来对不对」（分组标题、控件是按钮还是文本框、
+改完是否立刻生效）仍然只有人能判断**，这就是第 11 步留 HUMAN 的原因。
+
+### 6.3 每秒自然回能（`ubChargePerSecond`）这次实测了什么
+
+这个键以前也在「改了什么也不发生」的清单上。现在它由 `impl.ub.PassiveCharge` 在
+`PlayerTickEvent.Post` 上支付，2026-11-13 在一台**真实专用服务端**上跑过（`gradlew runServer`，
+先用 `sdd.ps1 mute`），日志原文存在 `build/t18-passive-charge.log`。
+
+探针放了一个真实 `ServerPlayer` 到真实世界里，然后每 tick 调 `player.doTick()`——也就是
+`ServerGamePacketListenerImpl.tick()` 对已连接玩家做的那一次调用，**不是**绕开被测代码的捷径。
+全程没有截图、没有点击、没有输入、没有聚焦窗口，鼠标未移动；服务端由探针自己 `halt(false)`。
+
+```
+[T18] player placed on the dedicated server (FakePlayer, dummy connection) — level=minecraft:overworld charge=0.0
+[T18] server config keys = [balance.comboWindowTicks, balance.diminishingBase, balance.enableDiminishingReturns, balance.stackTtlTicks, multiplayer.allyMode, multiplayer.areaChargePairCooldownTicks, multiplayer.areaChargeReceiveCapPerSecond, multiplayer.maxActiveShowcaseEntities, ub.ubChargePerDamage, ub.ubChargePerDamageTaken, ub.ubChargePerKill, ub.ubChargePerSecond, ub.ubGlobalCooldownTicks]
+[T18] client config keys = [effect.enableUbCastEffect, hud.enableUbHud, hud.hudAnchor, hud.hudOffsetX, hud.hudOffsetY, wheel.wheelMode, wheel.wheelOpacity, wheel.wheelScale]
+```
+
+**A. 配成 20/秒（1 点/tick），从 0 起跑** — 气槽稳步上升，第 100 tick 到顶，之后既不超也不动：
+
+```
+[T18] phase 1: ubChargePerSecond = 20.0 (read back 20.0), gauge reset to 0.0
+[T18] phase 1 tick 20: charge = 19.0
+[T18] phase 1 tick 60: charge = 59.0
+[T18] phase 1 tick 100: charge = 99.0
+[T18] PASS charge reached the cap at the configured 20/s — samples [20t=19.0, 40t=39.0, 60t=59.0, 80t=79.0, 100t=99.0]
+[T18] tick 101: charge = 100.0 (20/s = 1/tick, so the cap lands at tick 100)
+[T18] PASS a full gauge holds the cap and does not overshoot — samples […, 120t=100.0, 160t=100.0, 200t=100.0]
+```
+
+（采样点比 tick 计数早一拍，是因为 tick 20 的那行读的是第 19 次增量的结果；第 101 tick 的
+`charge = 100.0` 才是「第 100 次增量把它填满」的直接证据。）
+
+**B. 配成 0，跑 200 tick** — 一点都不涨：
+
+```
+[T18] phase 2: ubChargePerSecond = 0.0 (read back 0.0), gauge reset to 0.0
+[T18] phase 2 tick 200: charge = 0.0
+[T18] PASS with ubChargePerSecond = 0 the gauge never moves — samples […]
+```
+
+**C. 回到出厂默认 0.2/秒（0.01/tick）** — 这一条是「小数余数不丢」的现场证明：前 99 tick 都是 0.0，
+第 100 tick 突然变成 1.0，第 200 tick 是 2.0。**任何每 tick 截断的实现都会永远停在 0.0**：
+
+```
+[T18] phase 3: ubChargePerSecond back to the default 0.2 (read back 0.2), gauge reset
+[T18] phase 3 tick 75: charge = 0.0 (0.01/tick, whole points only)
+[T18] phase 3 tick 100: charge = 1.0 (0.01/tick, whole points only)
+[T18] PASS the default 0.2/s pays its first whole point on tick 100 — samples […]
+[T18] phase 3 tick 200: charge = 2.0 (0.01/tick, whole points only)
+[T18] PASS and keeps accruing: two points by tick 200 — samples […]
+[T18] === 5 checks, 0 failures ===
+```
+
+**这只是服务端的一半。** 「HUD 上的条是否肉眼可见在涨」「`0` 之后条真的停住不动」需要人看屏幕——
+见 §6 第 11 步与 §7。另外探针跑完已由 `sdd.ps1 clean` 删除，`guard` 复查 `no probe junk` 为 OK。
 
 ---
 
@@ -282,15 +389,30 @@ astrum: UB effect frame layer=astrum:ub_effect age=0/20t quads=2 frames=1
 ## 复现方式
 
 ```powershell
-# 单元/集成（657 个测试）
-$env:TEMP='<repo>\build\tmp-java'; $env:TMP=$env:TEMP
+# 单元/集成（663 个测试）—— 先让 TEMP 指向仓库内可写目录
+New-Item -ItemType Directory -Force build\gametmp | Out-Null
+$env:TEMP='<repo>\build\gametmp'; $env:TMP=$env:TEMP
 gradlew test --rerun-tasks
-
-# 专用服务端
-gradlew runServer
-
-# 客户端连本地服务端（先改 run/server.properties 的 server-port 与 level-name）
-gradlew runClient
 ```
 
-> 沙箱环境注意：测试会在 `TEMP` 下写 ImageIO 临时文件，若 `TEMP` 不可写会出现 `Can't create cache file!` 的假失败。把 `TEMP`/`TMP` 指向仓库内可写目录即可。
+### 本机环境的三条硬要求（都实测踩过）
+
+| 要求 | 为什么 | 漏了会怎样 |
+|---|---|---|
+| `-Djava.io.tmpdir=<repo>\build\gametmp` | LWJGL 启动时要把 `lwjgl.dll` 解到 `java.io.tmpdir`；本机默认 TEMP 不可写 | `runClient` 报 `UnsatisfiedLinkError: Failed to locate library: lwjgl.dll`，而且**只停在 `Loading ImmediateWindowProvider fmlearlywindow`**，MC 日志只有 4 行——真错误在 Gradle 输出里 |
+| `TEMP` / `TMP` 指向同一个可写目录 | `BookThemeTest` 用 ImageIO 读 PNG，ImageIO 要建临时缓存文件 | 5 个用例报 `IIOException: Can't create cache file!`（`AccessDeniedException`），看起来像图片坏了，其实是 TEMP 不可写 |
+| 每次 `runClient` 前跑 `sdd.ps1 fixnatives` | Gradle 缓存会把 `lwjgl-*-natives-windows-arm64.jar` 重新下回来，LWJGL 按类路径上**有什么**选 natives 而不是按 `os.arch` | 在 amd64 机器上选到 arm64 natives，同样死在 `lwjgl.dll` |
+
+```powershell
+# 专用服务端（本机只需要上面第一条里的 tmpdir，如果 gradle.properties 没设的话）
+pwsh .superpowers/sdd/sdd.ps1 mute          # 启动前静音（用户要求）
+gradlew runServer
+
+# 客户端连本地服务端：先 fixnatives，再 mute，再启动
+pwsh .superpowers/sdd/sdd.ps1 fixnatives
+pwsh .superpowers/sdd/sdd.ps1 mute
+gradlew runClient "-Djava.io.tmpdir=<repo>\build\gametmp"   # 或用 gradle.properties / JAVA_TOOL_OPTIONS
+```
+
+> 这三条都是**本机沙箱**的性质，不是 mod 的行为：干净机器上不需要。写在这里是因为它们造成的失败
+> 长得像代码缺陷（「dll 找不到」「图片读不了」），而每次重新发现它们都要花掉半小时。
