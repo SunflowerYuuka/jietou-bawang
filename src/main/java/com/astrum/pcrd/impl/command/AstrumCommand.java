@@ -9,6 +9,7 @@ import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.attach.UbState;
 import com.astrum.pcrd.impl.combat.AreaChargeTuning;
+import com.astrum.pcrd.impl.growth.AffectionKernel;
 import com.astrum.pcrd.impl.party.PartyRules;
 import com.astrum.pcrd.impl.party.PartyService;
 import com.astrum.pcrd.impl.ub.CastGate;
@@ -231,14 +232,12 @@ public final class AstrumCommand {
      * @param tier3Threshold the definition's tier-3 threshold, or {@code 0} for none
      */
     public static int clampAffection(int current, int delta, int tier3Threshold) {
-        long updated = (long) current + (long) delta;
-        if (updated < 0L) {
-            updated = 0L;
-        }
-        if (tier3Threshold > 0 && updated > tier3Threshold) {
-            updated = tier3Threshold;
-        }
-        return (int) updated;
+        // Delegates to the one implementation. This used to be a second copy that had lost the
+        // Integer.MAX_VALUE guard: /astrum affection add 2147483647 on a character whose
+        // tier3Threshold is <= 0 would overflow the long back into a negative int and write a
+        // negative affection. Nobody could trigger it with today's data (djeeta's threshold is 8),
+        // but a character without a tier-3 would have made it reachable. One rule, one copy.
+        return AffectionKernel.clampAffection(current, delta, tier3Threshold);
     }
 
     /**
