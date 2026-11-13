@@ -26,12 +26,17 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
-# GeckoLib 4.9.3, the animation library the 演出 entity is built on (spec §5.6). Declared `required`
-# because the mod is *shipped* with it: `jarJar` embeds the library in our jar, so a player who installs
-# only this mod still gets the animation instead of a silently missing entity. The range starts at 4.7,
-# the first 1.21.1-compatible 4.x line, and is open above it — GeckoLib 5 renamed the package root to
+# GeckoLib 4.9.3, the animation library the 演出 entity code is built on (spec §5.6). Declared
+# `required` and NOT embedded: the player installs GeckoLib themselves (依赖mod自行添加至游戏，声明依赖，
+# 不要内嵌), and this declaration is what turns "the player forgot" into a load-time refusal with a
+# legible message instead of a missing-class error later. The range starts at 4.7, the first
+# 1.21.1-compatible 4.x line, and is open above it — GeckoLib 5 renamed the package root to
 # `com.geckolib` and targets newer Minecraft, so a 5.x jar would fail to resolve this mod rather than
 # load it wrongly, which is the failure we want.
+#
+# The dependency is unrelated to whether the UB spawns an entity: it does not (the cast is effects
+# only), but the entity class, its renderer and its registration are retained for a later task and
+# must keep compiling and loading.
 [[dependencies.${mod_id}]]
 modId = "geckolib"
 type = "required"

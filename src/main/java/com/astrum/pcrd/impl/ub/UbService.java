@@ -46,12 +46,16 @@ import org.jetbrains.annotations.ApiStatus;
 public final class UbService {
 
     /**
-     * The installed showcase strategy.
+     * The installed cast strategy: what a paid-for ultimate does to the world.
      *
-     * <p>Until Task 13 installs the real one this is {@link ShowcaseSink#NO_SHOWCASE_YET}, which
-     * settles <b>nothing</b> — no entity and no damage. A cast accepted before then therefore spends the
-     * bar and arms the cooldown without doing anything to the world, which is exactly what the
-     * placeholder's own javadoc says and the only place that claim is made.
+     * <p>Today that is {@link EffectsOnlySink} — no entity, damage settled on the cast, the client told to
+     * draw the effect — installed by {@code ShowcaseTypes.register}. It is the seam that made this swap a
+     * one-line change: the entity sink ({@code ShowcaseManager}) is a second implementation of the same
+     * interface and is still in the tree, unused.
+     *
+     * <p>The placeholder {@link ShowcaseSink#NO_SHOWCASE_YET} settles <b>nothing</b> at all, and is what a
+     * test or a deliberately sink-less caller gets; no shipped path leaves it installed, because
+     * {@code ShowcaseTypes.register} runs from the mod constructor.
      *
      * <p>A mutable static, which this project otherwise forbids — deliberately, and narrowly: it is one
      * process-wide strategy rather than per-entity state, and it is written once at setup by
@@ -71,13 +75,18 @@ public final class UbService {
     }
 
     /**
-     * Installs the real showcase implementation. Task 13 calls this once at setup.
+     * Installs the cast strategy. {@code ShowcaseTypes.register} calls this once at setup.
      *
      * @param sink the implementation; {@code null} restores {@link ShowcaseSink#NO_SHOWCASE_YET}
      */
     @ApiStatus.Internal
     public static void installShowcase(ShowcaseSink sink) {
         showcase = sink == null ? ShowcaseSink.NO_SHOWCASE_YET : sink;
+    }
+
+    /** {@return the installed cast strategy, for tests and for a probe — never {@code null}} */
+    public static ShowcaseSink installedShowcase() {
+        return showcase;
     }
 
     /**
@@ -133,9 +142,9 @@ public final class UbService {
         Astrum.LOGGER.debug("astrum: UB {} fired by {} from slot {}{}",
                 characterId, player.getGameProfile().getName(), slot, enhanced ? " (enhanced)" : "");
 
-        // Hand-off to the showcase is the third effect inside commit(): the sink spawns the figure AND
-        // settles the tier's damage (once, at the animation's strike frame or inline when the entity
-        // budget forbids one).
+        // Hand-off to the sink is the third effect inside commit(): the effects-only sink settles the
+        // tier's damage once (there is no entity and no tick source any more) and tells the caster's
+        // client to draw the effect. See EffectsOnlySink for why the damage lands on the cast itself.
         return Optional.empty();
     }
 
@@ -144,7 +153,7 @@ public final class UbService {
      *
      * <p>Wrapped for the same reason {@link #settle} is: by the time this runs the player has already
      * paid, so an exception thrown by a listener must not escape {@link #tryCast} — it would skip the
-     * showcase hand-off and turn a completed cast into a reported failure, with the gauge still gone.
+     * cast hand-off and turn a completed cast into a reported failure, with the gauge still gone.
      */
     private static void announce(UbActivatedEvent event) {
         try {
@@ -163,8 +172,8 @@ public final class UbService {
         try {
             showcase.settle(level, player, characterId, def, tier, enhanced);
         } catch (RuntimeException e) {
-            // A failing showcase must not take down a cast whose gauge is already spent.
-            Astrum.LOGGER.error("astrum: showcase failed for {} — damage may not have been settled",
+            // A failing sink must not take down a cast whose gauge is already spent.
+            Astrum.LOGGER.error("astrum: the cast sink failed for {} — damage may not have been settled",
                     def.displayName(), e);
         }
     }

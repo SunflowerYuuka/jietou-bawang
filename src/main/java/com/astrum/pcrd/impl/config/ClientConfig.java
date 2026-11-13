@@ -35,11 +35,15 @@ public final class ClientConfig {
     /** {@code [hud]} — where the UB gauge sits, and whether it is drawn at all. */
     public static final HudOptions HUD;
 
+    /** {@code [effect]} — whether a UB cast draws its screen effect. */
+    public static final EffectOptions EFFECT;
+
     static {
         ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
         WHEEL = new WheelOptions(builder);
         CAMERA = new CameraOptions(builder);
         HUD = new HudOptions(builder);
+        EFFECT = new EffectOptions(builder);
         SPEC = builder.build();
     }
 
@@ -170,6 +174,34 @@ public final class ClientConfig {
             hudOffsetY = builder
                     .comment(" 相对锚点的垂直偏移（GUI 像素，正数向下）")
                     .defineInRange("hudOffsetY", 0, -1000, 1000);
+            builder.pop();
+        }
+    }
+
+    /**
+     * {@code [effect]} section: the visual a UB cast produces (规格 2026-11-13: 使用UB仅展示特效).
+     *
+     * <h2>Why the switch is client-side</h2>
+     * The effect is drawn on the caster's own screen and affects nothing else: the damage, the cooldown
+     * and the gauge are decided on the server whether or not this is on. A full-screen flash is also
+     * exactly the kind of thing a player with photosensitivity, or one who records video, must be able
+     * to turn off without asking a server operator — so it lives in {@code astrum-client.toml}.
+     *
+     * <p>Default on, because "使用UB仅展示特效" means the effect <em>is</em> the ultimate's visible half;
+     * a default of off would make a cast look like nothing happened.
+     */
+    public static final class EffectOptions {
+
+        /** Draw the UB's screen effect when a cast is accepted. */
+        public final ModConfigSpec.BooleanValue enableUbCastEffect;
+
+        private EffectOptions(ModConfigSpec.Builder builder) {
+            builder.push("effect");
+            enableUbCastEffect = builder
+                    .comment(" 释放 UB 时是否绘制全屏特效（金白剑光 + 爆发 + 角色切入图）",
+                            " 关掉只是不画：伤害、冷却、充能都由服务端决定，不受影响",
+                            " 特效约 1 秒淡出，不挡输入、不暂停游戏")
+                    .define("enableUbCastEffect", true);
             builder.pop();
         }
     }

@@ -8,8 +8,9 @@
 > looks like and what each affection tier unlocks. The mod ships exactly one — 姬塔 (Djeeta) — as a
 > worked example. The vertical slice covers the whole loop: craft a character card, enrol the
 > character, build a party on a radial wheel, fight for experience, feed her dishes to raise affection,
-> and fire a GeckoLib-animated ultimate. Zero Mixins; every hook is a NeoForge event. Verified with
-> 631 automated tests and a recorded acceptance matrix ([docs/acceptance.md](docs/acceptance.md)).
+> and fire an ultimate that shows a screen effect and settles its damage. Zero Mixins; every hook is a
+> NeoForge event. Verified with 656 automated tests and a recorded acceptance matrix
+> ([docs/acceptance.md](docs/acceptance.md)).
 
 ---
 
@@ -19,12 +20,25 @@
 |---|---|---|
 | Minecraft | **1.21.1** | 仅在 1.21.1 上构建/测试过 |
 | NeoForge | **21.1.265** 或更高 | `neoforge.mods.toml` 声明 `[21.1.265,)` |
-| GeckoLib | **4.9.3**（`[4.7,)`） | **必需**，包名 `software.bernie.geckolib` |
+| GeckoLib | **4.9.3**（`[4.7,)`） | **必需，需要你另外下载安装**（见下） |
 | Java | **21** 或更高 | 编译目标 21 |
 
-GeckoLib 已 **jarJar** 内嵌进本 mod 的 jar，所以只装本 mod 也能正常播放动画。若你已单独装了
-GeckoLib，版本冲突时以较高者为准；**GeckoLib 5 不可用**（它换了包名 `com.geckolib`，面向更新的
-Minecraft）。
+### GeckoLib 要单独装
+
+**本 mod 不再内嵌 GeckoLib**（不 jarJar）。`neoforge.mods.toml` 里把它声明为 `type = "required"`，
+所以没装 GeckoLib 时游戏**在加载阶段就会明确报缺依赖**，而不是进游戏后某个功能静默失效。
+
+装法：从 **Modrinth** <https://modrinth.com/mod/geckolib> 或 **CurseForge**
+<https://www.curseforge.com/minecraft/mc-mods/geckolib> 下载 **1.21.1 / NeoForge** 版本的
+**4.9.3**（`[4.7,)` 区间内的 4.x 都行），和本 mod 一起放进 `mods/`。
+
+- **GeckoLib 5 不可用**：5.x 换了包名（`com.geckolib`）、面向更新的 Minecraft，加载器会拒绝而不是
+  错误地加载。
+- 整合包里请把 GeckoLib 作为**独立 mod** 列进依赖，不要指望它藏在别的 jar 里——两份 GeckoLib
+  会互相冲突。
+
+> 为什么要 GeckoLib：仓库里保留着一套 GeckoLib 动画实体代码（**当前不启用**，见下文「必杀」一节）。
+> 它必须能编译、能注册，所以这个依赖不能省。
 
 ## 构建
 
@@ -65,9 +79,24 @@ gradlew test
 
 ### 必杀（UB）是什么样
 
-必杀**不会生成任何实体**，只有**屏幕特效**（金色剑气 / 放射爆环 / 能量流，约 1 秒淡出）+
-一次伤害结算。伤害在施放后**固定时机**结算一次，与特效是否播完无关——所以特效被别的东西打断，
-**伤害照常结算**。（演出实体（GeckoLib 模型）的代码仍保留在仓库里，后续版本可能重新启用。）
+必杀**不会生成任何实体**，它是纯粹的**屏幕特效** + 一次伤害结算：
+
+| 部分 | 说明 |
+|---|---|
+| 特效 | 金白剑气（`ub_strike`）+ 放射爆环（`ub_burst`）+ 斜向能量流（`ub_flare`）+ **姬塔切入图**，约 **1 秒**线性淡出 |
+| 伤害 | 施放瞬间在**服务端**结算一次。基础 20，3 阶好感的强化版 4×20（多段） |
+| 实体 | **无**。`astrum:showcase` 一个都不会生成 |
+| 输入 | 不挡键、不暂停、不抢鼠标——它只是画在 HUD 下面的一层 |
+
+伤害与特效**互不依赖**：特效关掉（`[effect] enableUbCastEffect = false`）伤害照常；特效被 `F1` 藏掉
+伤害照常。伤害为什么在施放瞬间结算、而不是动画的命中帧：没有实体就没有 tick 源，而本项目禁止
+tick 轮询，所以「立刻结算」是唯一不需要新子系统的选择——见
+`.superpowers/sdd/.../task-17-report.md` 的取舍说明。
+
+> **演出实体（GeckoLib 模型）的代码仍然完整保留**：`ShowcaseEntity`、它的渲染器、`.geo.json` /
+> `.animation.json` 和实体类型注册都还在，能编译、能注册，只是**没有代码去生成它**。想重新启用，
+> 把 `ShowcaseTypes.register` 里的 `EffectsOnlySink.install()` 换成
+> `ShowcaseManager.installEntitySink()` 即可（一行），届时伤害会改回按动画命中帧结算。
 
 ### 按键
 
@@ -90,7 +119,11 @@ gradlew test
 
 `astrum-server.toml` 分为 `[balance]`（充能/伤害系数）、`[ub]`（必杀参数）、`[wheel]`（轮盘行为）、
 `[multiplayer]`（`allyMode`、`maxActiveShowcaseEntities` 等）。`astrum-client.toml` 分为 `[wheel]`
-（轮盘手感）、`[camera]`、`[hud]`。
+（轮盘手感）、`[camera]`、`[hud]`、`[effect]`（`enableUbCastEffect`，关掉全屏必杀特效）。
+
+> `[effect]` 只在**你自己的客户端**生效：特效纯展示，不影响伤害、冷却和充能。整合包里想让所有
+> 玩家都关掉，就分发一份带 `enableUbCastEffect = false` 的 `astrum-client.toml`（客户端配置不会被
+> 服务端覆盖）。
 
 > **单人游戏里的一处细节**：SERVER 侧的数值改动在单人世界里**立刻生效**，但配置文件本身是**进入世界时**
 > 重读的——也就是说你手改 toml 之后，需要重进世界才会被读到，改内存值则不用。整合包作者请直接改文件后
@@ -109,7 +142,9 @@ gradlew test
 - `dimension` —— 这个角色靠什么攒气
 - `effects` —— 一组钩子：`melee_hit`（命中给气）、`combo_n`（第 N 连击触发）、`area_charge`（范围给队友充能）等，
   每个带自己的数值
-- `ub` —— 必杀：`base`（动画名、段数、伤害、自身增益）与 `enhanced`（3 阶好感时替换，可带额外团队增益）
+- `ub` —— 必杀：`base`（动画名、段数、伤害、自身增益）与 `enhanced`（3 阶好感时替换，可带额外团队增益）。
+  `animation` 是给**保留的演出实体**用的字段，当前不生成实体所以不生效；`hits` / `damage` / `radius`
+  才是实际数值
 - `growth` —— `expBase`、`expPerLevel`、`maxLevel`
 - `affection` —— `tier2Threshold` / `tier3Threshold`，以及 `tier2HookModifiers`（**按 hookIndex 指定**哪些
   钩子被放大——2 阶只改数值、不加招式）
@@ -130,8 +165,14 @@ gradlew test
 | 萌娘百科·姬塔（原作数值参考） | <https://zh.moegirl.org.cn/> |
 | NeoForge（模组加载器与事件 API） | <https://neoforged.net/> |
 | ModDevGradle（Gradle 构建插件） | <https://github.com/neoforged/ModDevGradle> |
-| GeckoLib（角色动画库） | <https://github.com/bernie-g/geckolib> |
+| GeckoLib（角色动画库，需另行安装） | <https://github.com/bernie-g/geckolib> |
 | Minecraft Forge（NeoForge 的前身） | <https://github.com/MinecraftForge> |
+
+**关于 mod 内的姬塔美术**：角色立绘一律来自**官方 6★ 卡面**，由上面「干炸里脊资源站」提供的素材
+整理而来，版权归 Cygames, Inc.。其中的 **UB 切入图**
+（`assets/astrum/textures/gui/ub_cutin_djeeta.png`，512×384，251 KB）是从官方卡面
+（`105761.webp`，1408×792）**裁剪 + 缩放**得到的派生图，没有重绘、没有改色；生成可用
+`tools/cutin_from_official_card.py` 复现。**原始 1408×792 素材不随本仓库分发**，与下面的免责声明一致。
 
 ## 免责声明
 

@@ -20,6 +20,7 @@
   "astrum.configuration.wheel": "轮盘",
   "astrum.configuration.camera": "镜头",
   "astrum.configuration.hud": "HUD",
+  "astrum.configuration.effect": "UB 特效",
   "astrum.configuration.balance": "数值",
   "astrum.configuration.ub": "充能",
   "astrum.configuration.multiplayer": "多人",
@@ -27,6 +28,7 @@
   "astrum.configuration.wheel.button": "编辑",
   "astrum.configuration.camera.button": "编辑",
   "astrum.configuration.hud.button": "编辑",
+  "astrum.configuration.effect.button": "编辑",
   "astrum.configuration.balance.button": "编辑",
   "astrum.configuration.ub.button": "编辑",
   "astrum.configuration.multiplayer.button": "编辑",
@@ -40,6 +42,7 @@
   "astrum.configuration.hudAnchor": "充能条贴角",
   "astrum.configuration.hudOffsetX": "充能条水平偏移",
   "astrum.configuration.hudOffsetY": "充能条垂直偏移",
+  "astrum.configuration.enableUbCastEffect": "显示 UB 特效",
 
   "astrum.configuration.enableDiminishingReturns": "同维度递减",
   "astrum.configuration.diminishingBase": "同维度倍率",

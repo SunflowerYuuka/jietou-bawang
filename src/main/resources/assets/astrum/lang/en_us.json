@@ -20,6 +20,7 @@
   "astrum.configuration.wheel": "Wheel",
   "astrum.configuration.camera": "Camera",
   "astrum.configuration.hud": "HUD",
+  "astrum.configuration.effect": "UB effect",
   "astrum.configuration.balance": "Balance",
   "astrum.configuration.ub": "Charge",
   "astrum.configuration.multiplayer": "Multiplayer",
@@ -27,6 +28,7 @@
   "astrum.configuration.wheel.button": "Edit",
   "astrum.configuration.camera.button": "Edit",
   "astrum.configuration.hud.button": "Edit",
+  "astrum.configuration.effect.button": "Edit",
   "astrum.configuration.balance.button": "Edit",
   "astrum.configuration.ub.button": "Edit",
   "astrum.configuration.multiplayer.button": "Edit",
@@ -40,6 +42,7 @@
   "astrum.configuration.hudAnchor": "Gauge corner",
   "astrum.configuration.hudOffsetX": "Gauge offset X",
   "astrum.configuration.hudOffsetY": "Gauge offset Y",
+  "astrum.configuration.enableUbCastEffect": "Show UB cast effect",
 
   "astrum.configuration.enableDiminishingReturns": "Diminishing returns",
   "astrum.configuration.diminishingBase": "Same-dimension multiplier",

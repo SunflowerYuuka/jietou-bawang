@@ -11,30 +11,35 @@ import org.jetbrains.annotations.ApiStatus;
  * What a UB cast does once it has been accepted and paid for.
  *
  * <h2>Why this seam exists</h2>
- * The演出 (showcase) entity is Task 13. Everything in this task — validation, spending the gauge,
+ * The演出 (showcase) entity was Task 13. Everything in this task — validation, spending the gauge,
  * arming the cooldown, posting the event — is provable without a single entity in the world, so the
- * entity is kept behind this one interface. Task 13 supplies the real implementation
- * ({@code ShowcaseManager}), and {@code UbService.installShowcase} installs it before any player can
- * cast, so a shipped build always settles damage through this seam.
+ * entity was kept behind this one interface. It has since paid for itself twice:
+ *
+ * <ul>
+ *   <li>Task 13 installed {@code ShowcaseManager} (the entity);</li>
+ *   <li>2026-11-13 replaced it with {@link EffectsOnlySink} (no entity, damage on the cast, a client
+ *       effect), which is what ships. 不需要实体，但是实体的相关代码保留 — switching was a one-line
+ *       change in {@code ShowcaseTypes.register}, and the entity implementation is still in the tree.</li>
+ * </ul>
  *
  * <h2>The contract a replacement must obey</h2>
  * <ol>
  *   <li><b>Idempotent per cast.</b> One accepted cast calls this exactly once, and the sink settles
- *       the damage <b>exactly once</b> even though three moments may try: the strike frame, the
- *       entity's removal if the clip is cut short, and the inline call when the entity budget forbids
- *       a showcase. One {@code SettleOnce} per cast makes those add up to one.</li>
- *   <li><b>Damage lands with the animation's strike, and never later than the entity's removal.</b>
- *       Spec §5.6's rule is 伤害在服务端一次性结算，不等动画播完 — its two concerns are that the damage
- *       must not look <em>delayed</em> and must not be <em>lost</em> if the animation is interrupted.
- *       Both are honoured by settling at the strike frame (half way into the 1.4 s clip, where both
- *       shipped clips put the arm's swing) with the removal as a guaranteed fallback: the damage is
- *       never "after the animation", and an interrupted clip still settles. Settling at tick 0 instead
- *       would put the numbers before the figure has moved.</li>
+ *       the damage <b>exactly once</b> even if it internally has several moments that may try: the
+ *       entity's strike frame, its removal if the clip is cut short, and the inline call when the entity
+ *       budget forbids a showcase. One {@link SettleOnce} per cast makes those add up to one — and since
+ *       2026-11-13 that latch is created by {@link UbDamageSettlement#once}, so two sinks cannot
+ *       disagree about what "once" means.</li>
+ *   <li><b>Damage lands with the cast, and never later than the effect's end.</b> Spec §5.6's rule is
+ *       伤害在服务端一次性结算，不等动画播完. The entity sink settled it at the strike frame (half way into
+ *       the 1.4 s clip) with the removal as a fallback; the effects-only sink settles it <b>on the cast</b>,
+ *       because with no entity there is no tick source and a scheduled settlement would need the tick
+ *       listener this project forbids. See {@link EffectsOnlySink}'s javadoc for the reasoning.</li>
  *   <li><b>Server authority.</b> Only the logical server may call it; no client state is read.</li>
  *   <li><b>Spawn nothing beyond the budget — settle the damage anyway.</b> A cast may be reduced to
  *       "damage only" when {@code maxActiveShowcaseEntities} is reached — the spec allows dropping the
  *       <i>entity</i>, never the <i>effect</i> (功能不断，画面不炸).</li>
- *   <li><b>Must not throw.</b> A failing showcase must not take down the cast path, which has already
+ *   <li><b>Must not throw.</b> A failing sink must not take down the cast path, which has already
  *       spent the player's gauge by the time it runs.</li>
  * </ol>
  */
@@ -57,17 +62,17 @@ public interface ShowcaseSink {
             CharacterDef def, UbTier tier, boolean enhanced);
 
     /**
-     * The placeholder for Task 13: it settles <b>nothing</b> — no damage, no entity — and is named so
-     * that no reader can mistake it for a working default.
+     * The placeholder: it settles <b>nothing</b> — no damage, no entity, no effect — and is named so that
+     * no reader can mistake it for a working default.
      *
-     * <p>It exists so the cast pipeline is complete and testable without an entity: gauge spent,
-     * cooldown armed, event posted, seam called exactly once. It is never installed by a shipped build
-     * ({@code ShowcaseManager.install} replaces it before any player can cast), so an accepted cast
-     * always reaches a sink that settles damage — the placeholder is what a test or a future caller
-     * gets if they deliberately install nothing.
+     * <p>It exists so the cast pipeline is complete and testable without a world: gauge spent, cooldown
+     * armed, event posted, seam called exactly once. No shipped build leaves it installed
+     * ({@code ShowcaseTypes.register} → {@code EffectsOnlySink.install} replaces it before any player can
+     * cast), so an accepted cast always reaches a sink that settles damage — the placeholder is what a
+     * unit test or a future caller gets if they deliberately install nothing.
      */
     ShowcaseSink NO_SHOWCASE_YET = (level, caster, characterId, def, tier, enhanced) -> {
         // Kept as a single place so a test can assert the cast pipeline without a world; the real
-        // sink owns both the visuals and the one-shot settlement.
+        // sinks own both the visuals and the one-shot settlement.
     };
 }

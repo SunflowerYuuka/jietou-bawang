@@ -90,7 +90,7 @@ class ConfigDefaultsTest {
     @Test
     void clientTomlHasEverySpecSection() {
         String text = toToml(writtenDefaults(ClientConfig.SPEC));
-        for (String section : new String[] { "[wheel]", "[camera]", "[hud]" }) {
+        for (String section : new String[] { "[wheel]", "[camera]", "[hud]", "[effect]" }) {
             assertTrue(text.contains(section), "生成的 toml 缺少小节 " + section + "\n" + text);
         }
     }
@@ -138,6 +138,10 @@ class ConfigDefaultsTest {
         assertEquals("BOTTOM_LEFT", toml.get("hud.hudAnchor"));
         assertEquals(0, toml.<Number>get("hud.hudOffsetX").intValue());
         assertEquals(0, toml.<Number>get("hud.hudOffsetY").intValue());
+
+        // [effect] is the 2026-11-13 addition: 使用UB仅展示特效. On by default, because the effect *is*
+        // the ultimate's visible half now that no entity is drawn.
+        assertEquals(true, toml.get("effect.enableUbCastEffect"));
     }
 
     /**
@@ -215,7 +219,8 @@ class ConfigDefaultsTest {
     void noKeysBeyondSpec() {
         assertEquals(Set.of("balance", "ub", "wheel", "multiplayer"),
                 topLevelKeys(writtenDefaults(ServerConfig.SPEC)));
-        assertEquals(Set.of("wheel", "camera", "hud"), topLevelKeys(writtenDefaults(ClientConfig.SPEC)));
+        assertEquals(Set.of("wheel", "camera", "hud", "effect"),
+                topLevelKeys(writtenDefaults(ClientConfig.SPEC)));
     }
 
     /**

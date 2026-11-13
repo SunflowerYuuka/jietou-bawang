@@ -23,11 +23,27 @@ import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The one thing that spawns, counts and removes showcase entities (spec §5.6).
+ * The <b>entity</b> showcase sink: spawns, counts and removes 演出 entities (spec §5.6). <b>Retained but
+ * not installed.</b>
+ *
+ * <h2>It is not used right now — and that is deliberate</h2>
+ * 不需要实体，但是实体的相关代码保留，后续考虑是否增加. The cast path uses
+ * {@link com.astrum.pcrd.impl.ub.EffectsOnlySink}, which spawns nothing and settles the damage on the
+ * cast. This class is the other {@link ShowcaseSink} implementation: it compiles, it is registered
+ * nowhere, and {@code ShowcaseTypes.register} does not call it. Nothing in the shipped build reaches
+ * {@link #settle}, and no entity of type {@code astrum:showcase} is ever created.
+ *
+ * <h2>How to switch the entity back on</h2>
+ * One line: replace {@code EffectsOnlySink.install()} in {@code ShowcaseTypes.register} with
+ * {@link #installEntitySink()}. That installs this sink on the cast path instead, subscribes its two
+ * cleanup listeners, and the UB is an entity again — with the damage settling at the strike frame
+ * instead of on the cast. Also worth revisiting at that moment: {@code EffectsOnlySink} would then be the
+ * unused one, and the two would disagree about <em>when</em> damage lands, which is the one thing they
+ * must never both do.
  *
  * <h2>Why one object is both the sink and the factory</h2>
  * {@code ShowcaseSink} is the seam Task 12 built so the cast pipeline could be complete and testable
- * with nothing in the world; this class is the implementation Task 13 installs through
+ * with nothing in the world; this class is the implementation Task 13 installed through
  * {@link UbService#installShowcase}. They are the same object because the two halves must not be
  * allowed to disagree: the entity that plays the animation and the entity that counts against
  * {@code maxActiveShowcaseEntities} are the same entity, and the cap has to be enforced at the moment
@@ -91,18 +107,20 @@ public final class ShowcaseManager implements ShowcaseSink {
     }
 
     /**
-     * Installs this manager as the showcase sink and subscribes its cleanup listeners.
+     * Installs this manager as the showcase sink and subscribes its cleanup listeners — <b>the switch
+     * that turns the entity back on</b>, and not called by the shipped build.
      *
-     * <p>Called once from the mod constructor. Both listeners go on the game bus, because both events
-     * are server-lifecycle events rather than registry events.
+     * <p>Call it from {@code ShowcaseTypes.register} in place of {@code EffectsOnlySink.install()} to
+     * restore the entity. Both listeners go on the game bus, because both events are server-lifecycle
+     * events rather than registry events.
      */
-    public static void install() {
+    public static void installEntitySink() {
         ShowcaseManager manager = new ShowcaseManager();
         INSTANCE.set(manager);
         UbService.installShowcase(manager);
         NeoForge.EVENT_BUS.addListener(manager::onServerStopping);
         NeoForge.EVENT_BUS.addListener(manager::onPlayerLoggedOut);
-        Astrum.LOGGER.info("astrum: showcase sink installed (entity {} at {} blocks in front, cast "
+        Astrum.LOGGER.info("astrum: showcase sink installed = ENTITY ({} at {} blocks in front, cast "
                 + "animation {}s = {}t, cap from multiplayer.maxActiveShowcaseEntities)",
                 ShowcaseTypes.ENTITY_ID, ShowcaseEntity.PLACEMENT_DISTANCE, CAST_ANIMATION_SECONDS,
                 castAnimationTicks());
@@ -164,21 +182,13 @@ public final class ShowcaseManager implements ShowcaseSink {
      *
      * <p>A single {@link SettleOnce} makes the three possible moments — the entity's strike frame, the
      * entity's removal if the clip is cut short, and the inline call above when no entity exists — add
-     * up to one settlement rather than up to three.
+     * up to one settlement rather than up to three. The latch itself is {@link
+     * UbDamageSettlement#once}'s, so this sink and the effects-only one cannot disagree about what
+     * "once" means.
      */
     private static Runnable damageFor(ServerLevel level, ServerPlayer caster,
             ResourceLocation characterId, CharacterDef def, UbTier tier) {
-        SettleOnce once = new SettleOnce();
-        return () -> {
-            if (!once.claim()) {
-                return;
-            }
-            try {
-                UbDamageSettlement.apply(level, caster, characterId, def, tier);
-            } finally {
-                once.done();
-            }
-        };
+        return UbDamageSettlement.once(level, caster, characterId, def, tier);
     }
 
     // ------------------------------------------------------------------ the factory

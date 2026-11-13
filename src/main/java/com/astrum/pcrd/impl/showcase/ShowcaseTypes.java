@@ -37,8 +37,9 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Why this class exists at all</h2>
  * So {@code Astrum.java} keeps one call per subsystem instead of one per register (plan R1), and so the
- * entity type and the sink installation are wired together: an entity type with no sink can never be
- * spawned, and a sink with no entity type spawns nothing.
+ * entity type and the cast sink are wired together: the type is registered here, and the sink the cast
+ * path uses is chosen here — {@code EffectsOnlySink} today, {@code ShowcaseManager} when the entity is
+ * switched back on.
  */
 @ApiStatus.Internal
 public final class ShowcaseTypes {
@@ -81,15 +82,27 @@ public final class ShowcaseTypes {
     }
 
     /**
-     * Subscribes the entity type to the mod bus and installs the showcase sink.
+     * Subscribes the entity type to the mod bus and installs the <b>effects-only</b> cast sink.
+     *
+     * <h2>Why the entity type is still registered while nothing spawns it</h2>
+     * 不需要实体，但是实体的相关代码保留，后续考虑是否增加. Registering it is what keeps the entity code
+     * <em>alive</em> rather than merely present: the class is loaded through the type's factory, the
+     * {@code GeoEntity}/{@code GeoModel} path is compiled against GeckoLib, and {@code /data} still
+     * resolves {@code astrum:showcase}'s name key. A later task flips the cast path back by installing
+     * {@code ShowcaseManager} instead — see {@link ShowcaseManager#installEntitySink()} — and nothing
+     * else has to be restored.
+     *
+     * <p>The sink installed here is {@link com.astrum.pcrd.impl.ub.EffectsOnlySink}, which spawns
+     * nothing. {@code ShowcaseManager.install()} is deliberately <b>not</b> called: it is the entity
+     * sink, and it stays in the tree unused (its javadoc says so).
      *
      * @param modBus the mod-specific event bus
      */
     public static void register(IEventBus modBus) {
         ENTITY_TYPES.register(modBus);
-        // The sink is installed here rather than from Astrum so the two halves of the feature are wired
-        // by one call: Astrum stays wiring-only, and no future edit can register the entity without
-        // installing the sink that spawns it.
-        ShowcaseManager.install();
+        // The sink is installed here rather than from Astrum so the two halves of the subsystem are
+        // wired by one call: Astrum stays wiring-only, and no future edit can register the entity
+        // without deciding which sink the cast path uses.
+        com.astrum.pcrd.impl.ub.EffectsOnlySink.install();
     }
 }

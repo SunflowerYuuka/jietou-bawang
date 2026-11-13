@@ -107,6 +107,54 @@ public final class UbDamageSettlement {
         }
     }
 
+    /**
+     * {@return this cast's settlement, wrapped so it can run <b>at most once</b>}
+     *
+     * <p>The one place "one cast settles once" is wired, so the two sinks cannot disagree about it.
+     * {@code ShowcaseManager} arms it and hands it to the entity (which runs it at its strike frame, and
+     * again — never twice — when it is removed); {@code EffectsOnlySink} runs it inline on the cast.
+     * Every site shares the returned {@link SettleOnce}, which is what makes "once" true <em>across</em>
+     * sites rather than per site.
+     *
+     * <p>The latch is taken <b>before</b> the work runs, so a damage listener that reached back into
+     * this cast could not re-enter it, and a throwing run still counts as spent: whatever landed before
+     * the failure is on the victim's health already, and re-running the plan would double it.
+     *
+     * @param level       the level the caster is in
+     * @param caster      the player whose ultimate fired
+     * @param characterId the character that fired — the kill ledger's only way to name it
+     * @param def         that character's definition
+     * @param tier        the tier that fired
+     */
+    public static Runnable once(ServerLevel level, ServerPlayer caster, ResourceLocation characterId,
+            CharacterDef def, UbTier tier) {
+        return once(() -> apply(level, caster, characterId, def, tier));
+    }
+
+    /**
+     * {@return {@code settlement}, wrapped so it can run <b>at most once</b>}
+     *
+     * <p>The same latch as the six-argument form, over a bare {@link Runnable}: the "once" guarantee is
+     * a property of this one method, so it can be asserted with a counter and no world (see
+     * {@code UbDamageSettlementTest}). It is also what the entity path's strike-frame and removal
+     * fallback share, so those two cannot settle a cast twice.
+     *
+     * @param settlement what to run at most once; must not be {@code null}
+     */
+    public static Runnable once(Runnable settlement) {
+        SettleOnce latch = new SettleOnce();
+        return () -> {
+            if (!latch.claim()) {
+                return;
+            }
+            try {
+                settlement.run();
+            } finally {
+                latch.done();
+            }
+        };
+    }
+
     private static void applyGuarded(ServerLevel level, ServerPlayer caster,
             ResourceLocation characterId, CharacterDef def, UbTier tier) {
         double reach = UbDamage.range(tier);

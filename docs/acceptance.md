@@ -2,9 +2,9 @@
 
 本页是发布闸门（release gate）。每一行不是「应该能用」，而是**实际跑过**的一次观测：PASS 必须带证据（日志原文、测试名、命令输出），FAIL 就是缺陷，做不到就写 HUMAN 并给出人照着做能复现的步骤。
 
-- 版本：`0.1.0`，MC 1.21.1 + NeoForge 21.1.265，GeckoLib 4.9.3
+- 版本：`0.1.0`，MC 1.21.1 + NeoForge 21.1.265，GeckoLib 4.9.3（**外部依赖，不内嵌**）
 - 测量时间：2026-11-13
-- 单元/集成测试：**631 通过，0 失败**（`gradlew test --rerun-tasks`，71 个测试类）
+- 单元/集成测试：**657 通过，0 失败**（`gradlew test`，73 个测试类）
 
 ## 状态总览
 
@@ -14,10 +14,11 @@
 | 2 | 旧存档 / 版本漂移（隔离而非清空） | **PASS** |
 | 3 | 删除测试（角色定义消失后不崩） | **PASS** |
 | 4 | JEI / REI 共存 | **HUMAN（未安装 JEI）** |
-| 5 | 局域网双人：一人放 UB，另一人看见 | **PASS** |
+| 5 | 局域网双人：一人放 UB，另一人看见 | **部分 PASS**：施放者侧全 PASS；旁观者侧 **未实现** |
 | 6 | 完整可玩循环（5 分钟人肉清单） | **HUMAN** |
+| 7 | UB 特效长什么样 | **HUMAN** |
 
-四行 PASS、零行 FAIL、两行 HUMAN。
+四行 PASS、零行 FAIL、两行 HUMAN、一行部分 PASS（§5 说明口径变化）。
 
 ---
 
@@ -30,8 +31,18 @@
 [12:59:14] [Server thread/INFO] [astrum/]: [T16] characters loaded: [astrum:djeeta]
 [12:59:14] [Server thread/INFO] [astrum/]: [T16] PASS two real players are on the dedicated server - server.players=2 level.players=2
 [12:59:14] [Server thread/INFO] [astrum/]: [T16] PASS the shipped datapack definition reached the server's registry - astrum:djeeta defined=true
-[12:59:14] [Server thread/INFO] [astrum/]: [T16] PASS the showcase sink is installed (the entity, not just the interface) - manager=true entityType=entity.astrum.showcase
 ```
+
+> 该日志里还有一条 `[T16] PASS the showcase sink is installed (the entity, ...)` —— 那是**变更前**的
+> 断言，今天是相反的：装的是 `EffectsOnlySink`，`astrum:showcase` 仍然注册但没有任何代码生成它。
+> 今天这一条由下面这行取代（同一台真实的专用服务端，2026-11-13 重跑）：
+>
+> ```
+> astrum: UB cast sink installed = effects only (no entity is spawned; damage settles on the cast; the caster's client is told to draw the effect)
+> astrum: payloads registered (..., ub_cast_effect, ...), protocol 2
+> ```
+>
+> 这一轮的 `runServer` 只是启动 + 加载，**没有**再跑双人场景（见 §5 的口径说明）。
 
 **证据 B（真实客户端加入真实远程服务端）** — `gradlew runClient` 连 `127.0.0.1:25597`，**不是**单人世界：
 
@@ -96,6 +107,9 @@
 [T16] PASS the still-defined character keeps casting after the deletion (the mod degrades) - refusal=Optional.empty showcases=3
 ```
 
+> 最后一条里的 `showcases=3` 是**变更前**的实体计数；今天同一个场景下这个数字恒为 0，而「照常能放」
+> 这一半（`refusal=Optional.empty`）仍然成立。
+
 要点：拒绝是**带类型的**（`CHARACTER_UNKNOWN`），不是异常；气槽没被扣（`chargeLeft=100.0`）；名册推送把 `expToNext` 报成 0 而不假装有曲线；同一个会话里仍定义的角色照常能放 UB —— 是降级，不是瘫掉。
 
 > **注意（诚实的边界）**：数据包注册表只在进入世界时读取，本 mod 没有「运行中热重载角色 JSON」的钩子。所以这里是把「定义已不存在」这个**状态**直接构造出来，再把所有会解析它的路径跑一遍——与真实删档后玩家所处的状态相同。删文件后**不重开世界**就期待它立刻消失，不属于本构建承诺的行为。
@@ -106,7 +120,7 @@
 
 **这一行没有测，因为 JEI 不在这个环境里。** 本仓库的依赖只有 NeoForge 与 GeckoLib；`build.gradle` 里 JEI 的三行是 ModDevGradle 模板自带的注释，全部被注释掉，没有任何 `mezz.jei` 制品在类路径上。
 
-能说的只有一件事，而且已经测过：**JEI 缺席时一切正常**——上面第 1–3、5、6 行的全部运行都是在没有 JEI 的环境里跑的，631 个测试也在这个环境里全绿。
+能说的只有一件事，而且已经测过：**JEI 缺席时一切正常**——上面第 1–3、5、6 行的全部运行都是在没有 JEI 的环境里跑的，657 个测试也在这个环境里全绿。
 
 **不声称 JEI 兼容性。** 要验证需要由人来做：
 
@@ -119,21 +133,76 @@ REI 同理，完全未测。
 
 ---
 
-## 5. 局域网双人：一人放 UB，另一人看见 — PASS
+## 5. 局域网双人：一人放 UB，另一人看见 — PASS（2026-11-13 起改为「特效」口径）
 
-同一台专用服务端上两个玩家：一个用真实 `ub_cast` 网络包放 UB，另一个是**独立进程的真实客户端**。关键证据是**实体 id 对得上**——服务端生成 `#676`，客户端收到的也是 `676`：
+> **口径变化（必须读）**：本行的原始证据来自**演出实体**时代——服务端生成 `astrum:showcase`，另一个
+> 客户端通过网络收到这个实体并绘制。2026-11-13 的变更（不需要实体，但是实体的相关代码保留）之后
+> **不再生成任何实体**，UB 的表现形式是**施放者自己屏幕上的特效**。所以下面两类结论要分开看：
+>
+> | 断言 | 现在 | 证据 |
+> |---|---|---|
+> | 一次施放生成 0 个 `astrum:showcase` | **PASS** | §5.1（同一台真实客户端 + 集成服务端的 21 项探针） |
+> | 伤害照常结算（20 / 4×20） | **PASS** | §5.1 |
+> | 施放者的客户端特效层被触发并绘制 | **PASS** | §5.1（层自己打的 `began at client tick N` + 每帧 DEBUG） |
+> | **旁观者**看得见别人的 UB 特效 | **未实现，不是 PASS** | 见 §5.2 |
 
-服务端：
+### 5.1 现在的实测（真实客户端 + 集成服务端，21 项，0 失败）
+
+`gradlew runClient`（先 `sdd.ps1 mute`），探针自建一次性世界 `astrum-t17-probe`，日志
+`build/t17-client7.log`。**没有截图、没有点击、没有输入、没有聚焦窗口，鼠标未移动。**
+
+```
+[T17] PASS the installed cast sink is EffectsOnlySink
+[T17] PASS no astrum:showcase exists before the cast (0)
+[T17] base cast: refusal=Optional.empty hp 400.0 -> 380.0 (lost 20.0), showcases 0
+[T17] PASS the base tier dealt exactly 20 once (lost 20.0)
+[T17] PASS the base cast spawned no astrum:showcase
+[T17] enhanced cast: refusal=Optional.empty hp 380.0 -> 300.0 (lost 80.0), showcases 0
+[T17] PASS the enhanced tier dealt 4 x 20 = 80 once (lost 80.0)
+[T17] PASS the enhanced cast spawned no astrum:showcase
+[T17] PASS astrum:showcase is still registered although nothing spawns it
+[T17] PASS the effect installed no Screen (no pause, no input capture)
+[T17] PASS the client received both effect payloads (2)
+[T17] PASS the registered GUI layer drew effect frames (86)
+[T17] PASS the last drawn frame is the effect's final tick, not an earlier one (age 19 of 20)
+[T17] === 21 checks, 0 failures ===
+```
+
+生产代码自己打的三行（不是探针），证明「包到达 → 层开始画」这条链路：
+
+```
+astrum: ub_cast_effect received — character astrum:djeeta, base (effect #1), start client tick 18
+astrum: ub_cast_effect received — character astrum:djeeta, enhanced (effect #2), start client tick 18
+astrum: UB effect layer astrum:ub_effect began at client tick 18 — character djeeta, enhanced,
+        gui 427x240, burst Box[x=105, y=12, width=216, height=216], cut-in Box[x=241, y=98, width=176, height=132]
+```
+
+伤害结算的服务端 DEBUG（同一份日志）：
+
+```
+astrum: UB 姬塔 hit 1/1 on 僵尸 -> 20.0 damage, lost 20.0 hp, landed=true (hp 380.0/400.0)
+astrum: UB 姬塔 of Dev settled 1 of 1 declared hits on 1 target(s), 20.0 damage asked in total
+astrum: UB 姬塔 hit 1/4 on 僵尸 -> 20.0 damage ... (2/4, 3/4, 4/4 each 20.0)
+astrum: UB 姬塔 of Dev settled 4 of 4 declared hits on 1 target(s), 80.0 damage asked in total
+```
+
+### 5.2 旧的「旁观者看见」证据——已不再适用
+
+以下是**变更前**的观测，留档是因为它记录了「网络同步一个实体」这件事在当时确实工作过；它**不能**
+用来声称今天的旁观者能看见什么：
+
 ```
 [13:55:45] [Server thread/INFO] [astrum/]: [T16S] peer cast #8: showcases=1 ids=[676]
-[13:55:51] [Server thread/INFO] [astrum/]: [T16S] peer cast #9: showcases=1 ids=[703]
+[13:55:45] [T16C] PASS this client received another player's showcase entity over the network - count=1 id=676 type=entity.astrum.showcase pos=-40.5/73.0/-6.3 playersInWorld=2
 ```
 
-客户端（同一个进程里的另一个玩家）：
-```
-[13:55:45] [T16C] PASS this client received another player's showcase entity over the network - count=1 id=676 type=entity.astrum.showcase pos=-40.5/73.0/-6.3 playersInWorld=2
-[13:55:50] [T16C] PASS another player's showcase was visible to this client for the whole window - sawShowcase=true entitiesSeen=1 hudDrew=true
-```
+现在的 UB 特效**只发给施放者本人**（`PacketDistributor.sendToPlayer`）：全屏特效是不可回避的，广播给
+身边每个人是一个这一轮没有做的设计决定（见 task-17 报告的 concerns）。所以「队友能不能看见我的必杀」
+**今天没有实现**，本行不再声称 PASS。
+
+### 5.3 与 UB 无关但同一场景的旁观方证据（仍然成立）
+
+这两条说的是**气槽同步**和**轮盘**，与演出实体无关，所以变更不影响它们：
 
 **HUD 在旁观方保持正确**（它自己的气槽、自己的编队，没有被别人的状态污染）：
 ```
@@ -146,9 +215,11 @@ REI 同理，完全未测。
 
 ```
 [T16] PASS a second player's gauge is charged by another player's area_charge hook - bobCharge=3.06 (djeeta area_charge radius 8.0, amount 3.0, on combo 3) distance=2.01
-[T16] PASS the second player is inside the showcase's 160-block tracking range - distance=4.59 blocks
-[T16] PASS the spawn announcement names astrum:showcase (what the other client draws) - type=entity.astrum.showcase entityId=100
 ```
+
+> 同一份旧日志里还有两条 `[T16] PASS ... showcase's 160-block tracking range` /
+> `the spawn announcement names astrum:showcase` —— 它们断言的是**变更前**的实体同步，今天不再成立，
+> 所以不再列在这里（与 §5.2 同一个理由）。
 
 **未覆盖的部分**：integrated server 的「对局域网开放」按钮（需要点 GUI，本会话禁止操作游戏窗口），以及**两台不同机器**之间的真实网络（这里两端都在本机，走 loopback）。这两点属于 HUMAN 范围，但没有证据表明会不同——本 mod 没有任何 `isDedicatedServer()` 分支（`guard` 会把这类分支判为 FAIL），单人/专用服务端跑的是同一套代码。
 
@@ -168,20 +239,50 @@ REI 同理，完全未测。
 | 6 | 打怪（约 10 只僵尸） | 经验上涨，升级时聊天栏「姬塔 升到 2 级」 | ✅ `kills=10 now=level 2` |
 | 7 | 合成料理：碗 + 小麦×2；手持右键方块 | 「吃下…，N 名角色好感提升」；同一料理同一天再喂会被拒 | ✅ 好感 +1，同日再喂被拒且不扣 |
 | 8 | 连续几天各喂一份 | 好感达到 8 → 3 阶 | ✅ `affection=8 threshold=8 daysFed=6` |
-| 9 | 充满气槽，按 `V` | 姬塔挥剑（`tempest_blade`），1.4 秒后伤害落到目标 | ✅ `strike@14`，目标 200→178.32 |
-| 10 | 好感 3 阶后按 `V` | 换成强化 UB（`seiga_itten`，4 段） | ⚠️ 仅代码路径与数据，**未人肉目视** |
-| 11 | 按 `K` 打开设置界面 | 三个分页（轮盘/镜头/HUD）可改，改完立刻生效 | ⚠️ 未人肉目视 |
+| 9 | 充满气槽，按 `V` | 屏幕上一道金白剑气 + 爆环 + 姬塔切入图，约 1 秒淡出；伤害**立刻**落到目标 | ✅ 21 项探针（§5.1）：0 实体、20 点伤害、特效层绘制 |
+| 10 | 好感 3 阶后按 `V` | 强化 UB：4 段，共 80 点；特效层同样触发（`enhanced` 位为真） | ✅ 探针实测 4×20 = 80；⚠️ 特效**好不好看**未人肉目视 |
+| 11 | 按 `K` 打开设置界面 | 四个分页（轮盘/镜头/HUD/UB 特效）可改，改完立刻生效 | ⚠️ 未人肉目视 |
 
-**关于第 10、11 步**：强化 UB 的**数据**在 `astrum:djeeta` 的 `ub.enhanced` 里、**判定**由 `AffectionKernel.usesEnhancedUb` 单一实现，单测覆盖了阶梯；但「按 `V` 肉眼看到换成 4 段动画」需要人看屏幕。第 11 步的界面同理——`K` 键绑定与界面注册在代码里存在，但没有一次人肉点击验证。
+**关于第 9、10 步**：「伤害落到目标」现在是**施放瞬间**结算（没有实体就没有 tick 源，见 task-17 报告），
+所以第 9 步的「1.4 秒后」已不成立。「特效长什么样」只有人能判断——见 §7。
+
+**关于第 10、11 步**：强化 UB 的**数据**在 `astrum:djeeta` 的 `ub.enhanced` 里、**判定**由
+`AffectionKernel.usesEnhancedUb` 单一实现，单测覆盖了阶梯，探针也实测了 4×20 = 80 点伤害；但
+「按 `V` 肉眼看到的那一秒值不值得看」需要人看屏幕。第 11 步的界面同理——`K` 键绑定与界面注册在代码里
+存在，但没有一次人肉点击验证。
 
 判定标准很简单：**任何一步与「应当看到」不符，就是缺陷，请连同日志一起报。**
+
+---
+
+## 7. UB 特效长什么样 — HUMAN（只能由人判断）
+
+这一节的每一条都**没有被任何人看过**。本会话不允许截图、不允许操作游戏窗口，所以我能给的只有「它被
+触发了、它画了 86 帧、最后一帧是第 19 tick」这类**间接**证据（§5.1），以及下面这一小段由生产代码自己
+打的每帧日志：
+
+```
+astrum: UB effect frame layer=astrum:ub_effect age=0/20t quads=2 frames=1
+        (flare 0.47 slash 0.00 burst 0.00 cut-in 0.85, character djeeta, enhanced)
+```
+
+要人回答的问题：
+
+1. **像不像金色剑气**：`ub_strike` / `ub_burst` / `ub_flare` 三张 AI 生成的图（已做亮度→alpha 转换）
+   叠在一起，是「金光一闪」还是「一团糊」？
+2. **姬塔切入图**（`ub_cutin_djeeta.png`，从官方 6★ 卡面裁的 4:3）出现在**右下角**，会不会太大 /
+   太小 / 挡住视线？这个位置是本项目其它 HUD 之外唯一空着的角落，但没有被目视确认过。
+3. **0.85 峰值透明度**够不够亮、会不会太白；`[effect] enableUbCastEffect` 关掉之后是否真的没有残留。
+4. **1 秒**是不是太长/太短——全屏闪光在连战时每 5 秒（100 tick 冷却）来一次。
+5. **F1 隐藏 HUD 时特效一起消失**是否符合预期（现在会，因为它是 GUI 层）。
+6. 视觉上是否**只**有一秒，没有「画完了但还在偷偷画空白」的残影（这一条有算术和探针各一半证据）。
 
 ---
 
 ## 复现方式
 
 ```powershell
-# 单元/集成（631 个测试）
+# 单元/集成（657 个测试）
 $env:TEMP='<repo>\build\tmp-java'; $env:TMP=$env:TEMP
 gradlew test --rerun-tasks
 

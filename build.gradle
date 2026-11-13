@@ -29,10 +29,10 @@ sourceSets.main.resources {
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
 
-    // GeckoLib, the animation library for the 演出 (showcase) entity. This is the *only* extra Maven
-    // host this project talks to, and it is the library's own repository (Cloudsmith), not a mirror:
-    // GeckoLib is not on Maven Central and the Modrinth CDN only serves release jars, not POMs, so a
-    // Gradle dependency cannot be resolved from there.
+    // GeckoLib, the animation library the retained 演出 (showcase) entity code compiles against. This
+    // is the *only* extra Maven host this project talks to, and it is the library's own repository
+    // (Cloudsmith), not a mirror: GeckoLib is not on Maven Central and the Modrinth CDN only serves
+    // release jars, not POMs, so a Gradle dependency cannot be resolved from there.
     maven {
         name = 'GeckoLib'
         url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
@@ -127,22 +127,27 @@ dependencies {
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 
-    // GeckoLib 4.9.3 — the animation library behind the 演出 (showcase) entity (spec §5.6).
+    // GeckoLib 4.9.3 — the animation library the 演出 (showcase) entity code is built on (spec §5.6).
     //
-    // Three declarations, three different jobs, all needed:
-    //   * `implementation` puts it on the compile *and* dev-run classpath, so `runClient` renders the
-    //     model and `GeoEntity`/`GeoModel` resolve while compiling.
-    //   * `jarJar` embeds it, and `neoforge.mods.toml` declares it `type="required"` — the spec's
-    //     "required" dependency, delivered with the jar so a player who installs only this mod still
-    //     sees the animation instead of a silently missing entity.
-    //   * `localRuntime` is NOT used here: that configuration means "present while testing, not
-    //     shipped", which is the opposite of a `required` dependency. (The template's JEI comment
-    //     describes exactly that optional case, so the convention does not apply to this one.)
+    // ONE declaration, and deliberately no `jarJar`:
+    //   * `implementation` puts it on the compile classpath and on the dev-run classpath, so
+    //     `GeoEntity`/`GeoModel` resolve while compiling and `runClient` still loads it as a mod.
+    //   * GeckoLib is NOT embedded in this mod's jar. The human's instruction is 依赖mod自行添加至游戏，
+    //     声明依赖，不要内嵌: the player installs GeckoLib themselves, and `neoforge.mods.toml` declares
+    //     it `type="required"` so a install without it is refused at load time with a legible message
+    //     instead of failing later inside an entity that never spawns. One jar per mod is the
+    //     platform's normal shape; embedding a library that every other GeckoLib mod also installs
+    //     produces duplicate-mod conflicts in a pack.
+    //   * `localRuntime` is NOT used either: that configuration means "present while testing, not
+    //     shipped", which would make the compile classpath right and the dev runtime wrong.
     //
     // Version pinned to 4.9.3, the release that targets 1.21.1 and the `software.bernie.geckolib`
     // package root. GeckoLib 5 (root `com.geckolib`) targets newer Minecraft and is not usable here.
+    //
+    // The mod still declares `geckolib` as a required dependency in neoforge.mods.toml even though the
+    // UB no longer spawns the entity: the entity class, its renderer and its registration are retained
+    // (unused) for a later task, and they must keep compiling against the library.
     implementation 'software.bernie.geckolib:geckolib-neoforge-1.21.1:4.9.3'
-    jarJar 'software.bernie.geckolib:geckolib-neoforge-1.21.1:4.9.3'
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
