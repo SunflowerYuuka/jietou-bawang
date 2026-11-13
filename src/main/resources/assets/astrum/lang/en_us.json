@@ -141,5 +141,7 @@
   "astrum.growth.already_full": "Everyone in the party is already at the last goodwill tier - %s was not fed.",
   "astrum.growth.nobody": "No owned character is in the party, so %s had nobody to feed.",
   "astrum.growth.book_unreadable": "Your character book cannot be read (the unreadable save is kept on disk) - the dish was not fed.",
-  "astrum.growth.level_up": "%1$s reached level %2$s."
+  "astrum.growth.level_up": "%1$s reached level %2$s.",
+
+  "entity.astrum.showcase": "Ultimate Showcase"
 }

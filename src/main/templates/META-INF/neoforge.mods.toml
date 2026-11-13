@@ -26,5 +26,18 @@ versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
 
+# GeckoLib 4.9.3, the animation library the 演出 entity is built on (spec §5.6). Declared `required`
+# because the mod is *shipped* with it: `jarJar` embeds the library in our jar, so a player who installs
+# only this mod still gets the animation instead of a silently missing entity. The range starts at 4.7,
+# the first 1.21.1-compatible 4.x line, and is open above it — GeckoLib 5 renamed the package root to
+# `com.geckolib` and targets newer Minecraft, so a 5.x jar would fail to resolve this mod rather than
+# load it wrongly, which is the failure we want.
+[[dependencies.${mod_id}]]
+modId = "geckolib"
+type = "required"
+versionRange = "[4.7,)"
+ordering = "NONE"
+side = "BOTH"
+
 [features.${mod_id}]
 javaVersion = "[21,)"

@@ -28,6 +28,15 @@ sourceSets.main.resources {
 
 repositories {
     // Add here additional repositories if required by some of the dependencies below.
+
+    // GeckoLib, the animation library for the 演出 (showcase) entity. This is the *only* extra Maven
+    // host this project talks to, and it is the library's own repository (Cloudsmith), not a mirror:
+    // GeckoLib is not on Maven Central and the Modrinth CDN only serves release jars, not POMs, so a
+    // Gradle dependency cannot be resolved from there.
+    maven {
+        name = 'GeckoLib'
+        url = 'https://dl.cloudsmith.io/public/geckolib3/geckolib/maven/'
+    }
 }
 
 base {
@@ -117,6 +126,23 @@ dependencies {
     // JUnit 5 for unit tests.
     testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+
+    // GeckoLib 4.9.3 — the animation library behind the 演出 (showcase) entity (spec §5.6).
+    //
+    // Three declarations, three different jobs, all needed:
+    //   * `implementation` puts it on the compile *and* dev-run classpath, so `runClient` renders the
+    //     model and `GeoEntity`/`GeoModel` resolve while compiling.
+    //   * `jarJar` embeds it, and `neoforge.mods.toml` declares it `type="required"` — the spec's
+    //     "required" dependency, delivered with the jar so a player who installs only this mod still
+    //     sees the animation instead of a silently missing entity.
+    //   * `localRuntime` is NOT used here: that configuration means "present while testing, not
+    //     shipped", which is the opposite of a `required` dependency. (The template's JEI comment
+    //     describes exactly that optional case, so the convention does not apply to this one.)
+    //
+    // Version pinned to 4.9.3, the release that targets 1.21.1 and the `software.bernie.geckolib`
+    // package root. GeckoLib 5 (root `com.geckolib`) targets newer Minecraft and is not usable here.
+    implementation 'software.bernie.geckolib:geckolib-neoforge-1.21.1:4.9.3'
+    jarJar 'software.bernie.geckolib:geckolib-neoforge-1.21.1:4.9.3'
 
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime

@@ -141,5 +141,7 @@
   "astrum.growth.already_full": "队伍里的角色都已是最高好感阶，%s 没有喂出去。",
   "astrum.growth.nobody": "队伍里没有已拥有的角色，%s 没有对象可喂。",
   "astrum.growth.book_unreadable": "角色册读取失败（读不懂的存档已原样保留在磁盘上），这份料理没有喂出去。",
-  "astrum.growth.level_up": "%1$s 升到了 %2$s 级。"
+  "astrum.growth.level_up": "%1$s 升到了 %2$s 级。",
+
+  "entity.astrum.showcase": "必杀演出"
 }

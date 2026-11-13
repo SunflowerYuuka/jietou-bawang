@@ -159,6 +159,7 @@ public final class ClientEvents {
     public static void register(IEventBus modBus) {
         modBus.addListener(RegisterKeyMappingsEvent.class, ClientKeyBindings::onRegisterKeyMappings);
         modBus.addListener(RegisterGuiLayersEvent.class, ClientEvents::onRegisterGuiLayers);
+        ShowcaseRenderer.register(modBus);
         NeoForge.EVENT_BUS.addListener(InputEvent.Key.class, ClientEvents::onKey);
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Pre.class, ClientEvents::onClientTickPre);
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Post.class, ClientEvents::onClientTick);

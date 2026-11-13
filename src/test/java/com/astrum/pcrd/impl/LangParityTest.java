@@ -8,6 +8,7 @@ import com.astrum.pcrd.impl.item.AstrumCreativeTab;
 import com.astrum.pcrd.impl.item.BookTheme;
 import com.astrum.pcrd.impl.item.CharacterCardItem;
 import com.astrum.pcrd.impl.party.BookText;
+import com.astrum.pcrd.impl.showcase.ShowcaseTypes;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
@@ -86,6 +87,10 @@ class LangParityTest {
         // The creative tab's title. Registered from AstrumCreativeTab rather than hard-coded here so
         // renaming the key fails this test instead of showing "itemGroup.astrum" over a tab.
         keys.addAll(AstrumCreativeTab.langKeys());
+        // The 演出 entity's display name. Vanilla reads a name key per entity type; the showcase is not
+        // pickable so no player normally sees it, but a rename that left one file behind would still be
+        // a raw key on the /data and death-message surfaces.
+        keys.add(ShowcaseTypes.LANG_KEY);
         return Set.copyOf(keys);
     }
 
