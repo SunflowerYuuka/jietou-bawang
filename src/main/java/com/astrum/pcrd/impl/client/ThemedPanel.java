@@ -51,14 +51,22 @@ final class ThemedPanel {
     /**
      * Draws one themed panel and its ornament.
      *
+     * <p>The slice is the <b>layout's</b> ({@link BookLayout#slice()}), not a class constant: the
+     * comfortable tier draws a 30-pixel frame so the 64-pixel ornament tiles are compressed 2.1×
+     * instead of 3.6×, while the compact tier keeps 18 because on a small window the body is worth
+     * more than the filigree. Passing it in is what makes "the frame the test asserts" and "the frame
+     * the screen draws" the same number.
+     *
      * @param graphics the GUI buffer
      * @param theme    which theme's art to draw
      * @param panel    the panel's outer rectangle
      * @param divider  where the ornament goes; {@code null} to skip it
+     * @param slice    nine-slice thickness, {@link BookLayout#slice()}
      * @return the nine rectangles that were drawn, in {@link NineSlice#PIECE_NAMES} order
      */
-    static NineSlice.Rects draw(GuiGraphics graphics, BookTheme theme, Box panel, Box divider) {
-        NineSlice.Rects rects = NineSlice.rects(panel, NineSlice.DEFAULT_SLICE);
+    static NineSlice.Rects draw(GuiGraphics graphics, BookTheme theme, Box panel, Box divider,
+            int slice) {
+        NineSlice.Rects rects = NineSlice.rects(panel, slice);
         // The opaque floor first: the centre art is alpha 252 and, on a degenerate target, absent.
         graphics.fill(panel.x(), panel.y(), panel.right(), panel.bottom(), theme.bodyTint());
 

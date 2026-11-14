@@ -218,10 +218,11 @@ public final class BookLayout {
      * @param feedHeight   height of the feeding entry point
      * @param hookRows     hook rows the growth column has room for
      * @param lineGap      gap between two lines of the growth view
+     * @param slice        nine-slice thickness of the panel frame, in GUI pixels
      */
     public record Metrics(int padding, int headerHeight, int dividerGap, int columnGap, int rightWidth,
                           Cell cell, int slotSize, int slotGap, int barHeight, int feedHeight,
-                          int hookRows, int lineGap) {
+                          int hookRows, int lineGap, int slice) {
 
         /** The ornament's natural height: the divider art is 256x16 and is never stretched vertically. */
         public static final int DIVIDER_HEIGHT = 16;
@@ -238,7 +239,17 @@ public final class BookLayout {
          */
         public static final int COLUMNS = 2;
 
-        /** Rows per page. */
+        /**
+         * Rows per page.
+         *
+         * <p>Three, and it stays three. The human's screenshot showed <b>one</b> roster cell above a
+         * large empty band, which reads as "the grid is too short" — but the arithmetic says otherwise:
+         * three 56-pixel rows is a 178-pixel body against a 170-pixel growth column, so the two columns
+         * already agree. The band was <b>unpainted cells</b>: {@code drawRoster} drew only the cells that
+         * had a character in them, so an owner of one character got one cell and five cells' worth of
+         * background. The fix is in the screen (every cell on the page is painted, empty ones as an
+         * empty slot), not here — growing the grid would have moved the void, not removed it.
+         */
         public static final int ROWS = 3;
 
         /**
@@ -248,7 +259,7 @@ public final class BookLayout {
          * of the named constants above, so "the old numbers" exist in exactly one place.
          */
         public static final Metrics COMPACT = new Metrics(20, 14, 4, 10, 112,
-                new Cell(66, 44, 3, 20, 5, 1, 8, 20), 18, 3, 5, 12, 3, 1);
+                new Cell(66, 44, 3, 20, 5, 1, 8, 20), 18, 3, 5, 12, 3, 1, 18);
 
         /**
          * The tier the human's report asked for: bigger cells, roomier lines and four hook rows.
@@ -258,11 +269,16 @@ public final class BookLayout {
          * more empty space. <b>The type gets room</b> (a 40-pixel text column instead of 38, gaps 3/1 →
          * 4/2, slots 18 → 20, bars 5 → 6) so two lines and a level are not stacked 2 pixels apart. <b>The
          * column gains a hook row</b> (3 → 4), which is what a character with three hooks plus the "+N"
-         * line needs. The growth column then ends 17 pixels above the body bottom instead of 2 — the
-         * arithmetic {@link #rightColumnHeight()} states and {@code BookLayoutTest} asserts per tier.
+         * line needs.
+         *
+         * <p><b>Padding and slice rose together</b> for the frame report (「UI很粗糙，上下像是被压缩了」):
+         * 22 → 32 of padding and 18 → 30 of nine-slice. The ornament ink lives in each tile's outer
+         * ~8 pixels, so the slice is really a compression ratio — 64/18 squeezed it 3.6× and blurred it
+         * into the body, 64/30 is 2.1× and reads as filigree. Padding must stay ahead of the slice, which
+         * is why the two numbers moved as one; {@code BookLayoutTest} asserts the margin for both tiers.
          */
-        public static final Metrics COMFORTABLE = new Metrics(22, 15, 5, 12, 128,
-                new Cell(96, 56, 4, 40, 8, 5, 9, 21), 20, 4, 6, 13, 4, 2);
+        public static final Metrics COMFORTABLE = new Metrics(32, 15, 5, 12, 128,
+                new Cell(96, 56, 4, 40, 8, 5, 9, 21), 20, 4, 6, 13, 4, 2, 30);
 
         /** {@return {@code COLUMNS * ROWS} — cells one page holds} */
         public int page() {
@@ -415,6 +431,23 @@ public final class BookLayout {
     /** {@return {@code "comfortable"} or {@code "compact"}, for logs and assertions} */
     public String tierName() {
         return metrics == Metrics.COMFORTABLE ? "comfortable" : "compact";
+    }
+
+    /** {@return the nine-slice thickness this layout's panel frame is drawn at} */
+    public int slice() {
+        return metrics.slice();
+    }
+
+    /**
+     * {@return the nine-slice thickness a tier's panel frame is drawn at}
+     *
+     * <p>One function rather than a field read at the call site, so the screen, the log line and the
+     * test cannot each pick a different tier's number.
+     *
+     * @param metrics the tier
+     */
+    public static int sliceFor(Metrics metrics) {
+        return metrics.slice();
     }
 
     /** {@return the roster cell metrics of this tier} */

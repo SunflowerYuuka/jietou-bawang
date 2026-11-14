@@ -46,11 +46,25 @@ public final class HudLayout {
     /** Gauge bar width in GUI pixels. */
     public static final int BAR_WIDTH = 90;
 
-    /** Gauge bar height in GUI pixels. */
-    public static final int BAR_HEIGHT = 5;
+    /**
+     * Gauge bar height in GUI pixels.
+     *
+     * <p>Raised from 5 when the bar became official art ({@code GaugeArt}): the PCR gauge's gold rim and
+     * white core are three distinct bands, and at 5 pixels they collapsed into one yellow line. 10 is
+     * the smallest height that keeps all three readable while leaving the widget shorter than the
+     * hotbar it sits above. The committed texture is 128x16, so it is downscaled 16 → 10, not crushed.
+     */
+    public static final int BAR_HEIGHT = 10;
 
-    /** Diameter of the cooldown ring in GUI pixels. */
-    public static final int RING_DIAMETER = 13;
+    /**
+     * Diameter of the cooldown ring in GUI pixels — and of the preset portrait drawn inside it.
+     *
+     * <p>Raised from 13 for the same reason as {@link #BAR_HEIGHT}: the human asked for the current
+     * preset's face in this circle (「UB条最左边的圆圈，显示的应该是当前预设的角色的头像」), and a face is
+     * not recognisable at 9 pixels. At 16 the face is 12 pixels across, which is the size the party
+     * effect's own HUD icon is drawn at.
+     */
+    public static final int RING_DIAMETER = 16;
 
     /** Gap between the cooldown ring and the gauge bar. */
     public static final int GAP = 3;

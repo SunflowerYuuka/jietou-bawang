@@ -218,7 +218,7 @@ public final class CharacterBookScreen extends Screen {
         // available for "the theme came from the item that opened the screen" and "the nine rectangles
         // for the size this window actually has are non-degenerate": the panel size comes from the
         // player's window and GUI scale, so neither can be asserted offline.
-        NineSlice.Rects rects = NineSlice.rects(layout.panel(), NineSlice.DEFAULT_SLICE);
+        NineSlice.Rects rects = NineSlice.rects(layout.panel(), layout.slice());
         ThemedPanel.isUsable(rects);
         Astrum.LOGGER.debug("astrum: character book opened ({}x{} gui, theme {}, tier {} — panel {}x{} "
                         + "at {},{} of a {}x{} screen; margins l/r/t/b {}/{}/{}/{}; slice {} -> centre "
@@ -226,7 +226,7 @@ public final class CharacterBookScreen extends Screen {
                 width, height, theme, layout.tierName(), layout.panel().width(),
                 layout.panel().height(), layout.panel().x(), layout.panel().y(), width, height,
                 layout.panel().x(), width - layout.panel().right(), layout.panel().y(),
-                height - layout.panel().bottom(), NineSlice.DEFAULT_SLICE,
+                height - layout.panel().bottom(), layout.slice(),
                 rects.centre().width(), rects.centre().height(), ClientRosterCache.size(),
                 ClientPartyCache.latest().slots().stream().filter(Optional::isPresent).count(),
                 ClientRosterCache.quarantined() ? ", quarantined save" : "");
@@ -276,7 +276,7 @@ public final class CharacterBookScreen extends Screen {
         // (both pure and unit-tested). Its own opaque body fill replaces the old flat COLOR_PANEL and
         // the four COLOR_FRAME lines: the art carries the frame, so drawing a flat rectangle around it
         // would put a second, square border outside the ornamented one.
-        ThemedPanel.draw(graphics, theme, layout.panel(), layout.divider());
+        ThemedPanel.draw(graphics, theme, layout.panel(), layout.divider(), layout.slice());
 
         drawCentred(graphics, title, layout.title(), COLOR_TITLE);
 
@@ -309,9 +309,57 @@ public final class CharacterBookScreen extends Screen {
     // ① The roster grid
     // -----------------------------------------------------------------------------------------
 
+    /**
+     * Paints every roster cell on the current page that has no character in it.
+     *
+     * <h2>Why the empty cells are drawn at all</h2>
+     * The human's screenshot showed a single roster cell sitting above a large empty band and read it
+     * as the panel being broken (「上下像是被压缩了」). The band was not a layout hole: it was the part of
+     * the grid the screen never painted, so the frame's body colour showed through and the grid read as
+     * "one cell, then nothing". Painting the empty cells turns that band into what it is — slots waiting
+     * for characters — which is both honest and the cheapest fix: no metric moves, so the small-window
+     * behaviour and every {@code BookLayoutTest} assertion stay exactly as they were.
+     *
+     * <p>A very slightly darker fill, not the selected/hover tints: an empty slot must not look
+     * selectable, and a hovered empty cell must not look different from an idle one. Hover is
+     * deliberately not a parameter — an empty cell has no hover state at all.
+     *
+     * @param graphics the GUI buffer
+     * @param count    the roster size
+     * @param first    the absolute index the page starts at
+     */
+    private void paintEmptyCells(GuiGraphics graphics, int count, int first) {
+        int owned = layout.visibleCells(count, first);
+        for (int i = owned; i < layout.page(); i++) {
+            BookLayout.Box cell = layout.cell(i);
+            if (cell == null) {
+                continue;
+            }
+            graphics.fill(cell.x(), cell.y(), cell.right(), cell.bottom(), colorEmptySlot());
+        }
+    }
+
+    /** {@return the absolute index the current page starts at, clamped to the roster} */
+    private int pageFirst(int count) {
+        return layout.clampFirstIndex(count, firstCell);
+    }
+
+    /** {@return the fill of a roster cell with no character in it: the plain surface, no tint} */
+    private int colorEmptySlot() {
+        // The same surface an owned cell sits on when it is neither hovered nor selected, so a page of
+        // empties is quiet rather than a second colour. Drawing them is the whole point: an unpainted
+        // grid area read as a hole in the panel.
+        return colorSurface();
+    }
     private void drawRoster(GuiGraphics graphics, int mouseX, int mouseY) {
         List<RosterSyncPayload.Entry> entries = ClientRosterCache.entries();
         BookLayout.Box grid = layout.rosterGrid();
+        // Every cell on the page is painted, empty or not. The human's screenshot showed one character
+        // and a large unpainted band below it — the grid looked like a frame with a hole, because only
+        // the owned cells were filled and the rest of the grid's area stayed the panel's body colour.
+        // An empty cell now draws as what it is: a slot with nothing in it. The band is gone without
+        // moving a single number in BookLayout.
+        paintEmptyCells(graphics, entries.size(), pageFirst(entries.size()));
         if (entries.isEmpty()) {
             drawClipped(graphics, Component.translatable(BookText.KEY_ROSTER_EMPTY), grid, COLOR_DIM);
             return;

@@ -54,16 +54,37 @@ public final class NineSlice {
     public static final int PIECES = 9;
 
     /**
-     * The slice size the shipped panel art is drawn at, in GUI pixels.
+     * The slice size the <b>comfortable</b> panel art is drawn at, in GUI pixels.
      *
-     * <p>The art is nine 64x64 tiles cut from one 192x192 frame. Drawing a tile at its source size would
-     * spend 64 of a 225-pixel-tall panel on one corner, so the tiles are shrunk: 18 keeps the corner
-     * ornament readable at GUI scale 2 while leaving a body large enough for the roster. It is not a
-     * free number — {@code BookLayout.PADDING} is 20, i.e. two pixels more than this, so no content
-     * rectangle ever sits on the frame band. {@code BookLayoutTest} asserts that relation, so raising
-     * the slice without raising the padding fails a test instead of putting the title on the ornament.
+     * <p>The art is nine 64x64 tiles cut from one 192x192 frame, and each tile's ornament ink lives only
+     * in its <b>outer ~8 pixels</b> — the rest of the tile is the body's flat gradient. So the number
+     * here is really a <em>compression ratio</em> for that 8-pixel band: at the previous 18 the whole
+     * 64-pixel tile was squeezed 3.6× and what should be a crisp filigree edge blurred into the body
+     * colour, which is exactly what the human reported (「角色册的UI很粗糙，上下像是被压缩了」).
+     *
+     * <p>30 is 64 / 30 ≈ 2.1×, inside the 26–34 band an earlier audit recommended. {@code 26} (2.5×)
+     * was the conservative end and {@code 34} (1.9×) the aggressive one; 30 is chosen because the
+     * padding must stay two pixels ahead of it and 34 would have pushed the comfortable panel past a
+     * 640x360 window, which is what 1280x720 at GUI scale 2 gives.
+     *
+     * <p>The <b>compact</b> tier keeps 18 and is not a lapse: {@link BookLayout.Metrics#COMPACT} exists
+     * for windows that cannot fit the comfortable panel at all, and there the body is worth more than
+     * the ornament. See {@link BookLayout.Metrics#slice()} — the slice is a per-tier number, and this
+     * constant is the comfortable one, which the class-level default and every drawing call site read
+     * through the layout.
      */
-    public static final int DEFAULT_SLICE = 18;
+    public static final int DEFAULT_SLICE = 30;
+
+    /** Source edge of one nine-slice piece, in pixels: the art is nine 64x64 tiles of a 192x192 frame. */
+    public static final int PIECE_PIXELS = 64;
+
+    /**
+     * The slice the <b>comfortable</b> tier's frame is drawn at, named for the tests and the generator.
+     *
+     * <p>Equal to {@link #DEFAULT_SLICE} by definition — it exists so a test can say "the shipped frame
+     * thickness" without depending on which value happens to be the class default.
+     */
+    public static final int SHIPPED_SLICE = DEFAULT_SLICE;
 
     private NineSlice() {
     }

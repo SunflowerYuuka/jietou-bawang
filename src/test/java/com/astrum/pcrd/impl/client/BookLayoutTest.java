@@ -137,20 +137,64 @@ class BookLayoutTest {
     }
 
     /**
-     * The inner padding is wider than the frame band the nine-slice draws.
+     * The inner padding is wider than the frame band the nine-slice draws, <b>per tier</b>.
      *
-     * <p>The two numbers are independent constants — {@code NineSlice.DEFAULT_SLICE} decides how thick the
-     * drawn ornament is, {@link BookLayout#PADDING} how far the content is inset — and if the padding is
+     * <p>The two numbers are independent constants — {@link BookLayout#slice()} decides how thick the
+     * drawn ornament is, the tier's {@code padding} how far the content is inset — and if the padding is
      * the smaller of the two the title and the footer sit <em>on</em> the frame. Nothing crashes; it just
-     * looks wrong, so the relation is asserted here, next to the constants it constrains.
+     * looks wrong, so the relation is asserted here, next to the constants it constrains, and asserted
+     * for <b>both</b> tiers because the slice is now a per-tier number: the comfortable panel draws a
+     * 30-pixel frame (the ornament was being compressed 3.6× at 18) while the compact one keeps 18.
      */
     @Test
     void theContentPaddingClearsTheNineSliceFrame() {
-        assertTrue(BookLayout.PADDING > NineSlice.DEFAULT_SLICE,
-                "PADDING (" + BookLayout.PADDING + ") must exceed the panel's slice ("
-                        + NineSlice.DEFAULT_SLICE + "), or content is drawn on the frame");
-        assertTrue(BookLayout.PADDING - NineSlice.DEFAULT_SLICE >= 2,
-                "at least two spare pixels, or the first text row touches the ornament");
+        for (BookLayout.Metrics metrics : new BookLayout.Metrics[] {
+                BookLayout.Metrics.COMPACT, BookLayout.Metrics.COMFORTABLE}) {
+            assertTrue(metrics.padding() > metrics.slice(),
+                    "padding (" + metrics.padding() + ") must exceed the panel's slice ("
+                            + metrics.slice() + "), or content is drawn on the frame");
+            assertTrue(metrics.padding() - metrics.slice() >= 2,
+                    "at least two spare pixels, or the first text row touches the ornament");
+        }
+        // The shipped slice constants must agree with the tiers that use them, or the screen would draw
+        // a frame the test never checked.
+        assertEquals(BookLayout.Metrics.COMPACT.slice(), BookLayout.sliceFor(BookLayout.Metrics.COMPACT),
+                "the compact tier's own slice is the one the layout reports");
+        assertEquals(NineSlice.SHIPPED_SLICE, BookLayout.sliceFor(BookLayout.Metrics.COMFORTABLE),
+                "the comfortable tier draws the shipped frame thickness");
+    }
+
+    /**
+     * The frame is drawn at <b>no more than 2.5x</b> compression of its 64-pixel tiles — in the
+     * comfortable tier, which is the one the human sees and reported on.
+     *
+     * <p>This is the actual defect, stated as a number. The ornament ink lives in each tile's outer
+     * ~8 pixels, so a slice much below 26 squeezes that band into the body and the frame reads as a
+     * flat border — 「UI很粗糙，上下像是被压缩了」. The bound is on the ratio rather than on the constant so a
+     * future art change can pick a different number and still be held to the same rule.
+     *
+     * <h2>Why the compact tier is exempt, on purpose</h2>
+     * {@link BookLayout.Metrics#COMPACT} exists for windows that cannot fit the comfortable panel at all
+     * (it is chosen when the comfortable panel would not fit with {@code MIN_MARGIN} to spare), and there
+     * the <b>body</b> is worth more than the ornament: 26 of slice plus 28 of padding on the compact
+     * numbers makes a 313x245 panel, which no longer fits the 320x240 screen this tier exists for. So the
+     * compact frame keeps its 18 and its compression, and the comfortable one — the shipped look — is
+     * held to the rule. Stating the exemption here is what keeps it a decision rather than an oversight.
+     */
+    @Test
+    void theFrameIsNotCompressedPastTwoAndAHalfTimes() {
+        double compression = NineSlice.PIECE_PIXELS / (double) NineSlice.SHIPPED_SLICE;
+        assertTrue(compression <= 2.6,
+                "the " + NineSlice.SHIPPED_SLICE + "-pixel labelled slice compresses the 64-pixel "
+                        + "ornament " + String.format("%.2f", compression)
+                        + "x, which blurs it into the body");
+        assertEquals(2.13, compression, 0.05, "the shipped comfortable frame is a ~2.1x reduction");
+
+        // The comfortable tier really uses it, and the compact tier really is the exempt one.
+        assertEquals(NineSlice.SHIPPED_SLICE, BookLayout.Metrics.COMFORTABLE.slice(),
+                "the comfortable tier is the one the human sees: it must draw the shipped frame");
+        assertTrue(BookLayout.Metrics.COMPACT.slice() < NineSlice.SHIPPED_SLICE,
+                "the compact tier deliberately keeps the thinner frame, for a smaller panel");
     }
 
     /**
@@ -158,18 +202,23 @@ class BookLayoutTest {
      *
      * <p>The panel size is fixed, so this is really an assertion about the slice: a slice larger than half
      * the panel would leave no centre. It is the one link between the layout constants and the drawing
-     * helper, and it is arithmetic, so it belongs in a test rather than in a log line.
+     * helper, and it is arithmetic, so it belongs in a test rather than in a log line. Both tiers are
+     * checked, and the compact one is checked at the smallest screen the screen supports — that is
+     * where a raised slice would bite first.
      */
     @Test
     void thePanelHasADrawableNineSliceBody() {
-        NineSlice.Rects rects = NineSlice.rects(small().panel(), NineSlice.DEFAULT_SLICE);
-        assertTrue(rects.centreIsDrawable(),
-                "the panel's body must be drawable at slice " + NineSlice.DEFAULT_SLICE + ": "
-                        + rects.centre());
-        assertTrue(rects.centre().width() > BookLayout.GRID_WIDTH,
-                "the body must be wider than the roster grid, or the grid is drawn off the panel");
-        assertTrue(rects.centre().height() >= BookLayout.BODY_HEIGHT,
-                "the body must be at least as tall as the roster grid");
+        for (BookLayout layout : new BookLayout[] {small(), large()}) {
+            int slice = layout.slice();
+            NineSlice.Rects rects = NineSlice.rects(layout.panel(), slice);
+            assertTrue(rects.centreIsDrawable(),
+                    "the " + layout.tierName() + " panel's body must be drawable at slice " + slice
+                            + ": " + rects.centre());
+            assertTrue(rects.centre().width() > layout.metrics().gridWidth(),
+                    "the body must be wider than the roster grid, or the grid is drawn off the panel");
+            assertTrue(rects.centre().height() >= layout.metrics().bodyHeight(),
+                    "the body must be at least as tall as the roster grid");
+        }
     }
 
     @Test
