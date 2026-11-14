@@ -3,6 +3,7 @@ package com.astrum.pcrd.impl.client;
 import com.astrum.pcrd.api.v1.EffectHook;
 import com.astrum.pcrd.api.v1.EffectType;
 import java.util.Locale;
+import java.util.OptionalInt;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -14,15 +15,26 @@ import org.jetbrains.annotations.ApiStatus;
  * charge 8/3" are the same picture plus different words. So the icon is chosen by {@link EffectType},
  * one of the official {@code icon_skill_<n>.png} files, copied into
  * {@code assets/astrum/textures/gui/skill/<effect>.png} by {@code tools/gen_skill_icons.py}. Nine
- * icons, not sixty-one: the other fifty-two stay in the official asset tree.
+ * files, not sixty-one icons' worth: the rest stay in the official asset tree.
  *
- * <h2>{@code attack_buff} is a <em>buff</em> icon, not a skill icon</h2>
- * The human's correction: 「获得的攻击提升图标就使用提供的buff图标」. So {@code attack_buff} is the odd row out — it
- * is drawn from the official {@code caravan_icon_buff_00005} badge (two raised fists, {@code +100%}) through
- * {@code tools/gen_buff_icon.py}, not from any {@code icon_skill_<n>}. The reason for that particular badge,
- * and the two the human could swap it for, are in that script's docstring. {@link #SOURCE_ID} therefore has
- * one fewer entry than {@code EffectType} has values, and {@link #sourceId} answers an empty optional for the
- * buff rather than inventing a number.
+ * <h2>Two self-buffs, one picture — by his rule, not by accident</h2>
+ * 「这种自buff提升，统一使用之前决定的自buff图标」: every <em>self-buff</em> effect shares the one self-buff
+ * icon, which is the official {@code icon_skill_3015} (3015 = 自buff in the category table he gave). So
+ * {@link EffectType#ATTACK_BUFF} and {@link EffectType#STACK} answer the <b>same</b> picture, and
+ * {@code attack_buff.png} is byte-identical to {@code stack.png} — {@code SkillIconsTest} asserts the
+ * bytes rather than trusting this paragraph.
+ *
+ * <p><b>What was here before, and why it was wrong.</b> The first attempt gave {@code attack_buff} a
+ * badge of its own, the official {@code caravan_icon_buff_00005} ({@code +100%}, two raised fists),
+ * on the theory that "a fist means attack". It is a <em>reward banner</em> from the caravan set, not a
+ * self-buff status icon, and it made the row read as a different <em>category</em> of thing from the
+ * 自buff row next to it. The human rejected it twice. The category table wins over a story about shapes.
+ *
+ * <h2>Why a shared picture needs no lookup</h2>
+ * {@link #sourceId} is total again — every type names a number — which is the honest shape now that the
+ * exception is gone. A caller that wants "is this one of the shared self-buffs" asks
+ * {@link #selfBuff(EffectType)} rather than inferring it from an absent number, and a null type still
+ * answers empty instead of throwing on a render path.
  *
  * <h2>Which icon, and why — the official category</h2>
  * The 61 official icons are filed in <b>families by their first digit</b>, and the category a picture
@@ -40,22 +52,22 @@ import org.jetbrains.annotations.ApiStatus;
  *   gain_charge    3014   充能                a plus-sign and a blue arc
  *   area_charge    2006   充能                a plus-sign and a blue arc
  *   stack          3015   自buff              a small figure on a podium, spotlight above
+ *   attack_buff    3015   自buff              the same picture — see the section above
  *   detonate       1023   灼烧                an orange flame
  *   apply_effect   1022   中毒                a stoppered flask with bubbles
  * </pre>
- *
- * <p>{@code attack_buff} is not in that table — see the previous section.
  *
  * <p><b>The one reservation worth stating.</b> {@code gain_charge} (3014) and {@code area_charge}
  * (2006) are both 充能 — the official set has exactly two charge icons and the two effects are exactly
  * two charge effects (self and area), so the pairing is right, but at the 9x9 a hook row draws they are
  * near-identical pictures. They are distinguished by their row text and by which character's list they
- * appear in, never by shape.
+ * appear in, never by shape. The same holds for the two 自buff rows, and there the row text is the
+ * <em>only</em> difference: 叠层 and 攻击提升.
  *
- * <p>{@code SkillIconsTest} pins the mapping as data (all types distinct, all textures on the
- * classpath, each 64x64, and this table equal to the generator's {@code ICONS}), so a re-pick has to
- * change the test too, and {@code --check} in the generator proves the files are byte-identical to
- * their official sources.
+ * <p>{@code SkillIconsTest} pins the mapping as data (every type names a texture, every texture is on
+ * the classpath and 64x64, the two self-buffs share their bytes, and this table equals the generators'
+ * {@code ICONS}/ {@code SELF_BUFF}), so a re-pick has to change the tests too, and {@code --check} in the
+ * generators proves the files are byte-identical to their official sources.
  */
 @ApiStatus.Internal
 public final class SkillIcons {
@@ -76,11 +88,10 @@ public final class SkillIcons {
      * 64x64 resample whose name carries no number at all. Without this table "the book shows
      * {@code icon_skill_1001} for 附加伤害" would be a claim about a script nobody runs, and a re-pick
      * could change the generator while the code kept blitting the old picture.
-     * {@code SkillIconsTest} asserts the table and the generator's {@code ICONS} dict are the same pairs.
+     * {@code SkillIconsTest} asserts the table and the generators' dicts are the same pairs.
      *
-     * <p>Eight entries, not nine: {@link EffectType#ATTACK_BUFF} is drawn from the official
-     * {@code caravan_icon_buff_00005} badge by {@code tools/gen_buff_icon.py}, so it has no
-     * {@code icon_skill_<n>} behind it at all.
+     * <p>Nine entries for nine types, with one repeated value: {@link EffectType#ATTACK_BUFF} and
+     * {@link EffectType#STACK} both name 3015, the official 自buff icon.
      */
     private static final java.util.Map<EffectType, Integer> SOURCE_ID = java.util.Map.of(
             EffectType.EXTRA_DAMAGE, 1001,
@@ -89,6 +100,7 @@ public final class SkillIcons {
             EffectType.GAIN_CHARGE, 3014,
             EffectType.AREA_CHARGE, 2006,
             EffectType.STACK, 3015,
+            EffectType.ATTACK_BUFF, 3015,
             EffectType.DETONATE, 1023,
             EffectType.APPLY_EFFECT, 1022);
 
@@ -96,31 +108,46 @@ public final class SkillIcons {
     }
 
     /**
-     * {@return the official {@code icon_skill_<n>} an effect type is drawn from, or empty when it is drawn
-     * from a buff badge instead}
+     * {@return the official {@code icon_skill_<n>} an effect type is drawn from, or empty for a null type}
      *
-     * <p>Total, and it used to throw. The old contract was "every effect type has a skill icon"; the human
-     * changed that contract for one type (「获得的攻击提升图标就使用提供的buff图标」), and an accessor that still
-     * promises a number would push every caller into a special case. Empty is the honest answer: there is no
-     * number for {@code attack_buff}, and {@code SkillIconsTest} pins which types are in which set.
+     * <p>Total over {@link EffectType}: every value has a number, because every value is now drawn from
+     * an official skill icon. Empty is only the answer for {@code null}, so a caller on the render path
+     * that somehow holds nothing gets "no number" rather than an exception.
+     *
+     * <p>This used to answer empty for {@code attack_buff} as well, back when that type was drawn from a
+     * {@code caravan_icon_buff_*} badge instead of a skill icon. That exception is gone — see the class
+     * javadoc — and with it the reason for an empty optional on a real type.
      *
      * @param type the hook's effect type
      */
-    public static java.util.OptionalInt sourceId(EffectType type) {
+    public static OptionalInt sourceId(EffectType type) {
         if (type == null) {
-            return java.util.OptionalInt.empty();
+            return OptionalInt.empty();
         }
         Integer id = SOURCE_ID.get(type);
-        return id == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(id);
+        return id == null ? OptionalInt.empty() : OptionalInt.of(id);
     }
 
-    /** {@return whether {@code type} is drawn from an official {@code caravan_icon_buff_*} badge} */
-    public static boolean isBuffBadge(EffectType type) {
-        return type == EffectType.ATTACK_BUFF;
+    /**
+     * {@return whether {@code type} is one of the effects that share the single self-buff picture}
+     *
+     * <p>Two values, one picture: 「这种自buff提升，统一使用之前决定的自buff图标」. The predicate exists so the
+     * sharing is a statement the code makes rather than a coincidence two table rows happen to express,
+     * and so {@code SkillIconsTest} can assert the shared set exactly — adding a third self-buff later
+     * has to be a deliberate edit here, not a silent third copy of one picture.
+     *
+     * @param type the hook's effect type
+     */
+    public static boolean selfBuff(EffectType type) {
+        return type == EffectType.ATTACK_BUFF || type == EffectType.STACK;
     }
 
     /**
      * {@return the texture of one effect type}
+     *
+     * <p>Named after the <em>type</em>, not after the official icon number: the file has no number in its
+     * name, so a re-pick renames nothing in the drawing code. Two self-buff types therefore have two file
+     * names holding the same bytes — that is the "same picture" promise, made visible.
      *
      * @param type the hook's effect type
      */

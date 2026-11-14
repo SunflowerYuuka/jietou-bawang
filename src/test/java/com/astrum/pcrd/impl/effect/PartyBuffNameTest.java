@@ -71,6 +71,6 @@ class PartyBuffNameTest {
         return new CharacterDef(1, DISPLAY_NAME, Dimension.CHARGE, Optional.empty(), Optional.empty(),
                 List.of(), new UbDef(tier, tier), new GrowthDef(100, 1.15, 30),
                 new AffectionDef(3, 8, List.of()), skillName, Optional.empty(), Optional.empty(),
-                Optional.empty(), Optional.empty(), Optional.empty());
+                Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
     }
 }

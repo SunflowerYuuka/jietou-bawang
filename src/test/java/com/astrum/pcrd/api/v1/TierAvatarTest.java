@@ -83,7 +83,7 @@ class TierAvatarTest {
         CharacterDef overridden = new CharacterDef(1, "test", Dimension.CHARGE,
                 Optional.of(texture("book_only")), Optional.empty(), List.of(), ub(), growth(),
                 affection(), Optional.empty(), Optional.of(AVATAR), Optional.empty(), Optional.empty(),
-                Optional.empty(), Optional.empty());
+                Optional.empty(), Optional.empty(), Optional.empty());
         for (int tier = 1; tier <= 3; tier++) {
             assertEquals(Optional.of(texture("book_only")), overridden.face(tier),
                     "the book override is what a tierless pack draws, at every tier");
@@ -145,6 +145,94 @@ class TierAvatarTest {
     }
 
     // -----------------------------------------------------------------------------------------
+    // The still, which follows the same tier for a different picture family
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * <b>The background still follows the affection tier</b> — 「背景立绘要随着好感的升阶更换背景立绘」.
+     *
+     * <h2>Why tier 1 and tier 2 are the same picture, deliberately</h2>
+     * The official dump has a 3★ still and a 6★ still for Djeeta and <b>no 1★ still at all</b>
+     * ({@code still_unit_105711} does not exist). So {@code still} is the 3★ rung and is drawn at tier 1 and
+     * tier 2; tier 3 draws {@code still6th}. Asserting that tier 1 == tier 2 is the point — the alternative,
+     * a tier-1 character with no background, is the dark plate the human asked to be rid of.
+     */
+    @Test
+    void eachTierDrawsItsOwnStillWithTheDocumentedDegradation() {
+        CharacterDef full = withStills(Optional.of(stillTexture("3")), Optional.of(stillTexture("6")));
+
+        assertEquals(Optional.of(stillTexture("3")), full.still(1),
+                "there is no 1★ still in the official set, so tier 1 draws the 3★ art");
+        assertEquals(Optional.of(stillTexture("3")), full.still(2), "tier 2 draws the 3★ art");
+        assertEquals(Optional.of(stillTexture("6")), full.still(3), "tier 3 draws the 6★ art");
+    }
+
+    /**
+     * A character with no 6★ still degrades to her 3★ one — the same rule {@code face(int)} follows for
+     * avatars, so a unit the art set skipped is not left with no background at the top tier.
+     */
+    @Test
+    void tierThreeWithoutASixStarStillDegradesToTheThreeStarStill() {
+        CharacterDef noSix = withStills(Optional.of(stillTexture("3")), Optional.empty());
+
+        assertEquals(Optional.of(stillTexture("3")), noSix.still(3),
+                "no 6★ still means the 3★ still at tier 3, never no background");
+        assertEquals(Optional.of(stillTexture("3")), noSix.still(2));
+        assertEquals(Optional.of(stillTexture("3")), noSix.still(1));
+    }
+
+    /**
+     * A pack written before {@code still6th} existed names only {@code still}, and every tier must answer
+     * exactly what it answered before: that one picture.
+     *
+     * <p>This is the additive promise, and it is the case that keeps every existing datapack working.
+     */
+    @Test
+    void aTierlessStillDefinitionKeepsItsOnePictureAtEveryTier() {
+        CharacterDef plain = withStills(Optional.of(stillTexture("3")), Optional.empty());
+
+        for (int tier = 1; tier <= 3; tier++) {
+            assertEquals(Optional.of(stillTexture("3")), plain.still(tier),
+                    "tier " + tier + " keeps the tierless still");
+        }
+
+        CharacterDef none = withStills(Optional.empty(), Optional.empty());
+        for (int tier = 1; tier <= 3; tier++) {
+            assertTrue(none.still(tier).isEmpty(), "no still art at all stays empty at tier " + tier);
+        }
+    }
+
+    /** An out-of-range tier reads as the nearest real one rather than throwing on the render path. */
+    @Test
+    void anOutOfRangeTierStillAnswersAStill() {
+        CharacterDef full = withStills(Optional.of(stillTexture("3")), Optional.of(stillTexture("6")));
+
+        assertEquals(full.still(1), full.still(0), "0 is below the ladder: the first tier");
+        assertEquals(full.still(1), full.still(-7), "a negative tier is a bug, not a crash");
+        assertEquals(full.still(3), full.still(4), "above the ladder is the top tier");
+        assertEquals(full.still(3), full.still(Integer.MAX_VALUE));
+    }
+
+    /**
+     * A character who ships <b>only</b> a 6★ still has no background at tier 1 or 2 — and that is the honest
+     * answer, not a bug to paper over.
+     *
+     * <p>{@code still} is the lower rung, so a pack that fills only {@code still6th} is saying "she has 6★ art
+     * and nothing below it". Inventing a tier-1 picture would mean drawing the 6★ art at tier 1, which is the
+     * opposite of the rule this feature implements. The panel then keeps its plain dark body, the documented
+     * "no still art" case — and no character in the shipped pack is in this state ({@code djeeta.json} names
+     * both rungs).
+     */
+    @Test
+    void aSixStarOnlyDefinitionHasNoLowerRungRatherThanBorrowingTheTopOne() {
+        CharacterDef onlySix = withStills(Optional.empty(), Optional.of(stillTexture("6")));
+
+        assertTrue(onlySix.still(1).isEmpty(), "tier 1 must not borrow the 6★ art");
+        assertTrue(onlySix.still(2).isEmpty(), "tier 2 either");
+        assertEquals(Optional.of(stillTexture("6")), onlySix.still(3), "tier 3 draws it");
+    }
+
+    // -----------------------------------------------------------------------------------------
     // Builders
     // -----------------------------------------------------------------------------------------
 
@@ -152,12 +240,26 @@ class TierAvatarTest {
         return ResourceLocation.fromNamespaceAndPath("astrum", "textures/gui/portrait/" + name + ".png");
     }
 
+    /** {@return a still texture location; a separate tree from the avatars, so a mix-up would show} */
+    private static ResourceLocation stillTexture(String rung) {
+        return ResourceLocation.fromNamespaceAndPath("astrum",
+                "textures/gui/still/djeeta_" + rung + ".png");
+    }
+
+    /** {@return a definition carrying only the two still fields, which is all {@code still(int)} reads} */
+    private static CharacterDef withStills(Optional<ResourceLocation> still,
+            Optional<ResourceLocation> six) {
+        return new CharacterDef(1, "姬塔", Dimension.CHARGE, Optional.empty(), Optional.empty(),
+                List.of(), ub(), growth(), affection(), Optional.empty(), Optional.empty(),
+                Optional.empty(), Optional.empty(), Optional.empty(), still, six);
+    }
+
     private static CharacterDef definition(Optional<ResourceLocation> avatar,
             Optional<ResourceLocation> one, Optional<ResourceLocation> three,
             Optional<ResourceLocation> six) {
         return new CharacterDef(1, "姬塔", Dimension.CHARGE, Optional.empty(), Optional.empty(),
                 List.of(), ub(), growth(), affection(), Optional.empty(), avatar, one, three, six,
-                Optional.empty());
+                Optional.empty(), Optional.empty());
     }
 
     private static UbDef ub() {

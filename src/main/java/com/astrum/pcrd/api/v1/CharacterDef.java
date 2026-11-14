@@ -50,10 +50,23 @@ import org.jetbrains.annotations.ApiStatus;
  *                      6-star art is given, which is the spec §9.4 degradation rule
  * @param icon6th       the <b>6-star</b> avatar, drawn at affection tier 3. Empty means "this character
  *                      has no 6-star art", and tier 3 falls back to {@link #icon3rd}
- * @param still         her <b>full-body still</b>, drawn as the 角色册 panel's background — the official
- *                      {@code still_unit_<artId>.png}, downscaled by {@code tools/gen_still_backgrounds.py}
- *                      and not the ~1 MB original. Empty means "no still art", and the panel then keeps
- *                      its plain dark body rather than showing an unrelated picture
+ * @param still         her <b>full-body still</b>, drawn as the 角色册 panel's background at affection
+ *                      <b>tier 1 and 2</b> — the official {@code still_unit_<artId>.png}, downscaled by
+ *                      {@code tools/gen_still_backgrounds.py} and not the ~1 MB original. It is also the
+ *                      <b>tierless fallback</b>: a pack written before {@link #still6th()} existed names
+ *                      only this one and keeps drawing it at every tier. Empty means "no still art", and
+ *                      the panel then keeps its plain dark body rather than showing an unrelated picture
+ * @param still6th      her <b>6★</b> still, drawn at affection tier 3 — 「背景立绘要随着好感的升阶更换背景立绘」.
+ *                      Empty means "this character has no 6★ still", and tier 3 degrades to {@link #still},
+ *                      exactly as {@link #face(int)} degrades a missing 6★ avatar
+ *                      <p><b>Why there is no separate 1★ field.</b> The official art set ships no 1★ still for
+ *                      any unit ({@code still_unit_105711} does not exist — only the 3★ and 6★ rungs do), so
+ *                      tier 1 and tier 2 both draw {@link #still}, and the only rung the art set can actually
+ *                      tell apart is the 6★ one. A third field would therefore name a picture nobody has; and
+ *                      it would not fit: {@code RecordCodecBuilder.group} takes at most sixteen components and
+ *                      this record is at sixteen with the one new field. If a unit ever ships a distinct 1★
+ *                      still, the way to add it is to nest the still trio in one sub-record rather than to
+ *                      drop something else.
  */
 @ApiStatus.Experimental
 public record CharacterDef(int schemaVersion, String displayName, Dimension dimension,
@@ -63,7 +76,8 @@ public record CharacterDef(int schemaVersion, String displayName, Dimension dime
                            Optional<ResourceLocation> icon1st,
                            Optional<ResourceLocation> icon3rd,
                            Optional<ResourceLocation> icon6th,
-                           Optional<ResourceLocation> still) {
+                           Optional<ResourceLocation> still,
+                           Optional<ResourceLocation> still6th) {
 
     /** The affection tier at which the 3-star art takes over: the middle rung of the three-tier ladder. */
     private static final int MIDDLE_TIER = 2;
@@ -88,7 +102,10 @@ public record CharacterDef(int schemaVersion, String displayName, Dimension dime
             ResourceLocation.CODEC.optionalFieldOf("icon1st").forGetter(CharacterDef::icon1st),
             ResourceLocation.CODEC.optionalFieldOf("icon3rd").forGetter(CharacterDef::icon3rd),
             ResourceLocation.CODEC.optionalFieldOf("icon6th").forGetter(CharacterDef::icon6th),
-            ResourceLocation.CODEC.optionalFieldOf("still").forGetter(CharacterDef::still)
+            ResourceLocation.CODEC.optionalFieldOf("still").forGetter(CharacterDef::still),
+            // The 6★ still, additive for the same reason the rarity avatars are: a pack that names neither
+            // keeps loading and keeps drawing `still` at every tier. There is no 1★ entry — see the javadoc.
+            ResourceLocation.CODEC.optionalFieldOf("still6th").forGetter(CharacterDef::still6th)
     ).apply(instance, CharacterDef::new));
 
     /**
@@ -194,6 +211,46 @@ public record CharacterDef(int schemaVersion, String displayName, Dimension dime
             return firstPresent(icon3rd, icon1st, icon6th).or(this::face);
         }
         return firstPresent(icon1st, icon3rd, icon6th).or(this::face);
+    }
+
+    /**
+     * {@return the still to draw behind the 角色册 panel at affection tier {@code tier}}
+     *
+     * <h2>What the human asked for</h2>
+     * 「背景立绘要随着好感的升阶更换背景立绘」 — the panel's background follows the affection tier, the way her avatar
+     * already does (「角色头像要跟随好感度进行变化」). One still per character was the old rule, and it meant a
+     * tier-6 character looked at her 3★ illustration forever.
+     *
+     * <h2>The ladder, and the rung that does not exist</h2>
+     * The official dump ships a still per rarity <em>only sometimes</em>: for Djeeta there is
+     * {@code still_unit_105731} (3★) and {@code still_unit_105761} (6★) and <b>no</b> {@code still_unit_105711}
+     * (1★). So the ladder has two rungs and neither of them is a promise the art set cannot keep:
+     *
+     * <pre>
+     *   tier 1 -> still    (the 3★ art: the lowest rung the official set actually has)
+     *   tier 2 -> still    (ditto — see the javadoc note on why there is no separate 1★ field)
+     *   tier 3 -> still6th, else still   (the documented 6★ → 3★ degradation)
+     * </pre>
+     *
+     * <p>Tier 1 and tier 2 draw the same picture <b>on purpose</b>. The alternative — tier 1 drawing nothing, or
+     * a 1★ file that is not in the art set — is the dark plate the human complained about (「深色底替」). What
+     * changes across the ladder is tier 2 → tier 3, which is the rung the art set actually has.
+     *
+     * <p>{@link #still} keeps its role as the tierless fallback, so a pack written before {@link #still6th}
+     * existed draws exactly what it drew before at every tier — the same additive promise {@link #face(int)}
+     * makes.
+     *
+     * <p>The tier is <b>passed in</b>, never computed here: it comes from
+     * {@code TierAvatar}/ {@code RosterSyncPayload.Entry#tier()}, which is the server's {@code GrowthFacts.tier}.
+     * Re-deriving it from an affection number in this record would be a second copy of the ladder.
+     *
+     * @param tier the affection tier, {@code 1}–{@code 3}
+     */
+    public Optional<ResourceLocation> still(int tier) {
+        if (tier >= TOP_TIER) {
+            return firstPresent(still6th, still);
+        }
+        return still;
     }
 
     /**

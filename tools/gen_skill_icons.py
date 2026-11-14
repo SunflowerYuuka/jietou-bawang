@@ -44,9 +44,11 @@ DEFAULT_SOURCE = os.path.join("K:\\", "AI", "Minecraft", "assets", "pcr", "extra
 #:   1023  灼烧     (burn)              -> detonate
 #:   1022  中毒     (poison)            -> apply_effect
 #:
-#: ``attack_buff`` is NOT here: the human replaced its icon with the official ``caravan_icon_buff_00005``
-#: badge (「获得的攻击提升图标就使用提供的buff图标」), which ``tools/gen_buff_icon.py`` writes. Eight skill
-#: icons, not nine.
+#: ``attack_buff`` is NOT here: it shares the 自buff picture with ``stack``, by the human's rule
+#: (「这种自buff提升，统一使用之前决定的自buff图标」), and ``tools/gen_buff_icon.py`` writes both of its
+#: files — the 64x64 book copy and the 18x18 HUD copy — from ``icon_skill_3015``. So this dict has eight
+#: entries and the ``gui/skill`` directory has nine files; ``SkillIconsTest`` asserts the ninth is
+#: byte-identical to ``stack.png`` rather than letting the two drift into two pictures.
 ICONS = {
     "extra_damage": 1001,
     "lifesteal": 2005,

@@ -42,6 +42,9 @@ import org.jetbrains.annotations.Nullable;
  *       this for the tier);</li>
  *   <li>the <b>party-effect icon</b> — via {@code PartyEffectClient.avatar}, which reads
  *       {@link #forPartySlot} for the same reason.</li>
+ *   <li>the book panel's <b>background still</b> — via {@link #stillOf(CharacterDef, ResourceLocation)},
+ *       which takes the tier and hands it to {@link CharacterDef#still(int)}. It is the same join and the
+ *       same tier source as the avatar; only the picture family differs.</li>
  * </ol>
  * The ring wheel and the cast pad keep the plain {@link CharacterDef#face()} because they are drawn while
  * the wheel is open as a fast overlay: they can hold a definition and a tier-3 bit, but a roster row is a
@@ -130,17 +133,45 @@ public final class TierAvatar {
     }
 
     /**
-     * {@return the still to draw as the book panel's background for a character}
+     * {@return the still to draw as the book panel's background for a character at her <b>current</b> tier}
      *
-     * <p>Deliberately <b>not</b> tiered. The dump ships a still per rarity for some units and none for
-     * others (Djeeta has 3★ and 6★ and no 1★ still), so a tier-keyed still would leave a freshly enrolled
-     * character with no background at all — the opposite of what 「默认使用角色1当背景」 asks for. One still
-     * per character is the rule; {@code CharacterDef.still()} is the field.
+     * <h2>What changed, and the request behind it</h2>
+     * This used to be deliberately tierless — one still per character — on the argument that the dump ships
+     * a still per rarity only for some units, so a tier-keyed still would leave a freshly enrolled
+     * character with no background at all. That argument was right about the constraint and wrong about the
+     * conclusion: the human's rule is 「背景立绘要随着好感的升阶更换背景立绘」, and the constraint is answerable by
+     * <b>degradation</b> rather than by freezing the picture. {@link CharacterDef#still(int)} is
+     * {@code still} (the 3★ rung, drawn at tier 1 and 2 — no 1★ still exists in the official set) with
+     * {@code still6th} taking over at tier 3, so every tier answers a picture and the picture changes at the
+     * rung the art set actually has.
+     *
+     * <p>The tier is read from the roster row, the server's answer, exactly as {@link #forRosterEntry} reads
+     * it for the avatar. A character the client has no row for is drawn at
+     * {@link #UNSYNCED_TIER} rather than with no background, which is the same promise
+     * {@link CharacterDef#face(int)} makes.
      *
      * @param definition the character, or {@code null}
+     * @param characterId the character's id, for the roster lookup; {@code null} means "no row"
      */
-    public static Optional<ResourceLocation> stillOf(@Nullable CharacterDef definition) {
-        return definition == null ? Optional.empty() : definition.still();
+    public static Optional<ResourceLocation> stillOf(@Nullable CharacterDef definition,
+            @Nullable ResourceLocation characterId) {
+        if (definition == null) {
+            return Optional.empty();
+        }
+        return definition.still(characterId == null ? UNSYNCED_TIER : tierOf(characterId));
+    }
+
+    /**
+     * {@return the still for a raw affection number, for tests and for callers holding no roster row}
+     *
+     * <p>Runs the <b>shared</b> ladder ({@link GrowthFacts#tier}), never a copy of it — the same contract
+     * {@link #forAffection} has for the avatar.
+     *
+     * @param definition the character
+     * @param affection  her affection
+     */
+    public static Optional<ResourceLocation> stillForAffection(CharacterDef definition, int affection) {
+        return definition.still(GrowthFacts.tier(affection, definition.affection()));
     }
 
     /**

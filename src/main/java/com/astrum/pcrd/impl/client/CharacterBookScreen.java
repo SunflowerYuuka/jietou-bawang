@@ -163,12 +163,17 @@ public final class CharacterBookScreen extends Screen {
     private int dragFrom = -1;
 
     /**
-     * The character whose still was drawn last, so the swap is logged once per change rather than per frame.
+     * The character <b>and texture</b> the panel drew last, so the swap is logged once per change rather than
+     * per frame.
+     *
+     * <p>A {@code String} key rather than a single id, because the still changes inside one character: an
+     * affection tier crossing swaps the picture while the selection stays put (「背景立绘要随着好感的升阶更换背景
+     * 立绘」), and keying on the id alone would swallow exactly the line that proves it.
      *
      * <p>Instance state, cleared in {@link #init()} with the rest of the screen's: a static here would outlive
      * the screen, and the thing being logged is "this open drew this picture".
      */
-    private @Nullable ResourceLocation loggedStill;
+    private @Nullable String loggedStillKey;
 
     /**
      * Opens the book: the only entry point, called from {@code CharacterBookItem.use} on the client.
@@ -211,7 +216,7 @@ public final class CharacterBookScreen extends Screen {
         // worth logging again (they are the same characters, but "the branch I took" is what the log is
         // for, and this is the one place a screen's state starts).
         faceBranchLogged.clear();
-        loggedStill = null;
+        loggedStillKey = null;
         if (selected != null && !ClientRosterCache.owns(selected)) {
             // The selected character is gone (a different player's book, or a save swap): clearing keeps
             // the growth view from describing somebody else's character.
@@ -402,8 +407,11 @@ public final class CharacterBookScreen extends Screen {
                     TierAvatar.forRosterEntry(definition, entry),
                     entry.tier() >= GrowthFacts.MAX_TIER);
             logTierOnce(definition, entry);
-            WheelIconDraw.draw(graphics, layout.cellIconCentreX(i), cell.centreY(), icon,
-                    Optional.ofNullable(definition), layout.cellIconRadius());
+            // Square, not circular: the picture is a square blit, so a ring at half its edge cut through her
+            // face and left the corners outside it — 「角色册里面头像的那个圆圈」. The square frame hugs the slot
+            // instead. See WheelIconDraw's class javadoc.
+            WheelIconDraw.drawSquare(graphics, layout.cellIconLeft(i), layout.cellIconTop(i),
+                    layout.cellIconDiameter(), icon, Optional.ofNullable(definition));
 
             // Level above, name below, both clipped to the text column the cell's measurement tier
             // defines — truncated rather than allowed to run into the neighbouring cell.
@@ -463,13 +471,15 @@ public final class CharacterBookScreen extends Screen {
             CharacterDef definition = definitionOf(occupant.get());
             // Same rule as the roster cell, so a character cannot wear one face in the grid and another in
             // the slot beside it. The slot has no progress row of its own, so the tier comes from the roster
-            // through TierAvatar.forPartySlot. The ring is now a frame *around* her face rather than the
-            // only thing in the circle ("编队槽也有这个问题").
+            // through TierAvatar.forPartySlot. The frame is square here too: the slot blits a square portrait
+            // into a 16-pixel square, and the old ring cut its corners just as it did in the grid
+            // (「编队槽也有这个问题」).
             WheelIcon icon = WheelIcon.of(
                     TierAvatar.forPartySlot(definition, occupant.get()),
                     ClientPartyCache.enhanced(slot));
-            WheelIconDraw.draw(graphics, box.centreX(), box.centreY(), icon,
-                    Optional.ofNullable(definition), layout.slotIconRadius());
+            WheelIconDraw.drawSquare(graphics, box.centreX() - layout.slotIconDiameter() / 2,
+                    box.centreY() - layout.slotIconDiameter() / 2, layout.slotIconDiameter(), icon,
+                    Optional.ofNullable(definition));
         }
     }
 
@@ -795,42 +805,56 @@ public final class CharacterBookScreen extends Screen {
     /**
      * {@return the still to draw behind the panel for {@code characterId}, empty when there is none}
      *
-     * <p>Delegates to {@link TierAvatar#stillOf}, which is where the "which picture fills the panel" rule is
-     * written. Reading {@code definition.still()} here directly would work today and would be the second
-     * copy the moment anything else needs the same answer.
+     * <p>Delegates to {@link TierAvatar#stillOf(CharacterDef, ResourceLocation)}, which is where the "which
+     * picture fills the panel <em>at this character's affection tier</em>" rule is written. Reading
+     * {@code definition.still()} here directly would work today and would be the second copy the moment
+     * anything else needs the same answer — and it would also pin the background to one picture forever,
+     * which is the defect 「背景立绘要随着好感的升阶更换背景立绘」 describes.
      *
      * @param characterId the character, or {@code null} for "nothing selected"
      */
     private Optional<ResourceLocation> stillOf(@Nullable ResourceLocation characterId) {
         return characterId == null ? Optional.empty()
-                : TierAvatar.stillOf(definitionOf(characterId));
+                : TierAvatar.stillOf(definitionOf(characterId), characterId);
     }
 
     /**
-     * Logs, once per change, which character's still the panel is drawing.
+     * Logs, once per change, which character's still the panel is drawing — <b>and</b> which tier picked it.
      *
-     * <p>This is the evidence for the two things the human asked for and no test can see: that the book opens
-     * with slot 1's character as the background (「默认使用角色1当背景」), and that clicking another cell swaps it
-     * (「点击头像后，显示完全的角色立绘当背景」). A per-frame line would be a formatting cost at 300 fps for a fact
-     * that only moves when the player clicks, so it fires on a change and names both ids.
+     * <p>This is the evidence for three things the human asked for and no test can see: that the book opens
+     * with slot 1's character as the background (「默认使用角色1当背景」), that clicking another cell swaps it
+     * (「点击头像后，显示完全的角色立绘当背景」), and that the picture follows affection (「背景立绘要随着好感的升阶
+     * 更换背景立绘」). The third one is why the log key is the character <b>plus the still</b> and not the
+     * character alone: a tier crossing changes the picture while the selection stays put, and that is exactly
+     * the swap worth proving.
+     *
+     * <p>A per-frame line would be a formatting cost at 300 fps for a fact that moves when the player clicks
+     * or gains affection, so it fires on a change and names the tier and the texture.
      *
      * @param characterId the selected character, or {@code null}
      * @param still       the texture that will be blitted, or {@code null}
      */
     private void logStillOnce(@Nullable ResourceLocation characterId, @Nullable ResourceLocation still) {
-        if (java.util.Objects.equals(characterId, loggedStill)) {
+        // Keyed on both halves: within one character the still can change (a tier crossing), and that swap
+        // is the whole point of the field being tiered.
+        String key = (characterId == null ? "(none)" : characterId.toString()) + "|"
+                + (still == null ? "(none)" : still.toString());
+        if (key.equals(loggedStillKey)) {
             return;
         }
-        ResourceLocation before = loggedStill;
-        loggedStill = characterId;
+        String before = loggedStillKey;
+        loggedStillKey = key;
         if (characterId == null) {
             Astrum.LOGGER.info("astrum: book still background -> (none): nothing is selected, so the panel "
-                    + "keeps its plain dark body (was {})", before == null ? "(none)" : before);
+                    + "keeps its plain dark body (was {})", before);
             return;
         }
-        Astrum.LOGGER.info("astrum: book still background {} -> {} draws {}",
-                before == null ? "(none)" : before, characterId,
-                still == null ? "(no still art, plain dark body)" : still.toString());
+        int tier = TierAvatar.tierOf(characterId);
+        Astrum.LOGGER.info("astrum: book still background {} -> {} draws {} at tier {} (affection {})",
+                before, characterId,
+                still == null ? "(no still art, plain dark body)" : still.toString(),
+                tier, ClientRosterCache.entry(characterId)
+                        .map(RosterSyncPayload.Entry::affection).orElse(-1));
     }
 
     /**

@@ -206,6 +206,6 @@ class KillExperienceTest {
                 GROWTH, affection,
                 java.util.Optional.empty(), java.util.Optional.empty(),
                 java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),
-                java.util.Optional.empty());
+                java.util.Optional.empty(), java.util.Optional.empty());
     }
 }

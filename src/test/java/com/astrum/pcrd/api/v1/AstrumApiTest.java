@@ -68,6 +68,6 @@ class AstrumApiTest {
                 new GrowthDef(100, 1.15, 30),
                 new AffectionDef(3, 8, List.of()),
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
-                Optional.empty(), Optional.empty());
+                Optional.empty(), Optional.empty(), Optional.empty());
     }
 }

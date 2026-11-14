@@ -110,20 +110,34 @@ class OfficialPanelTest {
         }
     }
 
-    /** The still is packaged at the size the cover crop assumes, and it is the downscaled size, not the original. */
+    /**
+     * Both stills are packaged at the size the cover crop assumes, and both are the downscaled size, not the
+     * originals.
+     *
+     * <h2>Why both rungs, and not just one</h2>
+     * The panel now draws a <b>per-tier</b> still (「背景立绘要随着好感的升阶更换背景立绘」): the 3★ rung at affection
+     * tier 1 and 2, the 6★ rung at tier 3. Both are cropped by the same {@link StillCover} arithmetic, so both
+     * must be at the committed size — a missing 6★ file would silently draw the 3★ picture forever, which is
+     * exactly the defect this feature fixes, and it would look like nothing at all.
+     */
     @Test
-    void theShippedStillIsTheCommittedDerivedSize() throws Exception {
-        BufferedImage still = load("gui/still/djeeta.png");
-        assertEquals(StillCover.STILL_WIDTH, still.getWidth(),
-                "StillCover crops using this width; a re-export at another size would crop the wrong region");
-        assertEquals(StillCover.STILL_HEIGHT, still.getHeight());
+    void theShippedStillsAreTheCommittedDerivedSize() throws Exception {
+        for (String rung : new String[] {"3", "6"}) {
+            String path = "gui/still/djeeta_" + rung + ".png";
+            BufferedImage still = load(path);
+            assertEquals(StillCover.STILL_WIDTH, still.getWidth(),
+                    "StillCover crops using this width; a re-export at another size would crop the wrong "
+                            + "region (" + path + ")");
+            assertEquals(StillCover.STILL_HEIGHT, still.getHeight(), path);
 
-        // The official file is 1408x792 / ~1 MB. Anything near that means the raw still was committed.
-        long bytes = resourceSize("/assets/astrum/textures/gui/still/djeeta.png");
-        assertTrue(bytes > 20_000, "the still must be a real picture, got " + bytes + " B");
-        assertTrue(bytes < 400_000,
-                "the still is " + bytes + " B: the committed file must be the derived 512x288, not the "
-                        + "official ~1 MB original");
+            // The official files are 1408x792 / ~1 MB and ~1.25 MB. Anything near that means the raw still
+            // was committed.
+            long bytes = resourceSize("/assets/astrum/textures/" + path);
+            assertTrue(bytes > 20_000, path + " must be a real picture, got " + bytes + " B");
+            assertTrue(bytes < 400_000,
+                    path + " is " + bytes + " B: the committed file must be the derived 512x288, not the "
+                            + "official ~1 MB original");
+        }
     }
 
     // -----------------------------------------------------------------------------------------

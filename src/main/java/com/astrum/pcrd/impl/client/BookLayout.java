@@ -625,6 +625,11 @@ public final class BookLayout {
                 metrics.cell().width(), metrics.cell().height());
     }
 
+    /** {@return the edge of a roster cell's square portrait} */
+    public int cellIconDiameter() {
+        return metrics.cell().iconDiameter();
+    }
+
     /** {@return the radius of a roster cell's portrait} */
     public double cellIconRadius() {
         return metrics.cell().iconRadius();
@@ -634,6 +639,24 @@ public final class BookLayout {
     public int cellIconCentreX(int indexInPage) {
         Box cell = cell(indexInPage);
         return cell == null ? 0 : cell.x() + metrics.cell().iconCentreX();
+    }
+
+    /**
+     * {@return the left edge of a roster cell's square portrait, or {@code 0} past the page}
+     *
+     * <p>The square drawing path takes the picture's left and top edges rather than a centre and a radius,
+     * because a square has no radius. Both are derived from the same {@code Cell.iconInset} the centre form
+     * uses, so the two cannot disagree about where the picture is.
+     */
+    public int cellIconLeft(int indexInPage) {
+        Box cell = cell(indexInPage);
+        return cell == null ? 0 : cell.x() + metrics.cell().iconInset();
+    }
+
+    /** {@return the top edge of a roster cell's square portrait, or {@code 0} past the page} */
+    public int cellIconTop(int indexInPage) {
+        Box cell = cell(indexInPage);
+        return cell == null ? 0 : cell.y() + metrics.cell().iconInset();
     }
 
     /** {@return the box of the level line inside a roster cell (empty past the page)} */
@@ -664,6 +687,17 @@ public final class BookLayout {
     /** {@return the radius of a party-slot portrait} */
     public double slotIconRadius() {
         return metrics.slotSize() / 2.0 - 2.0;
+    }
+
+    /**
+     * {@return the edge of a party slot's square portrait}
+     *
+     * <p>Derived from {@link #slotIconRadius()} rather than restated, so the two drawing forms cannot drift:
+     * the slot leaves 2 pixels of plate on each side of the picture, and the square side is that radius
+     * doubled.
+     */
+    public int slotIconDiameter() {
+        return (int) (slotIconRadius() * 2);
     }
 
     /**

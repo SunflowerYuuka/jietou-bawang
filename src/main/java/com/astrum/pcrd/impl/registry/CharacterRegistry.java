@@ -106,7 +106,9 @@ public final class CharacterRegistry {
             new GrowthDef(0, 0.0, 0),
             new AffectionDef(0, 0, List.of()),
             Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
-            Optional.empty(), Optional.empty());
+            Optional.empty(), Optional.empty(),
+            // still6th: the invalid definition ships no still art at either rung.
+            Optional.empty());
 
     /**
      * Codec the registry is built with, for both disk and network: decodes like
