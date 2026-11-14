@@ -169,32 +169,22 @@ public final class HudLayout {
         return Math.max(0.0, Math.min(1.0, charge / 100.0));
     }
 
-    /** Bar colour with an empty gauge. */
-    public static final int CHARGE_LOW = 0xFF3FA34D;
-
-    /** Bar colour with a full gauge: gold, the same family as the wheel's ready outline. */
-    public static final int CHARGE_FULL = 0xFFFFC93C;
-
     /**
-     * {@return the bar colour for a fill fraction}
+     * The bar has <b>no colour of its own</b> any more — and that is the fix, not an omission.
      *
-     * <p>Green to gold, alpha always {@code FF}: the gauge is information, so it stays opaque, and it
-     * never changes hue for anything but the fraction — a colour that also encoded the cooldown would
-     * make two different problems look the same.
+     * <p>This class used to expose a {@code CHARGE_LOW → CHARGE_FULL} green-to-gold ramp
+     * ({@code chargeColor(fraction)}) that the HUD painted over the gauge art as a translucent wash, to give
+     * the bar a cold-to-hot reading. When the bar became the game's own <b>fever bar</b>
+     * ({@code pct_fever_bar.png}), that reading moved into the art: the official sprite is a rainbow ramp
+     * across its own width, so a wash over it muted exactly the gradient the human asked to see
+     * (「UB槽的UI不行，用官方的」). The wash is gone, the ramp is therefore unreachable, and a tested-but-unused
+     * ramp is worse than no ramp — it reads as "the tint is still there somewhere".
      *
-     * @param fraction filled fraction, {@code 0.0}–{@code 1.0}; clamped
+     * <p>What is left is the one reading the art does not carry: {@code ready}, the state
+     * {@code UbHud} draws as a gold outline when the bar is full <em>and</em> the cooldown has ended. That colour
+     * lives in {@code UbHud.READY_OUTLINE}, next to the four {@code fill} calls that use it, rather than here as a
+     * second constant nothing derives from.
      */
-    public static int chargeColor(double fraction) {
-        double t = Math.max(0.0, Math.min(1.0, fraction));
-        int r = lerp((CHARGE_LOW >> 16) & 0xFF, (CHARGE_FULL >> 16) & 0xFF, t);
-        int g = lerp((CHARGE_LOW >> 8) & 0xFF, (CHARGE_FULL >> 8) & 0xFF, t);
-        int b = lerp(CHARGE_LOW & 0xFF, CHARGE_FULL & 0xFF, t);
-        return 0xFF000000 | (r << 16) | (g << 8) | b;
-    }
-
-    private static int lerp(int from, int to, double t) {
-        return (int) Math.round(from + (to - from) * t);
-    }
 
     private static int clamp(int value, int min, int max) {
         return Math.max(min, Math.min(max, value));

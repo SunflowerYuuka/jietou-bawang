@@ -42,8 +42,9 @@ import org.jetbrains.annotations.ApiStatus;
  * three-segment tail. The fever bar is a real bar and already carries the game's own rainbow ramp
  * (mint → cyan → blue → violet → pink → peach → yellow), so the cold-to-hot reading the tint used to add is
  * <em>in the art</em>. A wash over it would mute precisely the gradient the human asked to see, so the
- * ordinary charge has no wash at all and only the refusal flash tints the fill. {@link HudLayout#chargeColor}
- * stays: it is still the ready outline's colour, and {@code HudLayoutTest} still pins its ends.
+ * ordinary charge has no wash at all and only the refusal flash tints the fill. {@code HudLayout}'s green-to-gold
+ * {@code chargeColor} ramp went with the wash: its one remaining job (the ready outline) is {@link #READY_OUTLINE}
+ * below, which is a constant the four {@code fill} calls read rather than a curve nothing drew.
  *
  * <h2>What it reads</h2>
  * {@link ClientUbCache} — the client's mirror of the server's gauge, the readers of which exist for

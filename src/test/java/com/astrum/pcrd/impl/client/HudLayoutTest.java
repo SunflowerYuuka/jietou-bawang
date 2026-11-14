@@ -95,12 +95,40 @@ class HudLayoutTest {
         assertEquals(0.0, HudLayout.chargeFraction(Float.NaN), 1e-9);
     }
 
+    /**
+     * This class no longer has a charge <b>colour</b>, and the absence is deliberate.
+     *
+     * <p>The bar's cold-to-hot ramp used to live here ({@code chargeColor} over {@code CHARGE_LOW}..{@code
+     * CHARGE_FULL}) and the HUD painted it over the gauge art. When the gauge became the game's own horizontal
+     * fever bar (「UB槽的UI不行，用官方的」), the ramp moved <em>into the art</em>: the official sprite is a rainbow
+     * across its width, so the wash was muting the gradient the human asked for. The method and its two constants
+     * are deleted rather than kept as a tested-but-unused ramp.
+     *
+     * <p>Asserted structurally, because "a member is gone" is not expressible as a value: a reflection lookup that
+     * succeeds means somebody reintroduced a second source of colour for a bar whose colour is now a texture.
+     */
     @Test
-    void chargeColourIsOpaqueAndEndsOnTheDocumentedColours() {
-        assertEquals(0xFF, HudLayout.chargeColor(0.0) >>> 24);
-        assertEquals(0xFF, HudLayout.chargeColor(1.0) >>> 24);
-        assertEquals(HudLayout.CHARGE_LOW, HudLayout.chargeColor(0.0));
-        assertEquals(HudLayout.CHARGE_FULL, HudLayout.chargeColor(1.0));
-        assertEquals(HudLayout.CHARGE_LOW, HudLayout.chargeColor(-3.0), "out of range is clamped");
+    void theChargeColourRampIsGoneBecauseTheBarIsArtNow() {
+        for (String member : java.util.List.of("chargeColor", "lerp")) {
+            boolean present;
+            try {
+                HudLayout.class.getDeclaredMethod(member, double.class);
+                present = true;
+            } catch (NoSuchMethodException expected) {
+                present = false;
+            }
+            assertTrue(!present, "HudLayout." + member + " is back: the bar's colour is the fever bar's own "
+                    + "rainbow now, and a second ramp is a second answer to the same question");
+        }
+        for (String field : java.util.List.of("CHARGE_LOW", "CHARGE_FULL")) {
+            boolean present;
+            try {
+                HudLayout.class.getDeclaredField(field);
+                present = true;
+            } catch (NoSuchFieldException expected) {
+                present = false;
+            }
+            assertTrue(!present, "HudLayout." + field + " is back without a reader");
+        }
     }
 }
