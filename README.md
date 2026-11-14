@@ -1,6 +1,10 @@
-# Astrum
+# 接头霸王 (jietou-bawang)
+
+![banner](docs/images/banner.png)
 
 > 把《公主连结 Re:Dive》的角色带进 Minecraft 1.21.1：抽卡、养成、编队、放必杀。
+>
+> 模组 id 是 **`astrum`**；仓库名取自凯露接头那个梗。
 >
 > **English abstract.** Astrum is a NeoForge mod for Minecraft 1.21.1 that brings Princess Connect!
 > Re:Dive characters into the game as *data*, not as hard-coded content. A character is a JSON file in
@@ -9,7 +13,7 @@
 > worked example. The vertical slice covers the whole loop: craft a character card, enrol the
 > character, build a party in the character book, fight for experience, feed her dishes to raise
 > affection, and fire an ultimate that shows a screen effect and settles its damage. Zero Mixins; every
-> hook is a NeoForge event. Verified with 663 automated tests and a recorded acceptance matrix
+> hook is a NeoForge event. Verified with 791 automated tests and a recorded acceptance matrix
 > ([docs/acceptance.md](docs/acceptance.md)).
 
 ---
@@ -164,6 +168,39 @@ tick 轮询，所以「立刻结算」是唯一不需要新子系统的选择—
 数据是**容错**的：字段缺失走默认，未知字段被忽略而不是让整个注册表崩掉；某一项写坏时该角色退化为占位符，
 其余角色照常工作。
 
+## 素材准备（重要：仓库不含美术资源）
+
+**本仓库只包含源代码与生成脚本，不包含任何从游戏提取的美术资源。**
+角色头像、立绘、技能图标、特效贴图、充能条等派生自官方美术的文件都被 `.gitignore` 排除。
+
+直接用本仓库构建出的 jar **能加载、能玩**，但美术会退化成占位图（纯色块、通用符文、纯色进度条）——
+因为所有读取贴图的代码路径都有降级分支。
+
+想要完整的视觉效果，需要自己在本地准备素材：
+
+1. **解包游戏资源**，放到 `K:\AI\Minecraft\assets\pcr\`（或修改脚本里的路径），
+   预期的目录结构见 `tools/` 下各 `gen_*.py` 的 `SRC` 常量。
+2. **跑生成脚本**，例如：
+
+```powershell
+cd tools
+python gen_portraits.py          # 头像
+python gen_tier_avatars.py       # 1★/3★/6★ 分档头像
+python gen_still_backgrounds.py  # 角色册立绘背景
+python gen_skill_icons.py        # 技能图标
+python gen_buff_icon.py          # 状态栏图标
+python gen_ub_particles.py       # 大招粒子
+python gen_ub_gauge_texture.py   # 充能条
+python gen_book_panel_texture.py # 角色册边框
+```
+
+每个脚本都有 `--check` 模式，只校验输出规格（尺寸、体积预算、透明边）而不写文件。
+
+3. 重新 `gradlew build`，产出的 jar 就带完整美术。
+
+> ⚠️ **素材版权归 Cygames, Inc.**，本仓库不分发它们，也不为你的使用方式背书。
+> 详见 [NOTICE.md](NOTICE.md)。
+
 ## 鸣谢
 
 本 mod 是非官方同人作品。没有下面这些项目，它不会存在：
@@ -191,6 +228,14 @@ tick 轮询，所以「立刻结算」是唯一不需要新子系统的选择—
 - 本 mod 是**非官方同人作品**，与 Cygames, Inc. 无任何关联，未获其授权或认可。
 - 《公主连结 Re:Dive》及其角色、名称、美术、音乐等一切原作内容的**版权归 Cygames, Inc. 所有**。
 - 本 mod **不用于任何商业用途**，不售卖、不内购、不附带任何形式的收费。
-- mod 内引用的原作素材**仅作本地引用**，本仓库不再分发原始素材文件。
+- **本仓库不包含任何从游戏提取的美术资源。** 所有派生贴图都被 `.gitignore` 排除，只留生成脚本；
+  想获得完整美术需自行准备素材并运行脚本（见「素材准备」一节）。
 - 如果你是版权方并认为本 mod 侵犯了你的权益，请通过仓库 issue 联系，我们会**在收到请求后立即下架**相关内容。
 - Minecraft 是 Mojang Studios 的商标，本 mod 同样与之无关。
+- 源代码以 [MIT](LICENSE) 协议发布；**该协议仅覆盖代码，不覆盖任何原作素材**。
+
+## 协议
+
+源代码采用 **MIT**。你可以自由使用、修改、再分发代码，包括放进整合包，只要保留版权声明。
+
+美术素材不在本仓库中，不适用 MIT。
