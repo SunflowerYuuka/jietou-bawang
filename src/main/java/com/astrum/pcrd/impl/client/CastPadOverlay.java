@@ -150,7 +150,7 @@ public final class CastPadOverlay {
         }
         Optional<CharacterDef> definition = AstrumApi.characters()
                 .flatMap(registry -> Optional.ofNullable(registry.get(id.get())));
-        WheelIcon icon = WheelIcon.of(definition.flatMap(CharacterDef::portrait),
+        WheelIcon icon = WheelIcon.of(definition.flatMap(CharacterDef::face),
                 ClientPartyCache.enhanced(slot));
         return WheelIconDraw.draw(graphics, x, y, icon, definition, ICON_RADIUS);
     }

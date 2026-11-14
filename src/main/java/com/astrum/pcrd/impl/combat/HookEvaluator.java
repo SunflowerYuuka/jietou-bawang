@@ -65,15 +65,22 @@ public final class HookEvaluator {
      * @param facts what just happened, as the eight triggers see it
      */
     public static void evaluate(CharacterDef def, HookContext ctx, TriggerFacts facts) {
-        evaluateHooks(def, facts,
+        SkillRotation before = SkillRotationStore.get(ctx.attacker().getUUID(), ctx.characterId());
+        HookPlan.Outcome outcome = fire(def, facts,
                 chance -> roll(chance, ctx.attacker()),
                 (index, hook) -> Optional.ofNullable(EffectExecutors.run(hook, ctx.forHook(index))),
-                invalid -> warnInvalid(invalid, ctx));
+                invalid -> warnInvalid(invalid, ctx),
+                before);
+        if (outcome.rotation() != before) {
+            // The one write-back: only this method knows whether her skill actually fired, which is the
+            // human's condition for advancing the cursor.
+            SkillRotationStore.put(ctx.attacker().getUUID(), ctx.characterId(), outcome.rotation());
+        }
     }
 
     /**
      * The adapter's hook-list-to-effects path: {@link #evaluate} with its two game-bound seams — the
-     * chance roll and the effect runner — passed in.
+     * chance roll and the effect runner — passed in, and the character's rotation at its start.
      *
      * <p>This exists so a test can walk <b>the route production takes</b> from a {@link CharacterDef}
      * to a chain of effects without a {@link HookContext}, which needs a server. That distinction is
@@ -91,7 +98,30 @@ public final class HookEvaluator {
     @ApiStatus.Internal
     static void evaluateHooks(CharacterDef def, TriggerFacts facts, DoublePredicate chance,
             HookPlan.EffectRun effects, Consumer<HookPlan.Invalid> onInvalid) {
-        HookPlan.fire(def.effects(), facts, chance, effects, onInvalid);
+        fire(def, facts, chance, effects, onInvalid, SkillRotation.START);
+    }
+
+    /**
+     * {@return what ran, and the character's rotation after this event} — the seam a test drives to walk
+     * several swings of one character without a world.
+     *
+     * @param def      the character whose hooks run
+     * @param facts    what just happened
+     * @param chance   the chance roll, once per hook that is about to run
+     * @param effects  runs one hook
+     * @param onInvalid receives every hook that cannot work as written
+     * @param rotation her cursor before this event
+     */
+    @ApiStatus.Internal
+    static HookPlan.Outcome evaluateHooks(CharacterDef def, TriggerFacts facts, DoublePredicate chance,
+            HookPlan.EffectRun effects, Consumer<HookPlan.Invalid> onInvalid, SkillRotation rotation) {
+        return fire(def, facts, chance, effects, onInvalid, rotation);
+    }
+
+    /** One call into {@link HookPlan#fire}, so both entry points above share every argument. */
+    private static HookPlan.Outcome fire(CharacterDef def, TriggerFacts facts, DoublePredicate chance,
+            HookPlan.EffectRun effects, Consumer<HookPlan.Invalid> onInvalid, SkillRotation rotation) {
+        return HookPlan.fire(def.effects(), facts, chance, effects, onInvalid, rotation);
     }
 
     /**

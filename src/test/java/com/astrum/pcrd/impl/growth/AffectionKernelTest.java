@@ -39,7 +39,8 @@ class AffectionKernelTest {
         assertEquals(3, AFFECTION.tier2Threshold());
         assertEquals(8, AFFECTION.tier3Threshold());
         assertEquals(1, AFFECTION.tier2HookModifiers().size());
-        assertEquals(1, AFFECTION.tier2HookModifiers().get(0).hookIndex());
+        assertEquals(0, AFFECTION.tier2HookModifiers().get(0).hookIndex(),
+                "djeeta's hook 0 is 广域斩击 (extra_damage); her rotation put it first");
         assertEquals(1.5, AFFECTION.tier2HookModifiers().get(0).mult(), 1e-9);
     }
 
@@ -85,10 +86,11 @@ class AffectionKernelTest {
 
     @Test
     void tierTwoScalesOnlyTheHooksTheDatapackListed() {
-        assertEquals(1.5, AffectionKernel.hookMultiplier(AFFECTION, 1, 2), 1e-9,
-                "spec §6.4: tier 2 multiplies hook index 1 by 1.5");
-        assertEquals(1.0, AffectionKernel.hookMultiplier(AFFECTION, 0, 2), 1e-9,
-                "hook 0 is not in the list, so it stays exactly as declared");
+        // The shipped datapack lists hook 0 (广域斩击 / extra_damage) — her first rotating skill.
+        assertEquals(1.5, AffectionKernel.hookMultiplier(AFFECTION, 0, 2), 1e-9,
+                "tier 2 multiplies the hook the datapack lists, which is index 0");
+        assertEquals(1.0, AffectionKernel.hookMultiplier(AFFECTION, 1, 2), 1e-9,
+                "hook 1 is not in the list, so it stays exactly as declared");
         assertEquals(1.0, AffectionKernel.hookMultiplier(AFFECTION, 2, 2), 1e-9);
     }
 
@@ -101,7 +103,7 @@ class AffectionKernelTest {
 
     @Test
     void tierThreeKeepsTheNumbersTierTwoEarned() {
-        assertEquals(1.5, AffectionKernel.hookMultiplier(AFFECTION, 1, 3), 1e-9,
+        assertEquals(1.5, AffectionKernel.hookMultiplier(AFFECTION, 0, 3), 1e-9,
                 "reaching tier 3 must not cost the multiplier earned at tier 2");
     }
 

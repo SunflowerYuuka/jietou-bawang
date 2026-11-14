@@ -36,7 +36,7 @@ class CharacterDefCodecTest {
     }
 
     @Test
-    void roundTripsAllEightEffectTypes() {
+    void roundTripsAllNineEffectTypes() {
         List<String> hooks = List.of(
             "{\"trigger\":\"melee_hit\",\"effect\":\"apply_effect\",\"effectParams\":{\"effect\":\"minecraft:poison\",\"duration\":100,\"amplifier\":0}}",
             "{\"trigger\":\"crit\",\"effect\":\"extra_damage\",\"effectParams\":{\"amount\":3.0}}",
@@ -45,7 +45,8 @@ class CharacterDefCodecTest {
             "{\"trigger\":\"combo_n\",\"triggerParams\":{\"hits\":3},\"effect\":\"area_charge\",\"effectParams\":{\"radius\":8.0,\"amount\":3.0,\"includeSelf\":true}}",
             "{\"trigger\":\"combo_n\",\"triggerParams\":{\"hits\":3},\"effect\":\"splash\",\"chance\":0.5,\"effectParams\":{\"radius\":3.0,\"damage\":4.0}}",
             "{\"trigger\":\"melee_hit\",\"effect\":\"stack\",\"effectParams\":{\"stackId\":\"astrum:poison\",\"max\":5}}",
-            "{\"trigger\":\"stack_full\",\"triggerParams\":{\"stackId\":\"astrum:poison\"},\"effect\":\"detonate\",\"effectParams\":{\"damagePerStack\":2.0,\"radius\":3.0}}");
+            "{\"trigger\":\"stack_full\",\"triggerParams\":{\"stackId\":\"astrum:poison\"},\"effect\":\"detonate\",\"effectParams\":{\"damagePerStack\":2.0,\"radius\":3.0}}",
+            "{\"trigger\":\"melee_hit\",\"effect\":\"attack_buff\",\"effectParams\":{\"multiplier\":1.5,\"seconds\":18.0}}");
         for (String h : hooks) {
             var json = JsonParser.parseString(h);
             var hook = EffectHook.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
@@ -85,10 +86,11 @@ class CharacterDefCodecTest {
 
     @Test
     void ubDefRoundTripsOptionalBridges() {
-        var full = new UbTier("tempest_blade", 1, 20.0, OptionalDouble.of(4.0), OptionalDouble.of(1.3),
-                360, OptionalDouble.of(0.2), Optional.of("armor_break"));
-        var bare = new UbTier("seiga_itten", 4, 20.0, OptionalDouble.empty(), OptionalDouble.empty(),
-                0, OptionalDouble.empty(), Optional.empty());
+        var full = new UbTier("tempest_blade", 4, 20.0, OptionalDouble.of(4.0),
+                Optional.of(new UbTier.AttackBuffDef(1.5, 18.0)), OptionalDouble.of(0.2),
+                Optional.of("armor_break"));
+        var bare = new UbTier("seiga_itten", 4, 20.0, OptionalDouble.empty(), Optional.empty(),
+                OptionalDouble.empty(), Optional.empty());
         var def = new UbDef(full, bare);
 
         var enc = UbDef.CODEC.encodeStart(JsonOps.INSTANCE, def).getOrThrow();
@@ -96,13 +98,33 @@ class CharacterDefCodecTest {
 
         var decoded = UbDef.CODEC.parse(JsonOps.INSTANCE, enc).getOrThrow();
         assertEquals(4.0, decoded.base().radius().getAsDouble());
-        assertEquals(1.3, decoded.base().selfAtkBuff().getAsDouble());
+        assertEquals(1.5, decoded.base().attackBuff().orElseThrow().multiplier());
+        assertEquals(18.0, decoded.base().attackBuff().orElseThrow().seconds());
         assertEquals(0.2, decoded.base().teamChargeBonus().getAsDouble());
         assertEquals("armor_break", decoded.base().extra().orElseThrow());
         assertTrue(decoded.enhanced().radius().isEmpty());
-        assertTrue(decoded.enhanced().selfAtkBuff().isEmpty());
+        assertTrue(decoded.enhanced().attackBuff().isEmpty());
         assertTrue(decoded.enhanced().teamChargeBonus().isEmpty());
         assertTrue(decoded.enhanced().extra().isEmpty());
+    }
+
+    /**
+     * The attack buff is a real hook shape, and it round-trips.
+     *
+     * <p>Added with {@link EffectType#ATTACK_BUFF}: a value that decodes but cannot be re-encoded would
+     * break a pack round-trip silently, so the pair is asserted rather than only the decode.
+     */
+    @Test
+    void attackBuffHookRoundTrips() {
+        var json = JsonParser.parseString("{\"trigger\":\"melee_hit\",\"effect\":\"attack_buff\","
+                + "\"effectParams\":{\"multiplier\":1.5,\"seconds\":18.0}}");
+        var hook = EffectHook.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
+        assertInstanceOf(EffectHook.AttackBuff.class, hook);
+        assertEquals(EffectType.ATTACK_BUFF, hook.type());
+        assertEquals(1.5, ((EffectHook.AttackBuff) hook).multiplier());
+        assertEquals(18.0, ((EffectHook.AttackBuff) hook).seconds());
+        var reEncoded = EffectHook.CODEC.encodeStart(JsonOps.INSTANCE, hook).getOrThrow();
+        assertEquals(Optional.of(hook), EffectHook.CODEC.parse(JsonOps.INSTANCE, reEncoded).result());
     }
 
     @Test

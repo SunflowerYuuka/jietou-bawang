@@ -8,6 +8,8 @@ import com.astrum.pcrd.api.v1.HookModifier;
 import com.astrum.pcrd.impl.InternalIds;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.OptionalDouble;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
@@ -149,10 +151,10 @@ class KillExperienceTest {
         GrowthMultiplier growth = GrowthMultiplier.of(new CharacterProgress(1, 0, 3),
                 definition(AFFECTION));
         assertEquals(2, growth.tier(), "affection 3 is the shipped tier-2 threshold");
-        assertEquals(1.5, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 1), 1e-9,
-                "hook index 1 is the one the pack lists at 1.5");
-        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 0), 1e-9,
-                "hook index 0 was not listed, so it must not move");
+        assertEquals(1.5, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 0), 1e-9,
+                "hook index 0 is the one the pack lists at 1.5");
+        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 1), 1e-9,
+                "hook index 1 was not listed, so it must not move");
         assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 2), 1e-9);
     }
 
@@ -165,7 +167,7 @@ class KillExperienceTest {
         GrowthMultiplier growth = GrowthMultiplier.of(new CharacterProgress(1, 0, 8),
                 definition(AFFECTION));
         assertEquals(3, growth.tier());
-        assertEquals(1.5, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 1), 1e-9,
+        assertEquals(1.5, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 0), 1e-9,
                 "tier 3 must not lose tier 2's hook modifier");
         assertTrue(AffectionKernel.usesEnhancedUb(growth.tier()));
     }
@@ -196,11 +198,11 @@ class KillExperienceTest {
                 java.util.Optional.empty(), java.util.Optional.empty(), List.of(),
                 new com.astrum.pcrd.api.v1.UbDef(
                         new com.astrum.pcrd.api.v1.UbTier("base", 1, 20.0,
-                                java.util.OptionalDouble.empty(), java.util.OptionalDouble.empty(), 0,
-                                java.util.OptionalDouble.empty(), java.util.Optional.empty()),
+                                java.util.OptionalDouble.empty(), Optional.empty(),
+                                OptionalDouble.empty(), java.util.Optional.empty()),
                         new com.astrum.pcrd.api.v1.UbTier("enhanced", 4, 20.0,
-                                java.util.OptionalDouble.empty(), java.util.OptionalDouble.empty(), 0,
-                                java.util.OptionalDouble.empty(), java.util.Optional.empty())),
+                                java.util.OptionalDouble.empty(), Optional.empty(),
+                                OptionalDouble.empty(), java.util.Optional.empty())),
                 GROWTH, affection,
                 java.util.Optional.empty(), java.util.Optional.empty());
     }

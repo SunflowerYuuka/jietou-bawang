@@ -81,20 +81,14 @@ class BookThemeTest {
             assertTrue(suffixes.add(theme.itemSuffix()), "duplicate item suffix "
                     + theme.itemSuffix());
             assertTrue(books.add(theme.bookItemId().toString()), "duplicate book id");
-            assertTrue(cards.add(theme.cardItemId().toString()), "duplicate card id");
             assertEquals(BookTheme.BOOK_PATH + theme.itemSuffix(), theme.bookPath());
-            assertEquals(BookTheme.CARD_PATH + theme.itemSuffix(), theme.cardPath());
             assertEquals(theme.bookPath(), theme.bookItemId().getPath());
-            assertEquals(theme.cardPath(), theme.cardItemId().getPath());
             assertEquals("astrum", theme.bookItemId().getNamespace());
-            assertEquals("astrum", theme.cardItemId().getNamespace());
         }
         assertEquals("", BookTheme.DEFAULT.itemSuffix(),
                 "the blue book must not rename the item every existing player already owns");
         assertEquals("astrum:character_book", BookTheme.DEFAULT.bookItemId().toString());
-        assertEquals("astrum:character_card", BookTheme.DEFAULT.cardItemId().toString());
         assertEquals("astrum:character_book_sakura", BookTheme.SAKURA.bookItemId().toString());
-        assertEquals("astrum:character_card_forest", BookTheme.FOREST.cardItemId().toString());
     }
 
     // -----------------------------------------------------------------------------------------
@@ -274,8 +268,6 @@ class BookThemeTest {
         for (BookTheme theme : BookTheme.values()) {
             assertSame(theme, BookTheme.ofItemId(theme.bookItemId()),
                     theme + "'s book must open " + theme);
-            assertSame(theme, BookTheme.ofItemId(theme.cardItemId()),
-                    theme + "'s card must report " + theme);
         }
     }
 

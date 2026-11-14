@@ -55,8 +55,6 @@
   "astrum.configuration.maxActiveShowcaseEntities": "演出实体上限",
 
   "item.astrum.character_card": "角色卡",
-  "item.astrum.character_card_sakura": "角色卡·樱",
-  "item.astrum.character_card_forest": "角色卡·森",
   "item.astrum.rice_bowl": "米饭",
 
   "astrum.theme.default": "湛蓝",
@@ -151,6 +149,7 @@
   "astrum.effect.splash": "溅射",
   "astrum.effect.stack": "叠层",
   "astrum.effect.detonate": "引爆",
+  "astrum.effect.attack_buff": "攻击提升",
   "astrum.party.reason.BOOK_UNREADABLE": "角色册读不懂，什么也不能改动",
   "astrum.party.reason.SLOT_OUT_OF_RANGE": "队伍没有这个槽位",
   "astrum.party.reason.NO_REGISTRY": "角色数据还没有加载",
@@ -162,6 +161,8 @@
   "effect.astrum.party_3": "角色效果 3",
   "effect.astrum.party_4": "角色效果 4",
   "effect.astrum.party_5": "角色效果 5",
+
+  "effect.astrum.attack_buff": "攻击提升",
 
   "astrum.growth.fed": "吃下 %1$s：%2$s 名角色的好感提升了。",
   "astrum.growth.already_today": "今天已经喂过 %s 了——每种料理每天一次。",

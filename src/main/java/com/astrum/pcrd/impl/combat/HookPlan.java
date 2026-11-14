@@ -1,6 +1,7 @@
 package com.astrum.pcrd.impl.combat;
 
 import com.astrum.pcrd.api.v1.EffectHook;
+import com.astrum.pcrd.api.v1.Trigger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -49,6 +50,27 @@ import org.jetbrains.annotations.ApiStatus;
  * structure does not already prevent — it could only ever drop a legitimate second effect. So every
  * hook whose trigger matches runs, in list order.
  *
+ * <h2>The per-character skill rotation (and why it lives here)</h2>
+ * 「每次挥砍同时触发队伍五个角色各自的小技能，下一次挥砍触发下一个技能。每个角色的轮转是独立的。」
+ *
+ * <p>So on one {@code melee_hit} event each equipped character fires <b>exactly one</b> of her own
+ * small skills, and the next swing fires the next one. "Which one" is a decision about which effects
+ * run — this class's one job — so it belongs here and not in an executor: an executor sees one hook
+ * and cannot know it is the second of three.
+ *
+ * <p><b>Which hooks rotate.</b> Hooks whose {@link Trigger} is {@link Trigger#MELEE_HIT}. Every other
+ * trigger keeps firing on its own condition, every time that condition holds, exactly as before: the
+ * rotation answers "which of my swings' skills is next", and a {@code crit} or {@code kill} hook is not
+ * a swing skill, it is a different event that happens to be able to fire at the same time. A single
+ * character may legitimately have one rotating hook and three conditional ones.
+ *
+ * <p>The chosen hook is the <b>cursor-th</b> entry of the rotating sub-list (not of {@code effects[]}),
+ * so a character's rotation is unchanged by where the author puts her conditional hooks. The cursor
+ * advances <b>only when her skill actually fires</b>: a failed chance roll leaves it where it is, so the
+ * player gets that skill on the next swing instead of silently skipping it. The consequence worth
+ * knowing is that a <em>permanently</em> broken rotating hook (an invalid parameter) holds the cursor
+ * forever; it is reported once by {@link #invalidReason}'s report path, so the author sees why.
+ *
  * <h2>What this class deliberately does not do</h2>
  * No logging (a caller owns the diagnostics), no {@code HookContext}, no chance arithmetic
  * ({@link HookEvaluator#roll} stays the one place a random number is drawn), and no knowledge of
@@ -88,11 +110,29 @@ public final class HookPlan {
         Optional<ResourceLocation> run(int hookIndex, EffectHook hook);
     }
 
+    /**
+     * The whole answer of one {@link #fire}: what ran, and where the character's rotation now stands.
+     *
+     * @param fired    every effect that ran, in order, including any {@code stack_full} pass
+     * @param rotation the cursor after this event, to be stored by the caller for the next swing
+     */
+    public record Outcome(List<Fired> fired, SkillRotation rotation) {
+
+        public Outcome {
+            fired = List.copyOf(fired);
+            rotation = rotation == null ? SkillRotation.START : rotation;
+        }
+    }
+
     private HookPlan() {
     }
 
     /**
-     * Fires {@code hooks} for one event, in list order.
+     * Fires {@code hooks} for one event, in list order, with the character's rotation at its start.
+     *
+     * <p>The convenience form for a caller that has no cursor to keep — a test, or a character who is
+     * not in a party. It is the same implementation as the five-argument-plus-cursor form and not a
+     * second rule: the rotation is simply discarded.
      *
      * @param hooks     the character's hook list, indexed by its position
      * @param facts     what just happened, as the eight triggers see it
@@ -103,14 +143,43 @@ public final class HookPlan {
      */
     public static List<Fired> fire(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
             EffectRun effects, Consumer<Invalid> onInvalid) {
-        return fire(hooks, facts, chance, effects, onInvalid, true);
+        return fire(hooks, facts, chance, effects, onInvalid, SkillRotation.START).fired();
     }
 
-    private static List<Fired> fire(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
-            EffectRun effects, Consumer<Invalid> onInvalid, boolean allowStackFull) {
+    /**
+     * Fires {@code hooks} for one event, in list order, honouring the character's own rotation.
+     *
+     * <p>See the class javadoc for the rule. In one sentence: of the hooks whose trigger is
+     * {@link Trigger#MELEE_HIT}, exactly the cursor-th runs, and the cursor advances only if that one
+     * actually fired.
+     *
+     * @param hooks     the character's hook list, indexed by its position
+     * @param facts     what just happened, as the eight triggers see it
+     * @param chance    the chance roll; called once per hook that is about to run
+     * @param effects   runs one hook and answers with the stack it filled, if any
+     * @param onInvalid receives every hook that cannot work as written
+     * @param rotation  the cursor this character had before the event; {@code null} means {@link SkillRotation#START}
+     * @return what ran and the cursor to store for the next swing
+     */
+    public static Outcome fire(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
+            EffectRun effects, Consumer<Invalid> onInvalid, SkillRotation rotation) {
+        return fire(hooks, facts, chance, effects, onInvalid,
+                rotation == null ? SkillRotation.START : rotation, true);
+    }
+
+    private static Outcome fire(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
+            EffectRun effects, Consumer<Invalid> onInvalid, SkillRotation rotation,
+            boolean allowStackFull) {
         List<Fired> fired = new ArrayList<>();
+        int rotating = countRotating(hooks);
+        int target = rotation.peek(rotating);
+        int seen = 0;
+        boolean rotatingSkillFired = false;
+        SkillRotation current = rotation;
         for (int index = 0; index < hooks.size(); index++) {
             EffectHook hook = hooks.get(index);
+            boolean rotates = hook.trigger() == Trigger.MELEE_HIT;
+            int position = rotates ? seen++ : -1;
             Optional<String> problem = invalidReason(hook);
             if (problem.isPresent()) {
                 onInvalid.accept(new Invalid(index, hook, problem.get()));
@@ -119,17 +188,43 @@ public final class HookPlan {
             if (!facts.observes(hook.trigger(), hook.triggerParams())) {
                 continue;
             }
+            if (rotates && position != target) {
+                continue;   // her other small skills wait for their own swing
+            }
             if (!chance.test(hook.chance())) {
-                continue;
+                continue;   // a miss must not consume the swing: the cursor stays put
+            }
+            if (rotates) {
+                rotatingSkillFired = true;
             }
             fired.add(new Fired(index, hook));
             Optional<ResourceLocation> filled = effects.run(index, hook);
             if (filled.isPresent() && allowStackFull) {
-                fired.addAll(fire(hooks, TriggerFacts.forStackFull(filled.get()), chance, effects, onInvalid,
-                        false));
+                Outcome pass = fire(hooks, TriggerFacts.forStackFull(filled.get()), chance, effects,
+                        onInvalid, current, false);
+                fired.addAll(pass.fired());
             }
         }
-        return fired;
+        // Advanced once, after the walk: advancing inside the loop would move the cursor under the
+        // feet of the very pass that is deciding what runs.
+        current = rotatingSkillFired ? current.advance(rotating) : current;
+        return new Outcome(fired, current);
+    }
+
+    /**
+     * {@return how many of {@code hooks} take part in the character's rotation}
+     *
+     * <p>Derived from the trigger, never stored: adding or removing a {@code melee_hit} hook in a pack
+     * re-derives the period on the next swing, and a stale count cannot outlive the JSON that caused it.
+     */
+    private static int countRotating(List<EffectHook> hooks) {
+        int rotating = 0;
+        for (EffectHook hook : hooks) {
+            if (hook.trigger() == Trigger.MELEE_HIT) {
+                rotating++;
+            }
+        }
+        return rotating;
     }
 
     /**

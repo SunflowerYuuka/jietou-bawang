@@ -56,8 +56,10 @@ class AstrumItemsTest {
     @Test
     void everyThemedItemHasAModelThatPointsAtARealTexture() {
         Map<String, String> ids = AstrumItems.themedItemIds();
-        assertEquals(BookTheme.values().length * 2, ids.size(),
-                "one book and one card per theme: " + ids.keySet());
+        // `themedItemIds()` carries exactly one themed BOOK per theme. The card is deliberately not
+        // in it: a single card serves every character and is not themed, so it is registered plainly.
+        assertEquals(BookTheme.values().length, ids.size(),
+                "one themed book per theme: " + ids.keySet());
 
         for (Map.Entry<String, String> entry : ids.entrySet()) {
             ResourceLocation id = ResourceLocation.parse(entry.getKey());
@@ -146,9 +148,7 @@ class AstrumItemsTest {
     void theIdTableIsTheThemeTable() {
         for (BookTheme theme : BookTheme.values()) {
             assertSame(theme, BookTheme.ofItemId(InternalIds.id(theme.bookPath())));
-            assertSame(theme, BookTheme.ofItemId(InternalIds.id(theme.cardPath())));
             assertTrue(AstrumItems.themedItemIds().containsKey(theme.bookItemId().toString()));
-            assertTrue(AstrumItems.themedItemIds().containsKey(theme.cardItemId().toString()));
         }
         assertTrue(AstrumItems.themedItemIds().containsKey(RICE_BOWL)
                         == false,

@@ -106,8 +106,6 @@ class DishesTest {
         for (BookTheme theme : BookTheme.values()) {
             assertFalse(Dishes.isDishId(theme.bookItemId()),
                     theme + " book must not be feedable");
-            assertFalse(Dishes.isDishId(theme.cardItemId()),
-                    theme + " card must not be feedable");
         }
     }
 }

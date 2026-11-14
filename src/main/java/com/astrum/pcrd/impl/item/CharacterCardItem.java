@@ -9,7 +9,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import net.minecraft.core.Registry;
-import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -27,6 +26,13 @@ import org.jetbrains.annotations.Nullable;
 
 /**
  * The character card: right-click to enrol the character it names into the player's book.
+ *
+ * <h2>One card, every character, every book</h2>
+ * The character is a data component on the stack ({@code astrum:character_id}), not a different item, and
+ * the roster the card writes into is the player's — one roster, read by the blue, sakura and forest books
+ * alike. So there is exactly one card id, and using it puts the character in front of whichever of the
+ * three books the player opens next. There is no per-theme card and no per-character card; the human's
+ * rule was 「角色卡一个角色只用做一个，不需要做三种不同的，一个角色卡右键使用后应该是放进三个角色册」.
  *
  * <h2>Four outcomes, and none of them is silent</h2>
  * <ol>
@@ -60,21 +66,8 @@ public class CharacterCardItem extends Item {
     // all — so the keys are data the test can enumerate, not string literals buried in branches.
     // -----------------------------------------------------------------------------------------
 
-    /** Item name, {@code item.astrum.character_card}. */
+    /** Item name, {@code item.astrum.character_card}. One card, so one name key, as a constant. */
     public static final String KEY_NAME = "item.astrum.character_card";
-
-    /**
-     * {@return the item-name key of the {@code theme}'s card}
-     *
-     * <p>Derived from the same suffix the item id uses, exactly like the book's
-     * ({@link com.astrum.pcrd.impl.party.BookText#itemKey}), so the name key, the id, the model and the
-     * texture are one string with four uses. The plain card keeps the literal {@link #KEY_NAME}.
-     *
-     * @param theme the card's theme
-     */
-    public static String itemKey(BookTheme theme) {
-        return "item.astrum." + theme.cardPath();
-    }
 
     public static final String KEY_TOOLTIP = "astrum.card.tooltip";
     public static final String KEY_ENROLLED = "astrum.card.enrolled";
@@ -85,30 +78,19 @@ public class CharacterCardItem extends Item {
     public static final String KEY_NO_REGISTRY = "astrum.card.no_registry";
 
     /**
-     * {@return every card item name}, derived by walking the theme enum
-     *
-     * <p>A method rather than a cached static field: three strings rebuilt on demand are cheaper than a
-     * static container the project's own {@code guard} has to warn about and a reader has to check.
-     */
-    public static Set<String> itemKeys() {
-        Set<String> keys = new java.util.LinkedHashSet<>();
-        for (BookTheme theme : BookTheme.values()) {
-            keys.add(itemKey(theme));
-        }
-        return Set.copyOf(keys);
-    }
-
-    /**
      * {@return every key this item asks for}, for {@code LangParityTest}
      *
-     * <p>Includes each theme's item name. A LinkedHashSet, not {@code Set.of}: a duplicated key would
-     * throw inside a static initialiser and take this class down at class-load time in a player's game.
+     * <p>Includes the item's own name. A LinkedHashSet, not {@code Set.of}: a duplicated key would throw
+     * inside a static initialiser and take this class down at class-load time in a player's game.
+     *
+     * <p>It used to walk {@code BookTheme} to build three name keys, back when there were three cards.
+     * That loop is gone with the variants — and so is the second tooltip line that named the card's
+     * theme, because a card has no theme to name.
      */
     public static Set<String> langKeys() {
-        Set<String> keys = new java.util.LinkedHashSet<>(Set.of(KEY_TOOLTIP, KEY_ENROLLED,
+        Set<String> keys = new java.util.LinkedHashSet<>(Set.of(KEY_NAME, KEY_TOOLTIP, KEY_ENROLLED,
                 KEY_ALREADY_OWNED, KEY_QUARANTINED, KEY_NO_CHARACTER, KEY_UNKNOWN_CHARACTER,
                 KEY_NO_REGISTRY));
-        keys.addAll(itemKeys());
         return Set.copyOf(keys);
     }
 
@@ -205,16 +187,16 @@ public class CharacterCardItem extends Item {
     }
 
     /**
-     * Shows which character the card grants, and which theme the card is.
+     * Shows which character the card grants.
      *
      * <p>The name comes from the datapack ({@code displayName}, which per spec needs no lang key); the
      * registry is only bound while a world is loaded, so outside one the raw id is shown rather than
      * nothing — a card whose tooltip is blank reads as a broken item.
      *
-     * <p>The theme's name is a second line for the same reason as on the book: it is what tells a player
-     * holding two cards apart, and the plain card deliberately shows nothing. The rule is
-     * {@link BookTheme#ofItemId}, the same one the book uses, so a book and a card of the same theme always
-     * agree about which theme that is.
+     * <p>There is no theme line any more. It used to tell a player holding two cards apart, and the
+     * plain card deliberately showed nothing; with one card for every character and every book there is
+     * no theme on the item to name, and a line that said "Sakura" on a card usable with the forest book
+     * would have been wrong as well as pointless.
      */
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip,
@@ -229,10 +211,6 @@ public class CharacterCardItem extends Item {
             String name = def == null ? characterId.toString() : def.displayName();
             tooltip.add(Component.translatable(KEY_TOOLTIP, name)
                     .withColor(COLOR_HINT));
-        }
-        BookTheme theme = BookTheme.ofItemId(BuiltInRegistries.ITEM.getKey(this));
-        if (theme != BookTheme.DEFAULT) {
-            tooltip.add(Component.translatable(theme.nameKey()).withColor(COLOR_HINT));
         }
     }
 }

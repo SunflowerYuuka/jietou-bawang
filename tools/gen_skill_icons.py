@@ -27,25 +27,33 @@ from PIL import Image
 #: The unpacked official PCR art; not part of the repository.
 DEFAULT_SOURCE = os.path.join("K:\\", "AI", "Minecraft", "assets", "pcr", "extracted", "图片")
 
-#: ``EffectType`` (api.v1, lower-case name) -> official ``icon_skill_<n>``. One icon per effect type,
-#: picked from the labelled contact sheet:
-#:   3002 crossed slashes + sparks        -> extra damage
-#:   3001 heart with a fist               -> lifesteal
-#:   3006 explosion rays                  -> splash
-#:   3015 figure with sparkles            -> gain charge
-#:   3013 radiant orb                     -> area charge
-#:   2016 layered green pillars           -> stack
-#:   1023 fireball                        -> detonate
-#:   2022 bubbling flask                  -> apply effect
+#: ``EffectType`` (api.v1, lower-case name) -> official ``icon_skill_<n>``.
+#:
+#: This is the human's <b>official category</b> assignment, not a guess from shapes. The 61 official
+#: icons are organised in families by their first digit, and the row states which family the effect
+#: belongs to; the earlier table invented a reason per picture and got several of them wrong, which is
+#: what the review caught. Keep the two columns in step — ``SkillIconsTest`` asserts this dict and
+#: ``impl/client/SkillIcons`` carry the same pairs.
+#:
+#:   1001  物理攻击 (physical attack)   -> extra_damage
+#:   2005  回血     (healing)           -> lifesteal
+#:   3013  破甲     (armour break)      -> splash
+#:   3014  充能     (charge)            -> gain_charge
+#:   2006  充能     (charge)            -> area_charge
+#:   3015  自buff   (self buff)         -> stack
+#:   1023  灼烧     (burn)              -> detonate
+#:   1022  中毒     (poison)            -> apply_effect
+#:   3010  自buff   (self buff, attack) -> attack_buff
 ICONS = {
-    "extra_damage": 3002,
-    "lifesteal": 3001,
-    "splash": 3006,
-    "gain_charge": 3015,
-    "area_charge": 3013,
-    "stack": 2016,
+    "extra_damage": 1001,
+    "lifesteal": 2005,
+    "splash": 3013,
+    "gain_charge": 3014,
+    "area_charge": 2006,
+    "stack": 3015,
     "detonate": 1023,
-    "apply_effect": 2022,
+    "apply_effect": 1022,
+    "attack_buff": 3010,
 }
 
 #: Output size. 64 keeps the gold frame and the art's shapes readable when the book draws a row icon;

@@ -11,7 +11,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Registration for the mod's items — the 角色册 and 角色卡 in three themes each, and the 料理.
+ * Registration for the mod's items — one 角色卡, three 角色册 and the 料理.
  *
  * <h2>Why the registration lives here and not inside the item classes</h2>
  * The item class is behaviour (what a right-click does) and this class is wiring (what exists and under
@@ -19,14 +19,18 @@ import org.jetbrains.annotations.ApiStatus;
  * test can look at the enrol rules without touching a registry, and {@code Astrum} keeps one call per
  * subsystem instead of one per register.
  *
- * <h2>Six books and cards, one class each, three ids each</h2>
- * The theme comes from the <b>item id</b> ({@link BookTheme#ofItemId}); {@code BookTheme}'s javadoc gives
- * the whole reasoning and the cost. The ids follow the theme's {@link BookTheme#itemSuffix()}, so
+ * <h2>Three books and <em>one</em> card</h2>
+ * A book's theme comes from its <b>item id</b> ({@link BookTheme#ofItemId}); {@code BookTheme}'s javadoc
+ * gives the whole reasoning and the cost. The ids follow the theme's {@link BookTheme#itemSuffix()}, so
  * {@code astrum:character_book} keeps the id it already has in players' worlds and the two new books are
  * {@code astrum:character_book_sakura} / {@code _forest}.
  *
- * <p>Every themed item is the same class: the behaviour does not vary by theme, only the id it was
- * registered under — which is what {@code BookTheme.ofItemId} reads back.
+ * <p>The card has no theme and no variants. It is a ticket naming one character in its
+ * {@code astrum:character_id} component, and the roster it writes into is the player's, shared by all
+ * three books — so a sakura card would have been a second item with the same behaviour and a different
+ * picture, and the human's rule is one card per character (「一个角色卡右键使用后应该是放进三个角色册」).
+ * {@code CHARACTER_CARD_SAKURA} / {@code CHARACTER_CARD_FOREST} and their recipes, models, textures and
+ * lang keys are gone.
  */
 @ApiStatus.Internal
 public final class AstrumItems {
@@ -40,19 +44,14 @@ public final class AstrumItems {
      *
      * <p>Stackable to 16, because a player who has earned several characters should not need one
      * inventory slot per ticket.
+     *
+     * <p><b>One card for every character and every book.</b> There is no {@code _sakura} or {@code _forest}
+     * variant: the card carries the character id, not a theme, and the roster it writes is the one all
+     * three books read. Its texture is a blank ticket for the same reason — a face on the item would
+     * claim the item <em>is</em> that character (see {@code tools/gen_character_card_texture.py}).
      */
     public static final DeferredItem<CharacterCardItem> CHARACTER_CARD =
-            ITEMS.registerItem(BookTheme.DEFAULT.cardPath(), CharacterCardItem::new,
-                    new Item.Properties().stacksTo(16));
-
-    /** The sakura card: same behaviour, pink icon and a theme line in the tooltip. */
-    public static final DeferredItem<CharacterCardItem> CHARACTER_CARD_SAKURA =
-            ITEMS.registerItem(BookTheme.SAKURA.cardPath(), CharacterCardItem::new,
-                    new Item.Properties().stacksTo(16));
-
-    /** The forest card: same behaviour, green icon and a theme line in the tooltip. */
-    public static final DeferredItem<CharacterCardItem> CHARACTER_CARD_FOREST =
-            ITEMS.registerItem(BookTheme.FOREST.cardPath(), CharacterCardItem::new,
+            ITEMS.registerItem(BookTheme.CARD_PATH, CharacterCardItem::new,
                     new Item.Properties().stacksTo(16));
 
     /**
@@ -109,11 +108,15 @@ public final class AstrumItems {
     }
 
     /**
-     * {@return every themed item id to its mod-relative path, for {@code AstrumItemsTest}}
+     * {@return every themed book id to its mod-relative path, for {@code AstrumItemsTest}}
      *
      * <p>Not used by the game: it exists so the test can check that a model and a lang key exist for every
-     * id this build registers, without reflecting over a registry that is not up in a unit test. Six
+     * id this build registers, without reflecting over a registry that is not up in a unit test. Three
      * entries, derived from the enum, so a fourth theme is covered by the same test without editing it.
+     *
+     * <p>Books only. The card is not themed any more — see the class javadoc — so it is not in this map;
+     * {@code AstrumItemsTest} asserts its model and name separately, which is the point at which "the card
+     * is a single item" would break if somebody re-added a variant.
      */
     public static Map<String, String> themedItemIds() {
         // LinkedHashMap for a stable iteration order, then an immutable copy: the test prints these in
@@ -123,9 +126,18 @@ public final class AstrumItems {
         Map<String, String> ids = new LinkedHashMap<>();
         for (BookTheme theme : BookTheme.values()) {
             ids.put(theme.bookItemId().toString(), theme.bookPath());
-            ids.put(theme.cardItemId().toString(), theme.cardPath());
         }
         return Map.copyOf(ids);
+    }
+
+    /**
+     * {@return the one character card's mod-relative path}
+     *
+     * <p>A method rather than a bare constant, so a test can state "there is exactly one card id and it is
+     * this" without writing the string a second time.
+     */
+    public static String cardPath() {
+        return BookTheme.CARD_PATH;
     }
 
     /**

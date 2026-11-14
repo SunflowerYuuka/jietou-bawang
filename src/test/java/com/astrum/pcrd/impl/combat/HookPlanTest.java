@@ -102,48 +102,65 @@ class HookPlanTest {
     }
 
     /**
-     * The shipped character, at the shipped {@code combo_n: 3}, must fire <b>all three</b> of her
-     * effects: her {@code melee_hit} charge, and — from the same trigger — {@code splash} <b>and</b>
-     * {@code area_charge}. Two effects on one trigger is the documented shape (§6.4).
+     * The shipped character fires <b>one</b> small skill per {@code melee_hit}, and her two skills
+     * alternate: swing 1 runs {@code extra_damage} (广域斩击), swing 2 runs {@code gain_charge}
+     * (剑意迸发), swing 3 is back to {@code extra_damage}.
      *
-     * <p>Breaks if: anything dedupes by trigger, or stops after the first match of a trigger.
+     * <p>This replaces the old "every effect of one trigger fires" expectation, which described the
+     * pre-rotation design. Her hooks are now two separate {@code melee_hit} entries whose rotation is
+     * tracked per character, so a single event produces exactly one effect.
+     *
+     * <p>Breaks if: the rotation stops advancing, advances on a failed chance roll, or something
+     * dedupes the list down to a single fixed hook.
      */
     @Test
-    void everyEffectOfOneTriggerFiresFromTheShippedJson() throws Exception {
-        List<HookPlan.Fired> result = HookPlan.fire(djeeta().effects(),
+    void oneSwingFiresOneSmallSkillAndTheNextSwingFiresTheOther() throws Exception {
+        CharacterDef djeeta = djeeta();
+
+        List<HookPlan.Fired> first = HookPlan.fire(djeeta.effects(),
                 TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
                 (index, hook) -> Optional.empty(), invalid -> {
-                });
-        assertEquals(List.of(EffectType.GAIN_CHARGE, EffectType.SPLASH, EffectType.AREA_CHARGE), types(result),
-                "djeeta's 3rd combo hit must run melee charge, splash AND area_charge");
-        assertEquals(List.of(0, 1, 2), indices(result),
-                "hook indices must be the effects[] positions, in order");
+                }, new SkillRotation(0)).fired();
+        assertEquals(List.of(EffectType.EXTRA_DAMAGE), types(first),
+                "swing 1 must run 广域斩击 (extra_damage) and nothing else");
+
+        List<HookPlan.Fired> second = HookPlan.fire(djeeta.effects(),
+                TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
+                (index, hook) -> Optional.empty(), invalid -> {
+                }, new SkillRotation(1)).fired();
+        assertEquals(List.of(EffectType.GAIN_CHARGE), types(second),
+                "swing 2 must run 剑意迸发 (gain_charge) and nothing else");
+
+        List<HookPlan.Fired> third = HookPlan.fire(djeeta.effects(),
+                TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
+                (index, hook) -> Optional.empty(), invalid -> {
+                }, new SkillRotation(2)).fired();
+        assertEquals(List.of(EffectType.EXTRA_DAMAGE), types(third),
+                "swing 3 must wrap around to 广域斩击");
     }
 
     /**
-     * The same character, through the route production actually takes: {@link HookEvaluator} (the
+     * The same rotation through the route production actually takes: {@link HookEvaluator} (the
      * adapter) rather than {@link HookPlan} directly.
      *
-     * <p>Why this is a separate test rather than a duplicate: the dedupe that shipped lived in the
-     * adapter's loop. If it were re-added there — in front of {@link HookPlan#fire}, where the hook
-     * list is chosen — every test that calls {@code HookPlan} directly would stay green. This one
-     * calls the adapter's game-free seam, so a re-added dedupe fails here as
-     * {@code [GAIN_CHARGE]} instead of {@code [GAIN_CHARGE, SPLASH, AREA_CHARGE]}.
+     * <p>Why separate: a dedupe or a rotation bug that lived in the adapter's loop would leave every
+     * test that calls {@code HookPlan} directly green. This one calls the adapter's game-free seam.
      */
     @Test
-    void theAdapterRunsEveryEffectOfOneTrigger() throws Exception {
-        List<HookPlan.Fired> ran = new ArrayList<>();
-        HookEvaluator.evaluateHooks(djeeta(), TriggerFacts.forHit(true, false, false, 3, false),
+    void theAdapterRunsOneRotatingSkillPerSwing() throws Exception {
+        CharacterDef djeeta = djeeta();
+        List<EffectType> first = new ArrayList<>();
+        HookEvaluator.evaluateHooks(djeeta, TriggerFacts.forHit(true, false, false, 3, false),
                 chance -> true,
                 (index, hook) -> {
-                    ran.add(new HookPlan.Fired(index, hook));
+                    first.add(hook.type());
                     return Optional.empty();
                 },
-                invalid -> fail("no hook of the shipped character may be rejected: " + invalid.problem()));
+                invalid -> fail("no hook of the shipped character may be rejected: " + invalid.problem()),
+                SkillRotation.START);
 
-        assertEquals(List.of(EffectType.GAIN_CHARGE, EffectType.SPLASH, EffectType.AREA_CHARGE), types(ran),
-                "the adapter must run all three effects of djeeta's combo_n: 3 trigger");
-        assertEquals(List.of(0, 1, 2), indices(ran), "and report them at their effects[] positions");
+        assertEquals(List.of(EffectType.EXTRA_DAMAGE), first,
+                "the adapter must run exactly one rotating skill on one swing");
     }
 
     /**

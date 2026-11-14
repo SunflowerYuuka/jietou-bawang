@@ -40,6 +40,17 @@ public final class PartyEffects {
     public static final DeferredHolder<MobEffect, MobEffect> PARTY_4 = effect(3);
     public static final DeferredHolder<MobEffect, MobEffect> PARTY_5 = effect(4);
 
+    /**
+     * The self attack buff (「特大幅度提升自己的物理攻击」), the sixth effect this mod registers.
+     *
+     * <p>Not a party slot and not in {@link #holders()}: those five are inert markers whose only job is
+     * to appear in the HUD, while this one carries a real attribute modifier and expires. It lives in
+     * this register because that is where the mod's {@code MobEffect}s are created, not because it
+     * shares their lifecycle.
+     */
+    public static final DeferredHolder<MobEffect, MobEffect> ATTACK_BUFF =
+            MOB_EFFECTS.register(AttackBuffs.PATH, AttackBuffEffect::new);
+
     private PartyEffects() {
     }
 

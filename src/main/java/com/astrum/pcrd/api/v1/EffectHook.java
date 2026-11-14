@@ -23,7 +23,8 @@ public sealed interface EffectHook
                 EffectHook.AreaCharge,
                 EffectHook.Splash,
                 EffectHook.Stack,
-                EffectHook.Detonate {
+                EffectHook.Detonate,
+                EffectHook.AttackBuff {
 
     Trigger trigger();
 
@@ -42,6 +43,7 @@ public sealed interface EffectHook
         case SPLASH -> Splash.MAP_CODEC;
         case STACK -> Stack.MAP_CODEC;
         case DETONATE -> Detonate.MAP_CODEC;
+        case ATTACK_BUFF -> AttackBuff.MAP_CODEC;
     });
 
     /**
@@ -277,5 +279,42 @@ public sealed interface EffectHook
                 Params.CODEC.fieldOf("effectParams").forGetter(h -> new Params(h.damagePerStack(), h.radius()))
         ).apply(instance, (trigger, triggerParams, chance, params) -> new Detonate(
                 trigger, triggerParams, chance, params.damagePerStack(), params.radius())));
+    }
+
+    /**
+     * Temporarily raises the <b>attacker's own</b> attack damage (「特大幅度提升自己的物理攻击」).
+     *
+     * <p>The one hook that changes a number the <em>player</em> carries rather than something the hit
+     * does: it is applied as a real {@code MobEffectInstance} on the caster, so vanilla's own effect HUD
+     * shows it and vanilla's own expiry takes it away again. See {@code AttackBuffs} for the stacking
+     * rule and for why no tick listener is involved.
+     *
+     * @param multiplier attack multiplier while the buff lasts, {@code 1.5} = +50%; values at or below
+     *                   {@code 1.0} are not a buff and are refused by the executor rather than applied
+     *                   as a debuff
+     * @param seconds    how long it lasts, in seconds (the datapack says seconds because the wiki does)
+     */
+    @ApiStatus.Experimental
+    record AttackBuff(Trigger trigger, TriggerParams triggerParams, double chance, double multiplier,
+                      double seconds) implements EffectHook {
+        @Override
+        public EffectType type() {
+            return EffectType.ATTACK_BUFF;
+        }
+
+        private record Params(double multiplier, double seconds) {
+            private static final Codec<Params> CODEC = RecordCodecBuilder.create(instance -> instance.group(
+                    Codec.DOUBLE.fieldOf("multiplier").forGetter(Params::multiplier),
+                    Codec.DOUBLE.fieldOf("seconds").forGetter(Params::seconds)
+            ).apply(instance, Params::new));
+        }
+
+        public static final MapCodec<AttackBuff> MAP_CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(
+                Trigger.CODEC.fieldOf("trigger").forGetter(AttackBuff::trigger),
+                TriggerParams.CODEC.optionalFieldOf("triggerParams", TriggerParams.NONE).forGetter(AttackBuff::triggerParams),
+                Codec.DOUBLE.optionalFieldOf("chance", 1.0).forGetter(AttackBuff::chance),
+                Params.CODEC.fieldOf("effectParams").forGetter(h -> new Params(h.multiplier(), h.seconds()))
+        ).apply(instance, (trigger, triggerParams, chance, params) -> new AttackBuff(
+                trigger, triggerParams, chance, params.multiplier(), params.seconds())));
     }
 }

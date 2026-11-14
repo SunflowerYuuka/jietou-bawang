@@ -216,7 +216,7 @@ public final class WheelOverlay {
 
         boolean enhanced = ClientPartyCache.enhanced(slot);
         Optional<CharacterDef> def = definition(id.get());
-        WheelIcon icon = WheelIcon.of(def.flatMap(CharacterDef::portrait), enhanced);
+        WheelIcon icon = WheelIcon.of(def.flatMap(CharacterDef::face), enhanced);
         int vertices = 0;
         if (layout.showIcon()) {
             // The icon itself is drawn by WheelIconDraw, which the cast pad also uses: the rings, the

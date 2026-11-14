@@ -99,9 +99,9 @@ public final class CharacterRegistry {
     public static final CharacterDef INVALID = new CharacterDef(
             0, "<invalid>", Dimension.OUTPUT, Optional.empty(), Optional.empty(), List.of(),
             new UbDef(
-                    new UbTier("", 0, 0.0, OptionalDouble.empty(), OptionalDouble.empty(), 0,
+                    new UbTier("", 0, 0.0, OptionalDouble.empty(), Optional.empty(),
                             OptionalDouble.empty(), Optional.empty()),
-                    new UbTier("", 0, 0.0, OptionalDouble.empty(), OptionalDouble.empty(), 0,
+                    new UbTier("", 0, 0.0, OptionalDouble.empty(), Optional.empty(),
                             OptionalDouble.empty(), Optional.empty())),
             new GrowthDef(0, 0.0, 0),
             new AffectionDef(0, 0, List.of()),

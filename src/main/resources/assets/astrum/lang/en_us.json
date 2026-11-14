@@ -55,8 +55,6 @@
   "astrum.configuration.maxActiveShowcaseEntities": "Showcase entity limit",
 
   "item.astrum.character_card": "Character Card",
-  "item.astrum.character_card_sakura": "Sakura Character Card",
-  "item.astrum.character_card_forest": "Forest Character Card",
   "item.astrum.rice_bowl": "Rice Bowl",
 
   "astrum.theme.default": "Blue",
@@ -151,6 +149,7 @@
   "astrum.effect.splash": "Splash",
   "astrum.effect.stack": "Stack",
   "astrum.effect.detonate": "Detonate",
+  "astrum.effect.attack_buff": "Attack buff",
   "astrum.party.reason.BOOK_UNREADABLE": "your character book cannot be read, so nothing may be changed",
   "astrum.party.reason.SLOT_OUT_OF_RANGE": "the party has no such slot",
   "astrum.party.reason.NO_REGISTRY": "no character data is loaded right now",
@@ -162,6 +161,8 @@
   "effect.astrum.party_3": "Party effect 3",
   "effect.astrum.party_4": "Party effect 4",
   "effect.astrum.party_5": "Party effect 5",
+
+  "effect.astrum.attack_buff": "Attack up",
 
   "astrum.growth.fed": "Ate %1$s: %2$s character(s) gained goodwill.",
   "astrum.growth.already_today": "You already fed %s today - one of each dish per day.",

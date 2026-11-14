@@ -44,7 +44,8 @@ class SkillIconsTest {
             assertEquals("astrum:textures/gui/skill/" + type.getSerializedName() + ".png",
                     texture.toString());
         }
-        assertEquals(8, textures.size(), "the game has eight effect types; all of them must be mapped");
+        assertEquals(EffectType.values().length, textures.size(),
+                "every effect type must be mapped to its own icon");
     }
 
     /** The hook's icon is chosen by its type: two hooks of one type share a picture, by design. */

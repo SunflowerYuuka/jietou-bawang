@@ -5,6 +5,7 @@ import com.astrum.pcrd.api.v1.EffectHook;
 import com.astrum.pcrd.impl.InternalIds;
 import com.astrum.pcrd.impl.attach.StackKernel;
 import com.astrum.pcrd.impl.attach.StackState;
+import com.astrum.pcrd.impl.effect.AttackBuffs;
 import com.astrum.pcrd.impl.ub.UbCharge;
 import java.util.List;
 import java.util.Optional;
@@ -18,7 +19,7 @@ import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The eight effect executors of spec §5.2 — one arm per {@code EffectType}, dispatched from
+ * The nine effect executors of spec §5.2 — one arm per {@code EffectType}, dispatched from
  * {@link HookEvaluator}.
  *
  * <h2>The rule this file exists to keep</h2>
@@ -41,6 +42,8 @@ import org.jetbrains.annotations.Nullable;
  *   <li>{@code splash} — other entities around the target, via {@link DamageToTarget}.</li>
  *   <li>{@code stack} — {@link StackRuntime}: per attacker, per stack kind, lazily expired.</li>
  *   <li>{@code detonate} — consumes the stack and deals {@code stacks × perStack × multiplier}.</li>
+ *   <li>{@code attack_buff} — a real effect on the <b>caster</b>, expiring by vanilla's own clock
+ *       (see {@link #attackBuff}; it is the one arm the multiplier chain does not touch).</li>
  * </ul>
  *
  * <h2>Failure policy</h2>
@@ -98,6 +101,10 @@ public final class EffectExecutors {
             case STACK -> stack((EffectHook.Stack) hook, ctx);
             case DETONATE -> {
                 detonate((EffectHook.Detonate) hook, ctx);
+                yield null;
+            }
+            case ATTACK_BUFF -> {
+                attackBuff((EffectHook.AttackBuff) hook, ctx);
                 yield null;
             }
         };
@@ -239,6 +246,26 @@ public final class EffectExecutors {
         Astrum.LOGGER.debug("astrum: apply_effect {} {}t amp {} x multiplier {} -> {}t applied={} on {}",
                 hook.effect(), hook.duration(), hook.amplifier(), ctx.multiplier(), ticks, applied,
                 name(ctx.target()));
+    }
+
+    /**
+     * {@code attack_buff}: a real {@code MobEffectInstance} on the <b>caster</b>, so it expires by itself.
+     *
+     * <p>The one hook whose number is <b>not</b> scaled by the multiplier chain, deliberately: its
+     * "amount" is a ratio ({@code 1.5} = +50%) over which {@link EffectQuantities#scaled} is meaningless
+     * — scaling {@code 1.5} by a rank-5 {@code 0.1} would give {@code 1.05}, i.e. {@code +5%}, and an
+     * affection modifier of {@code 1.5} would turn a 50% buff into a 100% one. §5.2's dimension is 量 of
+     * the effect (damage, healing, charge, duration); a <em>derived attribute ratio</em> is not one of
+     * them, and {@code amplifier} is excluded for the same reason.
+     *
+     * <p>The <b>duration</b> is a quantity and is still not scaled: the wiki states a fixed 18 seconds,
+     * and a per-slot-different lifetime would make one ultimate behave differently by party position.
+     */
+    private static void attackBuff(EffectHook.AttackBuff hook, HookContext ctx) {
+        boolean applied = AttackBuffs.apply(ctx.attacker(), hook.multiplier(), hook.seconds(),
+                ctx.characterId());
+        Astrum.LOGGER.debug("astrum: attack_buff x{} for {}s on {} applied={} (character {})",
+                hook.multiplier(), hook.seconds(), name(ctx.attacker()), applied, ctx.characterId());
     }
 
     /**

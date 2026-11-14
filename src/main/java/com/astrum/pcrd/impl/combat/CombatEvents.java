@@ -41,6 +41,7 @@ import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
 import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
 import net.neoforged.neoforge.event.entity.living.LivingShieldBlockEvent;
 import net.neoforged.neoforge.event.entity.player.CriticalHitEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 import org.jetbrains.annotations.ApiStatus;
@@ -446,12 +447,31 @@ public final class CombatEvents {
         landedCrits.clear();
         warnedQuarantine.clear();
         areaCharge.reset();   // pair timestamps and per-second windows belong to one world's clock
+        // 「退出就重置」 is the logout event's job; this is the belt to that braces — a world that stops
+        // without every player logging out (a crash, a forced shutdown) must not leave cursors behind
+        // for the next world, which is the same reason the rest of this method exists.
+        SkillRotationStore.clearAll();
         // One world's fights are not the next world's: the contribution ledger is cleared here, with
         // the rest of this class's session state, exactly as DishThrottle is cleared by GrowthEvents.
         ContributionTracker.clear();
         // An operator-tuned guard must not silently govern the next world (spec §8.4): the override
         // is session state, not a persisted value. Task 14's command sets it; this clears it.
         AreaChargeTuning.clearOverride();
+    }
+
+    /**
+     * A player left the world: forget her characters' skill rotations.
+     *
+     * <p>「退出就重置。」 This is the event the human named, and it is the right one rather than login:
+     * clearing on the way out means a player who disconnects and returns starts from her first skill
+     * again, and it also releases the entries for a player who never comes back.
+     */
+    @SubscribeEvent
+    public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        if (event.getEntity() instanceof ServerPlayer player) {
+            SkillRotationStore.logCleared(SkillRotationStore.clear(player.getUUID()),
+                    player.getGameProfile().getName());
+        }
     }
 
     // ------------------------------------------------------------------ hook evaluation

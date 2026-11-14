@@ -91,6 +91,10 @@ class LangParityTest {
         // the party sync; the normal name is the character's skill name, which is data, not a key. The
         // registry key has to be translated either way or a player reads "effect.astrum.party_1".
         keys.addAll(com.astrum.pcrd.impl.effect.PartyEffectSlots.langKeys());
+        // The self attack buff's name, {@code effect.astrum.attack_buff}. A player reads this in the
+        // HUD as the buff's label, so a missing translation is a raw key on the effect bar — the one
+        // surface the buff exists for.
+        keys.add(com.astrum.pcrd.impl.effect.AttackBuffs.NAME_KEY);
         // The 演出 entity's display name. Vanilla reads a name key per entity type; the showcase is not
         // pickable so no player normally sees it, but a rename that left one file behind would still be
         // a raw key on the /data and death-message surfaces.

@@ -11,19 +11,29 @@ import org.jetbrains.annotations.Nullable;
 /**
  * The three visual themes a 角色册 exists in, and the art each one is drawn from.
  *
- * <h2>The three themes, and the items that carry them</h2>
+ * <h2>The three themes, and the item that carries each</h2>
  * <table border="1">
- *   <caption>theme to item to art</caption>
- *   <tr><th>theme</th><th>book / card item</th><th>panel pieces</th><th>divider</th><th>body tint</th></tr>
- *   <tr><td>{@link #DEFAULT}</td><td>{@code astrum:character_book} / {@code astrum:character_card}</td>
+ *   <caption>theme to book item to art</caption>
+ *   <tr><th>theme</th><th>book item</th><th>panel pieces</th><th>divider</th><th>body tint</th></tr>
+ *   <tr><td>{@link #DEFAULT}</td><td>{@code astrum:character_book}</td>
  *       <td>{@code book_panel_*}</td><td>{@code divider}</td><td>{@code #1D3965}</td></tr>
- *   <tr><td>{@link #SAKURA}</td><td>{@code ..._sakura} of both</td><td>{@code book_panel_sakura_*}</td>
- *       <td>{@code sakura_divider}</td><td>{@code #471335}</td></tr>
- *   <tr><td>{@link #FOREST}</td><td>{@code ..._forest} of both</td><td>{@code book_panel_forest_*}</td>
- *       <td>{@code forest_divider}</td><td>{@code #144229}</td></tr>
+ *   <tr><td>{@link #SAKURA}</td><td>{@code astrum:character_book_sakura}</td>
+ *       <td>{@code book_panel_sakura_*}</td><td>{@code sakura_divider}</td><td>{@code #471335}</td></tr>
+ *   <tr><td>{@link #FOREST}</td><td>{@code astrum:character_book_forest}</td>
+ *       <td>{@code book_panel_forest_*}</td><td>{@code forest_divider}</td><td>{@code #144229}</td></tr>
  * </table>
  *
- * <h2>Why three items, and no theme data component — the decision, and its cost</h2>
+ * <h2>Three <em>books</em>, one <em>card</em></h2>
+ * A theme is a property of the 角色册 — the screen — and of nothing else. The 角色卡 is a single item,
+ * {@code astrum:character_card}, with no theme at all: it is a ticket that enrols the character named by
+ * its {@code astrum:character_id} component, and the human's rule is 「角色卡一个角色只用做一个…一个角色卡
+ * 右键使用后应该是放进三个角色册」 — one card per character, and <em>any</em> of the three books can show
+ * that character afterwards. A per-theme card would have implied the opposite (that a sakura card belongs
+ * to the sakura book), and it needed three items, three recipes, three models and three lang keys to say
+ * something untrue. {@code CHARACTER_CARD_SAKURA} / {@code CHARACTER_CARD_FOREST} are therefore gone, and
+ * this enum carries no card path or card id.
+ *
+ * <h2>Why three book items, and no theme data component — the decision, and its cost</h2>
  * The brief allowed either "one {@code astrum:book_theme} component type" or "three separate items". This
  * is <b>three items, with the theme derived from the item id</b> ({@link #ofItemId}), because a theme is
  * not one fact but four:
@@ -89,7 +99,13 @@ public enum BookTheme {
     /** The item path every book starts from, before the theme's suffix. */
     public static final String BOOK_PATH = "character_book";
 
-    /** The item path every card starts from, before the theme's suffix. */
+    /**
+     * The mod-relative path of the one character card.
+     *
+     * <p>No suffix and no per-theme variant: see the class javadoc. Kept here because this enum is
+     * already the one place that knows what the mod's two content families are called, and the creative
+     * tab's family ranking keys off it.
+     */
     public static final String CARD_PATH = "character_card";
 
     /**
@@ -198,19 +214,9 @@ public enum BookTheme {
         return BOOK_PATH + itemSuffix;
     }
 
-    /** {@return the mod-relative item path of this theme's card, e.g. {@code character_card_sakura}} */
-    public String cardPath() {
-        return CARD_PATH + itemSuffix;
-    }
-
     /** {@return the item id of this theme's book, e.g. {@code astrum:character_book_sakura}} */
     public ResourceLocation bookItemId() {
         return InternalIds.id(bookPath());
-    }
-
-    /** {@return the item id of this theme's card} */
-    public ResourceLocation cardItemId() {
-        return InternalIds.id(cardPath());
     }
 
     /**
@@ -285,13 +291,14 @@ public enum BookTheme {
     }
 
     /**
-     * {@return the theme of an item id, or {@link #DEFAULT} when the id is not a themed book or card}
+     * {@return the theme of an item id, or {@link #DEFAULT} when the id is not a themed book}
      *
-     * <p><b>The theme rule</b>, written once: a themed item's id decides its theme, and every other id is
-     * the blue book. The book item, the card tooltip and the asset test all go through here, so "which
-     * panel does book X open" has exactly one answer and cannot be contradicted by a second field
-     * somewhere else. {@code minecraft:character_book_sakura} is a different item in another namespace and
-     * therefore resolves to {@link #DEFAULT}.
+     * <p><b>The theme rule</b>, written once: a themed <em>book's</em> id decides its theme, and every
+     * other id — including the one {@code astrum:character_card}, which carries no theme — is the blue
+     * book. The book item, the card tooltip and the asset test all go through here, so "which panel does
+     * book X open" has exactly one answer and cannot be contradicted by a second field somewhere else.
+     * {@code minecraft:character_book_sakura} is a different item in another namespace and therefore
+     * resolves to {@link #DEFAULT}.
      *
      * <p>Total on purpose: the alternative — throwing, or returning {@code null} for the caller to forget
      * — trades a wrong colour for a lost item, which is the wrong way round for a purely visual value.
@@ -304,7 +311,7 @@ public enum BookTheme {
         }
         String path = itemId.getPath();
         for (BookTheme theme : values()) {
-            if (theme.bookPath().equals(path) || theme.cardPath().equals(path)) {
+            if (theme.bookPath().equals(path)) {
                 return theme;
             }
         }

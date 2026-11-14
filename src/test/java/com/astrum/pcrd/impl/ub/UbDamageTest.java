@@ -41,13 +41,12 @@ class UbDamageTest {
     }
 
     private static UbTier singleTarget(double damage, int hits) {
-        return new UbTier("tempest_blade", hits, damage, OptionalDouble.empty(), OptionalDouble.empty(),
-                0, OptionalDouble.empty(), Optional.empty());
+        return new UbTier("tempest_blade", hits, damage, OptionalDouble.empty(), Optional.empty(), OptionalDouble.empty(), Optional.empty());
     }
 
     private static UbTier area(double damage, int hits, double radius) {
         return new UbTier("seiga_itten", hits, damage, OptionalDouble.of(radius),
-                OptionalDouble.empty(), 0, OptionalDouble.empty(), Optional.empty());
+                Optional.empty(), OptionalDouble.empty(), Optional.empty());
     }
 
     private static UbDamage.Target mob(long n, double distance) {
@@ -344,9 +343,9 @@ class UbDamageTest {
     @Test
     void theOptionalTierFieldsDoNotChangeTheDamagePlan() {
         UbTier plain = new UbTier("tempest_blade", 1, 20.0, OptionalDouble.empty(),
-                OptionalDouble.empty(), 0, OptionalDouble.empty(), Optional.empty());
+                Optional.empty(), OptionalDouble.empty(), Optional.empty());
         UbTier withBuff = new UbTier("tempest_blade", 1, 20.0, OptionalDouble.empty(),
-                OptionalDouble.of(1.3), 360, OptionalDouble.of(0.2), Optional.empty());
+                Optional.empty(), OptionalDouble.of(0.2), Optional.empty());
 
         List<UbDamage.Target> world = List.of(SELF, mob(1, 1.0));
         UbDamage.Plan plainPlan = UbDamage.plan(plain, ALIVE, world, AllyMode.ALL_PLAYERS);

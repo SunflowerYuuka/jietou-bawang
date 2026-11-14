@@ -67,9 +67,14 @@ class BookLayoutTest {
 
     @Test
     void thePanelIsCentredOnAScreenBigEnoughForIt() {
-        BookLayout.Box panel = large().panel();
-        int expectedX = (LARGE_WIDTH - BookLayout.PANEL_WIDTH) / 2;
-        int expectedY = (LARGE_HEIGHT - BookLayout.PANEL_HEIGHT) / 2;
+        BookLayout layout = large();
+        BookLayout.Box panel = layout.panel();
+        // Ask the INSTANCE for its width, not the class constant: BookLayout picks a metrics tier
+        // from the screen, so the constant is only the compact tier's value. Deriving the expectation
+        // from PANEL_WIDTH made this test fail the moment a wider tier was introduced, while the
+        // centring itself was already correct.
+        int expectedX = (LARGE_WIDTH - panel.width()) / 2;
+        int expectedY = (LARGE_HEIGHT - panel.height()) / 2;
         assertEquals(expectedX, panel.x());
         assertEquals(expectedY, panel.y());
     }

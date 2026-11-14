@@ -35,7 +35,8 @@ class DjeetaResourceTest {
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
             assertEquals(Dimension.CHARGE, def.dimension());
-            assertEquals(3, def.effects().size());
+            // Two rotating small skills now: 广域斩击 and 剑意迸发. She has no splash.
+            assertEquals(2, def.effects().size());
             assertEquals(3, def.affection().tier2Threshold());
             assertEquals(8, def.affection().tier3Threshold());
         }
@@ -55,12 +56,13 @@ class DjeetaResourceTest {
         try (InputStream in = DjeetaResourceTest.class.getResourceAsStream(DJEETA_JSON)) {
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
-            assertInstanceOf(EffectHook.GainCharge.class, def.effects().get(0));
-            assertInstanceOf(EffectHook.Splash.class, def.effects().get(1));
-            assertInstanceOf(EffectHook.AreaCharge.class, def.effects().get(2));
+            // Hooks are a rotation: swing 1 runs 广域斩击 (single-target damage), swing 2 runs
+            // 剑意迸发 (self TP). Order matters because the cursor walks the list.
+            assertInstanceOf(EffectHook.ExtraDamage.class, def.effects().get(0));
+            assertInstanceOf(EffectHook.GainCharge.class, def.effects().get(1));
             assertEquals("tempest_blade", def.ub().base().animation());
             assertEquals(4, def.ub().enhanced().hits());
-            assertEquals(1, def.affection().tier2HookModifiers().get(0).hookIndex());
+            assertEquals(0, def.affection().tier2HookModifiers().get(0).hookIndex());
             assertEquals(1.5, def.affection().tier2HookModifiers().get(0).mult());
         }
     }
@@ -75,8 +77,12 @@ class DjeetaResourceTest {
         try (InputStream in = DjeetaResourceTest.class.getResourceAsStream(DJEETA_JSON)) {
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
-            assertEquals("广域斩击", def.effectiveSkillName(),
-                    "djeeta's skill name is what the party effect shows");
+            // The status-effect bar shows the CHARACTER NAME, per the human's correction; the skill
+            // name is kept in the JSON for future use but no longer drives the effect label.
+            assertEquals("姬塔", def.displayName(),
+                    "the party effect is labelled with the character's name");
+            assertEquals("星河一天", def.effectiveSkillName(),
+                    "her ultimate's name is still shipped, even though it is not the effect label");
             assertEquals("astrum:textures/item/character_card.png", def.avatar().orElseThrow().toString());
         }
         assertEquals(32, avatarSize(), "the card/avatar texture is the official 32x32 resample");

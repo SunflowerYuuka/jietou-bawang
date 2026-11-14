@@ -19,7 +19,8 @@ import org.jetbrains.annotations.ApiStatus;
  * @param schemaVersion version of this layout, used by later migration code
  * @param displayName   name shown in the party UI
  * @param dimension     damage dimension used for same-tick falloff
- * @param portrait      GUI portrait texture, empty for none
+ * @param portrait      a <em>dedicated</em> GUI portrait, used in preference to {@link #avatar} where
+ *                      one is shipped; empty is the normal case (see {@link #face()})
  * @param model         GeckoLib model file, empty for none
  * @param effects       hook list, indexed by {@link HookModifier#hookIndex()}
  * @param ub            both UB tiers
@@ -27,9 +28,12 @@ import org.jetbrains.annotations.ApiStatus;
  * @param affection     affection tiers
  * @param skillName     the character's skill name, shown on her party effect; empty falls back to
  *                      {@link #displayName()}
- * @param avatar        the official avatar drawn as her party effect icon, as a full texture path
- *                      ({@code astrum:textures/item/character_card.png}); empty falls back to the
- *                      effect's own sprite
+ * @param avatar        the character's <b>one official picture</b>: her 3-star avatar as a full texture
+ *                      path ({@code astrum:textures/gui/portrait/djeeta.png}). It is drawn as the party
+ *                      effect icon <em>and</em> as her portrait in the 角色册's roster cells and party
+ *                      slots; a pack that ships a different picture for the book adds {@link #portrait}.
+ *                      Empty means "this character has no face art", and the book falls back to a glyph
+ *                      disc while the party effect falls back to its own per-slot sprite
  */
 @ApiStatus.Experimental
 public record CharacterDef(int schemaVersion, String displayName, Dimension dimension,
@@ -60,5 +64,27 @@ public record CharacterDef(int schemaVersion, String displayName, Dimension dime
      */
     public String effectiveSkillName() {
         return skillName.filter(name -> !name.isBlank()).orElse(displayName());
+    }
+
+    /**
+     * {@return the picture to draw for this character where a face is wanted: her dedicated
+     * {@link #portrait} if the pack ships one, otherwise her official {@link #avatar}}
+     *
+     * <h2>Why this is a method and not a field</h2>
+     * There is one picture per character, and it is {@code avatar}: the official 3-star avatar, which is
+     * already the party effect icon. A pack that wants the book to show something else can add
+     * {@code portrait}, and that override wins. Writing the order down once — here, next to the two
+     * fields — is what keeps the roster cell, the party slot, the wheel and the cast pad from each
+     * deciding for itself; the defect this fixes was exactly that: the book asked
+     * {@code definition.portrait()} alone, {@code djeeta.json} has no {@code portrait}, and the roster
+     * cell fell back to drawing a {@code 姬} glyph in a disc while the party effect right beside it drew
+     * her face.
+     *
+     * <p>Empty means the character has no face art at all; every caller then falls back to its own
+     * stand-in (a glyph disc in the book, the per-slot rune on the effect HUD). It never means "look
+     * this up somewhere else" — there is nowhere else.
+     */
+    public Optional<ResourceLocation> face() {
+        return portrait.isPresent() ? portrait : avatar;
     }
 }

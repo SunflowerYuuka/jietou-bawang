@@ -82,17 +82,21 @@ import org.jetbrains.annotations.ApiStatus;
  * this tab composes with our fill by the same mechanism vanilla uses for its own tabs.
  *
  * <h2>The order is a rule, not registry order</h2>
- * Cards, then books, then everything else (today: the dish). That is the order of the loop a player
- * actually runs — a card is the only way a character enters the book, the book is the screen used
+ * Card, then books, then everything else (today: the dish). That is the order of the loop a player
+ * actually runs — the card is the only way a character enters the book, the books are the screen used
  * afterwards, the dish is what is spent on the character once it is in the book — and it matches the book
- * screen's own sections. Inside a family the theme order is {@link BookTheme}'s declaration order (blue,
+ * screen's own sections. Inside the books the theme order is {@link BookTheme}'s declaration order (blue,
  * sakura, forest), which is the order the three themes shipped in.
  *
  * <p>Today's registration order happens to agree with that rule, which is precisely why the rule is
  * written down and tested rather than relied on: {@code AstrumItems} orders its fields by {@code BookTheme}'s
  * table, so a fourth theme, or a block item added between the cards and the books, would silently reorder
- * the tab. {@code AstrumCreativeTabTest} pins the seven ids in this order, so a change of order is a
+ * the tab. {@code AstrumCreativeTabTest} pins the five ids in this order, so a change of order is a
  * decision someone makes in the test, not an accident of where a field was typed.
+ *
+ * <p>There is one card. {@code _sakura} / {@code _forest} card items were deleted (see
+ * {@code BookTheme}'s javadoc): a card names a character, not a theme, and any of the three books shows
+ * every character the player has enrolled.
  */
 @ApiStatus.Internal
 public final class AstrumCreativeTab {
@@ -126,7 +130,7 @@ public final class AstrumCreativeTab {
     private static final DeferredItem<CharacterBookItem> ICON_ENTRY = AstrumItems.CHARACTER_BOOK;
 
     /**
-     * The family ranks: 0 cards, 1 books, 2 everything else. Prefixes rather than exact ids so a fourth
+     * The family ranks: 0 card, 1 books, 2 everything else. Prefixes rather than exact ids so a fourth
      * theme lands in the right family without touching this class.
      */
     private static final int RANK_CARD = 0;

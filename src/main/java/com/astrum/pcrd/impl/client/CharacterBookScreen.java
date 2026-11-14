@@ -12,9 +12,11 @@ import com.astrum.pcrd.impl.network.PartyEditPayload;
 import com.astrum.pcrd.impl.network.RosterSyncPayload;
 import com.astrum.pcrd.impl.party.BookText;
 import com.astrum.pcrd.impl.party.PartyRules;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.OptionalInt;
+import java.util.Set;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.Screen;
@@ -60,6 +62,17 @@ import org.jetbrains.annotations.Nullable;
  * the three views and accepts no edit: {@code Roster.entries()} throws on such a book, so drawing an
  * empty grid would be inventing an answer about a player whose progress is sitting on disk.
  *
+ * <h2>What the player sees behind and around the panel</h2>
+ * The world, dimmed — see {@link #renderBackground}: vanilla's blur and its near-opaque menu tile are
+ * both skipped, and the replacement is a 31%→38% black gradient rather than the 55% flat sheet this
+ * screen used to paint. That sheet, over a panel narrower than the window, is what the human reported as
+ * 「两侧黑乎乎的」.
+ *
+ * <p>And the panel itself is sized by {@link BookLayout}, which picks one of two metric tiers for the
+ * window it is given (comfortable when it fits, compact when it does not) instead of using one fixed
+ * 297x227 box on every screen. The tiers, and why the panel is not a scale transform, are documented
+ * there.
+ *
  * <h2>Why this is not paused, and why it is a Screen rather than an overlay</h2>
  * A book is a deliberate modal action — you stop playing to read it — so unlike the wheel and the cast
  * pad (spec §5.5) it may take the mouse and the keyboard. It does not pause the world
@@ -70,8 +83,22 @@ import org.jetbrains.annotations.Nullable;
 @OnlyIn(Dist.CLIENT)
 public final class CharacterBookScreen extends Screen {
 
-    // Flat dim behind the panel; replaces vanilla's full-screen blur (see {@link #renderBackground}).
-    private static final int COLOR_DIM_BACKDROP = 0x90000000;
+    /**
+     * The atmospheric dim drawn over the world: a light gradient, not a sheet.
+     *
+     * <p>{@code 0x50} black at the top row rising to {@code 0x60} at the bottom — 31% to 38% — is
+     * deliberately lighter than vanilla's {@code renderTransparentBackground} ({@code 0xC0}→{@code 0xD0}).
+     * Vanilla can afford to be that dark because its inventory and pause menu cover the <em>whole</em>
+     * screen; this panel is smaller than the screen on purpose, so the world around it is not decoration,
+     * it is the background the human asked to keep. 「像打开背包那样能看到背景」 is about seeing the world,
+     * and 31% black over it does that while 55% (the old flat {@code 0x90}) over a night-time world is
+     * indistinguishable from black bars down the sides — which is exactly what he reported as
+     * 「两侧黑乎乎的」.
+     */
+    private static final int COLOR_DIM_TOP = 0x50000000;
+
+    /** Bottom of the same gradient; one step darker, as vanilla's own two stops are. */
+    private static final int COLOR_DIM_BOTTOM = 0x60000000;
 
     // Section headings and body text are theme-independent: they are drawn *on* the panel, and a
     // cream heading on a dark body reads the same on all three. Everything that is part of the panel's
@@ -96,15 +123,6 @@ public final class CharacterBookScreen extends Screen {
         return theme.surfaceTint();
     }
 
-    /** Radius of a roster portrait: the cell is 66x44, so this leaves room for the name and the level. */
-    private static final double CELL_ICON_RADIUS = 10.0;
-
-    /** Radius of a party-slot portrait: a 18px square. */
-    private static final double SLOT_ICON_RADIUS = 8.0;
-
-    /** Text inset inside a cell, for the name and the level. */
-    private static final int CELL_TEXT_INSET = 26;
-
     /**
      * The current layout; rebuilt on resize ({@link #init()}).
      *
@@ -116,6 +134,17 @@ public final class CharacterBookScreen extends Screen {
 
     /** Absolute index of the first roster cell shown, for paging a long roster. */
     private int firstCell;
+
+    /**
+     * Character names whose face-resolution branch has already been logged this open.
+     *
+     * <p>An instance field, cleared in {@link #init()} with the rest of the screen's state: a
+     * {@code static} set here would outlive the screen and grow with every character ever seen, which
+     * this project's {@code guard} treats as a defect for good reason. Keyed by display name because the
+     * thing being logged is "which picture this character resolved to", and the name is what a reader of
+     * the log is looking for.
+     */
+    private final Set<String> faceBranchLogged = new HashSet<>();
 
     /** The character the growth view is showing, or {@code null} when nothing is selected. */
     private @Nullable ResourceLocation selected;
@@ -176,6 +205,10 @@ public final class CharacterBookScreen extends Screen {
     protected void init() {
         layout = BookLayout.at(width, height);
         firstCell = layout.clampFirstIndex(ClientRosterCache.size(), firstCell);
+        // The per-open diagnostic memory: a resize re-inits this screen and the new panel's faces are
+        // worth logging again (they are the same characters, but "the branch I took" is what the log is
+        // for, and this is the one place a screen's state starts).
+        faceBranchLogged.clear();
         if (selected != null && !ClientRosterCache.owns(selected)) {
             // The selected character is gone (a different player's book, or a save swap): clearing keeps
             // the growth view from describing somebody else's character.
@@ -187,31 +220,53 @@ public final class CharacterBookScreen extends Screen {
         // player's window and GUI scale, so neither can be asserted offline.
         NineSlice.Rects rects = NineSlice.rects(layout.panel(), NineSlice.DEFAULT_SLICE);
         ThemedPanel.isUsable(rects);
-        Astrum.LOGGER.debug("astrum: character book opened ({}x{}, theme {} — panel {}x{} at {},{}; "
-                        + "slice {} -> centre {}x{}; {} owned, {} in party{s})",
-                width, height, theme, BookLayout.PANEL_WIDTH, BookLayout.PANEL_HEIGHT,
-                layout.panel().x(), layout.panel().y(), NineSlice.DEFAULT_SLICE,
+        Astrum.LOGGER.debug("astrum: character book opened ({}x{} gui, theme {}, tier {} — panel {}x{} "
+                        + "at {},{} of a {}x{} screen; margins l/r/t/b {}/{}/{}/{}; slice {} -> centre "
+                        + "{}x{}; {} owned, {} in party{})",
+                width, height, theme, layout.tierName(), layout.panel().width(),
+                layout.panel().height(), layout.panel().x(), layout.panel().y(), width, height,
+                layout.panel().x(), width - layout.panel().right(), layout.panel().y(),
+                height - layout.panel().bottom(), NineSlice.DEFAULT_SLICE,
                 rects.centre().width(), rects.centre().height(), ClientRosterCache.size(),
                 ClientPartyCache.latest().slots().stream().filter(Optional::isPresent).count(),
                 ClientRosterCache.quarantined() ? ", quarantined save" : "");
+        Astrum.LOGGER.debug("astrum: character book background is the world, dimmed {} -> {} behind a "
+                        + "{}x{} panel; the world is visible on all four sides",
+                Integer.toHexString(COLOR_DIM_TOP), Integer.toHexString(COLOR_DIM_BOTTOM),
+                layout.panel().width(), layout.panel().height());
     }
 
     /**
-     * Overrides vanilla's background so the world behind the book is <b>not blurred</b>.
+     * Overrides vanilla's background so the world behind the book is <b>not blurred</b>, and draws the
+     * inventory's own atmospheric dim instead of a black sheet.
      *
-     * <p>{@code Screen.renderBackground} calls {@code renderBlurredBackground} whenever
-     * {@code minecraft.level != null}, which runs a full-screen post-process blur over the already
-     * rendered frame. The effect is not a property of our panel — it blurs <em>everything</em>, so the
-     * whole screen (grass, hotbar, sky) looked soft the moment the book opened. A test run on the
-     * user's machine showed plain grass without its 16x16 texture, which is the signature of that blur.
+     * <p><b>Why it does not call {@code super}.</b> {@code Screen.renderBackground} calls
+     * {@code renderBlurredBackground} whenever {@code minecraft.level != null}, which runs a full-screen
+     * post-process blur over the already rendered frame, <em>and</em> then {@code renderMenuBackground},
+     * which blits vanilla's near-opaque {@code inworld_menu_background} tile over the whole screen. The
+     * blur is not a property of our panel — it blurs everything, so grass, hotbar and sky went soft the
+     * moment the book opened (a real run on the user's machine showed plain grass with no 16x16 texture,
+     * the signature of that blur). A 1.21 {@code Screen} cannot opt out through {@code isPauseScreen()} or
+     * any flag, so not calling {@code super} is the way out.
      *
-     * <p>A 1.21 {@code Screen} cannot opt out of the blur through {@code isPauseScreen()} or any flag;
-     * not calling {@code super.renderBackground} is the way out. We draw a flat dim instead: it still
-     * separates the panel from the world without touching the frame's sharpness.
+     * <p><b>What replaced the flat fill.</b> The old override painted {@code 0x90000000} — 55% black over
+     * the entire screen. With a panel that covers part of a wide window, a uniformly 55%-dark world reads
+     * as a black border around the panel, which is what the human described as 「两侧黑乎乎的」.
+     *
+     * <p>So the dim is now <b>light and graded</b>: {@code 0x50}→{@code 0x60} black, a vertical gradient,
+     * which is the shape vanilla uses ({@code renderTransparentBackground} is a gradient too) at a much
+     * lower strength — vanilla can afford 75% because its inventory covers the whole screen, while here
+     * the world around the panel is the point. The world is visible on every side; see
+     * {@link #COLOR_DIM_TOP} for the arithmetic and {@code BookLayout} for the panel that leaves it
+     * visible.
+     *
+     * <p>{@code fillGradient} rather than {@code fill}: a single flat alpha is what a "dim overlay" looks
+     * like in a mock-up, while a gradient is what the player's eye has been trained by every vanilla
+     * screen to read as "the world is still there behind this".
      */
     @Override
     public void renderBackground(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
-        graphics.fill(0, 0, width, height, COLOR_DIM_BACKDROP);
+        graphics.fillGradient(0, 0, width, height, COLOR_DIM_TOP, COLOR_DIM_BOTTOM);
     }
 
     @Override
@@ -245,8 +300,7 @@ public final class CharacterBookScreen extends Screen {
      */
     private void drawQuarantined(GuiGraphics graphics) {
         BookLayout.Box grid = layout.rosterGrid();
-        BookLayout.Box wide = new BookLayout.Box(grid.x(), grid.y(),
-                BookLayout.GRID_WIDTH + BookLayout.COLUMN_GAP + BookLayout.RIGHT_WIDTH,
+        BookLayout.Box wide = new BookLayout.Box(grid.x(), grid.y(), layout.bodyWidth(),
                 BookLayout.LINE_HEIGHT);
         drawClipped(graphics, Component.translatable(BookText.KEY_QUARANTINED), wide, COLOR_REFUSED);
     }
@@ -277,19 +331,17 @@ public final class CharacterBookScreen extends Screen {
             graphics.fill(cell.x(), cell.y(), cell.right(), cell.bottom(), background);
 
             CharacterDef definition = definitionOf(entry.id());
-            WheelIcon icon = WheelIcon.of(portraitOf(definition),
+            WheelIcon icon = WheelIcon.of(faceOf(definition),
                     entry.tier() >= GrowthFacts.MAX_TIER);
-            WheelIconDraw.draw(graphics, cell.x() + 15.0, cell.centreY(), icon,
-                    Optional.ofNullable(definition), CELL_ICON_RADIUS);
+            WheelIconDraw.draw(graphics, layout.cellIconCentreX(i), cell.centreY(), icon,
+                    Optional.ofNullable(definition), layout.cellIconRadius());
 
-            // Level, top-right of the icon; name under it, truncated rather than allowed to run into the
-            // neighbouring cell.
-            int textX = cell.x() + CELL_TEXT_INSET;
-            int textWidth = cell.right() - textX - 2;
-            drawClipped(graphics, Component.literal("Lv " + entry.level()),
-                    new BookLayout.Box(textX, cell.y() + 8, textWidth, BookLayout.LINE_HEIGHT), COLOR_TEXT);
+            // Level above, name below, both clipped to the text column the cell's measurement tier
+            // defines — truncated rather than allowed to run into the neighbouring cell.
+            drawClipped(graphics, Component.literal("Lv " + entry.level()), layout.cellLevelBox(i),
+                    COLOR_TEXT);
             drawClipped(graphics, Component.literal(nameOf(definition, entry.id())),
-                    new BookLayout.Box(textX, cell.y() + 20, textWidth, BookLayout.LINE_HEIGHT), COLOR_DIM);
+                    layout.cellNameBox(i), COLOR_DIM);
 
             // Affection tier as 1-3 pips: the grid has no room for the word "tier", and three pips read
             // the same in every language.
@@ -302,12 +354,12 @@ public final class CharacterBookScreen extends Screen {
                 graphics.fill(cell.x() + 2, cell.y() + 2, cell.x() + 5, cell.y() + 5, COLOR_IN_PARTY);
             }
         }
-        if (entries.size() > BookLayout.PAGE) {
+        if (entries.size() > layout.page()) {
             // Paging indicator only when there is something to page through.
             drawClipped(graphics, Component.literal((first + 1) + "-" + (first + visible) + " / "
                             + entries.size()),
                     new BookLayout.Box(grid.x(), grid.bottom() - BookLayout.LINE_HEIGHT,
-                            BookLayout.GRID_WIDTH, BookLayout.LINE_HEIGHT), COLOR_DIM);
+                            layout.metrics().gridWidth(), BookLayout.LINE_HEIGHT), COLOR_DIM);
         }
     }
 
@@ -340,10 +392,10 @@ public final class CharacterBookScreen extends Screen {
                 continue;
             }
             CharacterDef definition = definitionOf(occupant.get());
-            WheelIcon icon = WheelIcon.of(portraitOf(definition),
+            WheelIcon icon = WheelIcon.of(faceOf(definition),
                     ClientPartyCache.enhanced(slot));
             WheelIconDraw.draw(graphics, box.centreX(), box.centreY(), icon,
-                    Optional.ofNullable(definition), SLOT_ICON_RADIUS);
+                    Optional.ofNullable(definition), layout.slotIconRadius());
         }
     }
 
@@ -443,8 +495,9 @@ public final class CharacterBookScreen extends Screen {
      * samples the whole texture whatever its resolution. The alternative, vanilla's 7-argument blit,
      * assumes a 256x256 sheet and would show the top-left ninth of each icon.
      *
-     * <p>Hooks beyond the three rows are summarised by {@code astrum.book.skills.more} rather than
-     * dropped: {@code SkillIcons.rows} decides the split and is unit-tested.
+     * <p>Hooks beyond this layout's row budget ({@link BookLayout#hookRows()}: three in the compact tier,
+     * four in the comfortable one) are summarised by {@code astrum.book.skills.more} rather than dropped:
+     * {@code SkillIcons.rows} decides the split and is unit-tested.
      */
     private void drawSkills(GuiGraphics graphics, @Nullable CharacterDef definition) {
         drawClipped(graphics, Component.translatable(BookText.KEY_SECTION_SKILLS),
@@ -453,7 +506,7 @@ public final class CharacterBookScreen extends Screen {
             return;
         }
         List<EffectHook> hooks = definition.effects();
-        SkillIcons.Rows rows = SkillIcons.rows(hooks.size());
+        SkillIcons.Rows rows = SkillIcons.rows(hooks.size(), layout.hookRows());
         for (int i = 0; i < rows.shownHooks(); i++) {
             drawHookRow(graphics, layout.hookRow(i), hooks.get(i));
         }
@@ -576,9 +629,9 @@ public final class CharacterBookScreen extends Screen {
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
         int count = ClientRosterCache.size();
-        if (count > BookLayout.PAGE && layout.rosterGrid().contains(mouseX, mouseY)) {
+        if (count > layout.page() && layout.rosterGrid().contains(mouseX, mouseY)) {
             int direction = scrollY > 0 ? -1 : 1;
-            int next = layout.clampFirstIndex(count, firstCell + direction * BookLayout.COLUMNS);
+            int next = layout.clampFirstIndex(count, firstCell + direction * layout.columns());
             if (next != firstCell) {
                 firstCell = next;
                 return true;
@@ -649,9 +702,32 @@ public final class CharacterBookScreen extends Screen {
         return AstrumApi.characters().map(registry -> registry.get(characterId)).orElse(null);
     }
 
-    /** {@return the portrait to blit for a definition, empty when it has none} */
-    private static Optional<ResourceLocation> portraitOf(@Nullable CharacterDef definition) {
-        return definition == null ? Optional.empty() : definition.portrait();
+    /**
+     * {@return the face to blit for a definition, empty when it has none}
+     *
+     * <p>Delegates to {@link CharacterDef#face()}, which owns the resolution order
+     * ({@code portrait → avatar}) so this screen, the wheel and the cast pad cannot each decide
+     * differently. Reading {@code definition.portrait()} here directly is the defect that made the
+     * roster draw a glyph for a character whose avatar the party effect was displaying two rectangles
+     * to the right.
+     *
+     * <p>The branch it takes is logged <b>once per character</b>, not per frame: a per-frame
+     * {@code LOGGER.debug} would be a formatting cost on every frame at 300 fps for a fact that cannot
+     * change while the screen is open. {@link #faceBranchLogged} is the memory, and it is cleared in
+     * {@link #init()} — the only place a new screen's state starts.
+     */
+    private Optional<ResourceLocation> faceOf(@Nullable CharacterDef definition) {
+        if (definition == null) {
+            return Optional.empty();
+        }
+        Optional<ResourceLocation> face = definition.face();
+        if (faceBranchLogged.add(definition.displayName())) {
+            Astrum.LOGGER.debug("astrum: book face for {} -> {} (branch: {})", definition.displayName(),
+                    face.map(ResourceLocation::toString).orElse("(none)"),
+                    face.isEmpty() ? "glyph disc, no portrait and no avatar"
+                            : definition.portrait().isPresent() ? "portrait" : "avatar (portrait absent)");
+        }
+        return face;
     }
 
     /** {@return the name to show, falling back to the raw id for a character the pack does not define} */

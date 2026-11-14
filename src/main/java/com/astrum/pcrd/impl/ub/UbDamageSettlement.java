@@ -6,6 +6,7 @@ import com.astrum.pcrd.api.v1.UbTier;
 import com.astrum.pcrd.impl.combat.AllyMode;
 import com.astrum.pcrd.impl.combat.LandedHit;
 import com.astrum.pcrd.impl.config.ServerConfig;
+import com.astrum.pcrd.impl.effect.AttackBuffs;
 import com.astrum.pcrd.impl.growth.ContributionTracker;
 import java.util.ArrayList;
 import java.util.List;
@@ -71,9 +72,9 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>What it deliberately does not do</h2>
  * No multiplier chain: see {@link UbDamage}'s javadoc for why the tier's {@code damage} is applied
- * verbatim and why that is the correct reading of spec §5.4/§6.2 rather than an omission. No buff
- * application either (see the task report): {@code selfAtkBuff} / {@code buffTicks} /
- * {@code teamChargeBonus} would each need machinery that does not exist yet.
+ * verbatim and why that is the correct reading of spec §5.4/§6.2 rather than an omission.
+ * {@code teamChargeBonus} is still unimplemented, and is left visible in the schema rather than silently
+ * dropped. {@code attackBuff} is applied here, after the damage — see {@link #settleBuff}.
  */
 @ApiStatus.Internal
 public final class UbDamageSettlement {
@@ -157,6 +158,11 @@ public final class UbDamageSettlement {
 
     private static void applyGuarded(ServerLevel level, ServerPlayer caster,
             ResourceLocation characterId, CharacterDef def, UbTier tier) {
+        // Before the damage: 「提升自己的物理攻击」 is a buff the caster keeps, so it must be live for
+        // whatever follows this cast. Applying it first also means a cast whose damage hits nothing
+        // (no target in reach) still grants the buff, which is what the wiki describes — the buff is a
+        // property of casting the ultimate, not of connecting with it.
+        settleBuff(caster, characterId, tier);
         double reach = UbDamage.range(tier);
         List<UbDamage.Target> candidates = candidates(level, caster, reach);
         UbDamage.Plan plan = UbDamage.plan(tier,
@@ -212,6 +218,30 @@ public final class UbDamageSettlement {
         Astrum.LOGGER.debug("astrum: UB {} of {} settled {} of {} declared hits on {} target(s), "
                         + "{} damage asked in total", display, name(caster), applied, plan.hits().size(),
                 plan.targets().size(), plan.total());
+    }
+
+    /**
+     * Applies the tier's {@code attackBuff} to the caster, if it declares one.
+     *
+     * <p>Settled here, next to the damage, because it is the other half of what the ultimate <em>does</em>
+     * — and because this is already the one place a paid-for cast becomes real, so a second call site
+     * would be a second answer to "what does an ultimate apply".
+     *
+     * <p>Guarded like the damage: a buff that cannot be applied must not cost the hits that follow, and
+     * the cast has already been paid for by the time this runs.
+     */
+    private static void settleBuff(ServerPlayer caster, ResourceLocation characterId, UbTier tier) {
+        Optional<UbTier.AttackBuffDef> buff = tier.attackBuff();
+        if (buff.isEmpty()) {
+            return;
+        }
+        UbTier.AttackBuffDef wanted = buff.get();
+        try {
+            AttackBuffs.apply(caster, wanted.multiplier(), wanted.seconds(), characterId);
+        } catch (RuntimeException e) {
+            Astrum.LOGGER.error("astrum: applying the attack buff of {} threw; the cast's damage is "
+                    + "unaffected", characterId, e);
+        }
     }
 
     /**

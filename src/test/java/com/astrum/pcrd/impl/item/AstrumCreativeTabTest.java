@@ -48,9 +48,9 @@ class AstrumCreativeTabTest {
 
     /** Every item this build registers, in the order the tab must show them. */
     private static final List<String> EXPECTED_ORDER = List.of(
+            // One card for every character, not one per book theme: the human's rule is that a single
+            // card enrols into whichever of the three themed books the player owns.
             "astrum:character_card",
-            "astrum:character_card_sakura",
-            "astrum:character_card_forest",
             "astrum:character_book",
             "astrum:character_book_sakura",
             "astrum:character_book_forest",
@@ -182,6 +182,9 @@ class AstrumCreativeTabTest {
     void thePinnedListIsStillTheRegistersWholeContent() {
         Set<String> themed = new LinkedHashSet<>(AstrumItems.themedItemIds().keySet());
         themed.add("astrum:rice_bowl");
+        // `themedItemIds()` holds the three themed books; the single shared card and the dish are
+        // registered under their own plain ids and must be added by hand.
+        themed.add("astrum:character_card");
         assertEquals(themed, new LinkedHashSet<>(EXPECTED_ORDER),
                 "the tab's pinned order must list every item the mod registers, and nothing else — "
                         + "extend EXPECTED_ORDER deliberately when adding an item");
