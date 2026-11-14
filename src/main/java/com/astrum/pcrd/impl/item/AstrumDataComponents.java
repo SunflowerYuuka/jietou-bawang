@@ -54,13 +54,11 @@ public final class AstrumDataComponents {
      * message instead of guessing, so a hand-written or datapack copy of the item cannot enrol a
      * character nobody named.
      *
-     * <p><b>There is deliberately no {@code astrum:book_theme} component.</b> The three themes are three
-     * item ids, and {@link BookTheme#ofItemId} derives the theme from the id. The reason is that three of
-     * the four things a theme has to decide are fixed by the item id and cannot be moved by data — the
-     * recipe result, the model file, and the lang key — so a component would be a fourth, independent copy
-     * that could disagree with them: a stack patched to {@code book_theme: sakura} on the plain book would
-     * open a pink panel while the inventory still drew the blue icon. One source of truth is worth more
-     * here than datapack re-theming; the full argument is in {@code BookTheme}'s javadoc.
+     * <p><b>There is deliberately no book-theme component.</b> The book was three items for a while, told
+     * apart by their registry ids; the human deleted the two re-skins, so there is one book and nothing to
+     * select. A component naming a panel variant would be a second, independent copy of a fact the item id
+     * already decides, and a stack patched to name a variant the assets do not ship would be a broken screen
+     * the inventory could not show coming.
      */
     public static final DeferredHolder<DataComponentType<?>, DataComponentType<ResourceLocation>> CHARACTER_ID =
             DATA_COMPONENTS.registerComponentType("character_id", builder -> builder

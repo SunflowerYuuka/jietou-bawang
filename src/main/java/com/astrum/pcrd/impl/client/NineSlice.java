@@ -1,7 +1,6 @@
 package com.astrum.pcrd.impl.client;
 
 import com.astrum.pcrd.impl.client.BookLayout.Box;
-import com.astrum.pcrd.impl.item.BookTheme;
 import java.util.List;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -54,29 +53,49 @@ public final class NineSlice {
     public static final int PIECES = 9;
 
     /**
-     * The slice size the <b>comfortable</b> panel art is drawn at, in GUI pixels.
+     * The nine pieces, in the order {@link Rects} and every drawing caller index them.
      *
-     * <p>The art is nine 64x64 tiles cut from one 192x192 frame, and each tile's ornament ink lives only
-     * in its <b>outer ~8 pixels</b> — the rest of the tile is the body's flat gradient. So the number
-     * here is really a <em>compression ratio</em> for that 8-pixel band: at the previous 18 the whole
-     * 64-pixel tile was squeezed 3.6× and what should be a crisp filigree edge blurred into the body
-     * colour, which is exactly what the human reported (「角色册的UI很粗糙，上下像是被压缩了」).
+     * <p>This list is the <b>contract</b> between the layout's rectangles and the art's textures: piece
+     * {@code i} of the panel is drawn from source cell {@code i} of the frame texture, in this order —
+     * top-left first, then row-major. A swapped pair draws the left edge across the top, which reads as
+     * "the art is broken" rather than "the index is wrong", so the order is written down once here and
+     * both {@code NineSliceTest} and {@code OfficialPanel}'s slicing read it from this constant.
      *
-     * <p>30 is 64 / 30 ≈ 2.1×, inside the 26–34 band an earlier audit recommended. {@code 26} (2.5×)
-     * was the conservative end and {@code 34} (1.9×) the aggressive one; 30 is chosen because the
-     * padding must stay two pixels ahead of it and 34 would have pushed the comfortable panel past a
-     * 640x360 window, which is what 1280x720 at GUI scale 2 gives.
+     * <p>The names are the frame art's own suffixes ({@code _tl}, {@code _t}, …), which is what makes the
+     * generator ({@code tools/gen_book_panel_texture.py}) and the drawing agree without either one
+     * restating the order.
+     */
+    public static final List<String> PIECE_NAMES = List.of("tl", "t", "tr", "l", "c", "r", "bl", "b", "br");
+
+    /**
+     * The slice size the <b>comfortable</b> panel is drawn at, in GUI pixels.
      *
-     * <p>The <b>compact</b> tier keeps 18 and is not a lapse: {@link BookLayout.Metrics#COMPACT} exists
-     * for windows that cannot fit the comfortable panel at all, and there the body is worth more than
-     * the ornament. See {@link BookLayout.Metrics#slice()} — the slice is a per-tier number, and this
-     * constant is the comfortable one, which the class-level default and every drawing call site read
-     * through the layout.
+     * <p>A number about the <em>frame band's weight</em>, not about any one picture. The frame art since
+     * the official-art change ({@code fx_ui_gachabutton_frame_tex.png}, sliced by
+     * {@code tools/gen_book_panel_texture.py} into 16-pixel cells) is a uniform one-pixel stroke, so a
+     * 30-pixel slice places that 16-pixel cell at a 1.9× <em>magnification</em>: the stroke lands about two
+     * pixels wide, which is what a frame wants at this panel size. The old painted frame needed 30 for the
+     * opposite reason (a 64-pixel tile had to be <em>reduced</em> to keep its filigree), and the number
+     * survived the art change because the visual weight it produces is the same — the constant is about how
+     * thick the border reads, and both arts look right at this weight.
+     *
+     * <p>The <b>compact</b> tier keeps 18 and is not a lapse: {@link BookLayout.Metrics#COMPACT} exists for
+     * windows that cannot fit the comfortable panel at all, and there the body is worth more than the
+     * frame. See {@link BookLayout.Metrics#slice()} — the slice is a per-tier number, and this constant is
+     * the comfortable one, which the class-level default and every drawing call site read through the
+     * layout.
      */
     public static final int DEFAULT_SLICE = 30;
 
-    /** Source edge of one nine-slice piece, in pixels: the art is nine 64x64 tiles of a 192x192 frame. */
-    public static final int PIECE_PIXELS = 64;
+    /**
+     * Source edge of one nine-slice cell, in pixels: the frame sheet is nine 16x16 cells of a 48x48 file.
+     *
+     * <p>Kept here rather than on the drawing class because the <em>slice</em> and the <em>cell</em> are the
+     * two halves of one fact ("how thick is the frame, in art and on screen"), and a test that pins the
+     * panel's look needs both. {@code OfficialPanel.CELL} is this number, and {@code OfficialPanelTest}
+     * asserts the committed sheet really tiles at it.
+     */
+    public static final int PIECE_PIXELS = 16;
 
     /**
      * The slice the <b>comfortable</b> tier's frame is drawn at, named for the tests and the generator.
@@ -94,7 +113,7 @@ public final class NineSlice {
      *
      * @param target    the panel's outer rectangle
      * @param sliceSize the wanted corner/edge thickness in GUI pixels; clamped, never negative
-     * @return the nine boxes in row-major order, matching {@link BookTheme.Part}
+     * @return the nine boxes in row-major order, matching {@link #PIECE_NAMES}
      */
     public static Rects rects(Box target, int sliceSize) {
         int slice = clampSlice(target, sliceSize);
@@ -153,14 +172,14 @@ public final class NineSlice {
     public record Rects(Box topLeft, Box top, Box topRight, Box left, Box centre, Box right,
             Box bottomLeft, Box bottom, Box bottomRight) {
 
-        /** {@return the nine boxes in row-major order, matching {@link BookTheme.Part#values()}} */
+        /** {@return the nine boxes in row-major order, matching {@link NineSlice#PIECE_NAMES}} */
         public List<Box> all() {
             return List.of(topLeft, top, topRight, left, centre, right, bottomLeft, bottom,
                     bottomRight);
         }
 
         /**
-         * {@return the box for piece {@code index} in {@link BookTheme.Part#values()} order}
+         * {@return the box for piece {@code index} in {@link NineSlice#PIECE_NAMES} order}
          *
          * @param index {@code 0}–{@code 8}
          */

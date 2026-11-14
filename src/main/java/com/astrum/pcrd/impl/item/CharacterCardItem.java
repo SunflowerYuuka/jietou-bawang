@@ -29,10 +29,14 @@ import org.jetbrains.annotations.Nullable;
  *
  * <h2>One card, every character, every book</h2>
  * The character is a data component on the stack ({@code astrum:character_id}), not a different item, and
- * the roster the card writes into is the player's — one roster, read by the blue, sakura and forest books
- * alike. So there is exactly one card id, and using it puts the character in front of whichever of the
- * three books the player opens next. There is no per-theme card and no per-character card; the human's
- * rule was 「角色卡一个角色只用做一个，不需要做三种不同的，一个角色卡右键使用后应该是放进三个角色册」.
+ * the roster the card writes into is the player's — one roster, read by the one book. So there is exactly
+ * one card id, and using it puts the character in front of the book the player opens next. There is no
+ * per-theme card and no per-character card.
+ *
+ * <p>The human's rule was 「角色卡一个角色只用做一个，不需要做三种不同的，一个角色卡右键使用后应该是放进三个角色册」
+ * — written when there were three re-skinned books. The books are one now (「将2个皮肤版本的角色册道具删除，仅保留最
+ * 开始的那个」), which makes the rule simpler rather than void: there is one roster, so there is one card, and no
+ * card can be the wrong card for a book.
  *
  * <h2>Four outcomes, and none of them is silent</h2>
  * <ol>
@@ -193,10 +197,9 @@ public class CharacterCardItem extends Item {
      * registry is only bound while a world is loaded, so outside one the raw id is shown rather than
      * nothing — a card whose tooltip is blank reads as a broken item.
      *
-     * <p>There is no theme line any more. It used to tell a player holding two cards apart, and the
-     * plain card deliberately showed nothing; with one card for every character and every book there is
-     * no theme on the item to name, and a line that said "Sakura" on a card usable with the forest book
-     * would have been wrong as well as pointless.
+     * <p>There is no theme line, and there never can be: the book is one item and the card names a character,
+     * not a skin. The line that used to be here named a theme a player could not have been holding on a card
+     * that was usable with every book.
      */
     @Override
     public void appendHoverText(ItemStack stack, TooltipContext context, List<Component> tooltip,

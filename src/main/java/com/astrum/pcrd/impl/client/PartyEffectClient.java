@@ -180,14 +180,22 @@ final class PartyEffectClient implements IClientMobEffectExtensions {
     /**
      * {@return the slot's icon texture, or {@code null} when the client does not know it}
      *
-     * <p>Reads {@link CharacterDef#face()}, the same resolution the 角色册's roster cell and party slot
-     * use, so the picture on the HUD row and the picture in the book are one picture and cannot drift
-     * apart. That is not cosmetic: the defect of 2026-11-14 was a character whose <em>book</em> drew a
-     * generic card and whose HUD row drew her face, because the two read different fields.
+     * <p>Reads {@link TierAvatar#forPartySlot}, the same resolution the 角色册's party slot and the HUD's gauge
+     * circle use, so the picture on the HUD row and the picture in the book are one picture and cannot drift
+     * apart. That is not cosmetic: the defect of 2026-11-14 was a character whose <em>book</em> drew a generic
+     * card and whose HUD row drew her face, because the two read different fields.
+     *
+     * <p>And it <b>follows the affection tier</b> (「角色头像要跟随好感度进行变化，符合前面的1* 3* 6*的要求」):
+     * this is the party-effect icon, one of the four surfaces the brief names for the 1★/3★/6★ rule. It used to
+     * read {@link CharacterDef#face()}, which is the one plain avatar field and would have pinned her there.
      */
     private static @Nullable ResourceLocation avatar(int slot) {
         CharacterDef definition = definition(slot);
-        return definition == null ? null : definition.face().orElse(null);
+        Optional<ResourceLocation> character = ClientPartyCache.slot(slot);
+        if (definition == null || character.isEmpty()) {
+            return null;
+        }
+        return TierAvatar.forPartySlot(definition, character.get()).orElse(null);
     }
 
     /**

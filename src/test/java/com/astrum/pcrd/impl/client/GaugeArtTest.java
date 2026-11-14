@@ -11,7 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The UB gauge's <b>official-art bar</b> (task 26 B), asserted as arithmetic and as a shipped file.
+ * The UB gauge's <b>official-art bar</b>, asserted as arithmetic and as a shipped file.
  *
  * <h2>Why the bar needed a test at all</h2>
  * It used to be one {@code fill} rectangle; it is now two official-art layers with the fill
@@ -23,9 +23,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *       the two ends and the pathological inputs a server can actually send;</li>
  *   <li>the <b>source crop</b> is asserted to be the same fraction as the destination, because that is
  *       the difference between the art being <em>clipped</em> and the art being <em>squashed</em>;</li>
- *   <li>the <b>committed PNGs</b> are read: both must be 128x16 RGBA, and they must differ — a track and
- *       a fill cut from one file would draw a bar that never fills.</li>
+ *   <li>the <b>committed PNGs</b> are read: both must be 256x24 RGBA, they must differ in colour, and they must
+ *       share a silhouette — a track and a fill cut from one file would draw a bar that never fills, and a pair
+ *       with different shapes cannot have the fill sit inside the trough.</li>
  * </ul>
+ *
+ * <h2>What changed, and why the test changed with it</h2>
+ * The bar used to be the <em>square</em> result-screen gauge tile, stretched into a bar: 「UB槽的UI不行，用官方的」.
+ * It is now the game's own horizontal fever bar ({@code pct_fever_bar.png}), so the asserted size moved with the
+ * art and the "same silhouette" assertion is new — it is the property that makes this pair a gauge rather than two
+ * unrelated pictures. The fractions and the clip arithmetic are unchanged, because they were never about the art.
  *
  * <p>What this cannot say is whether it <em>reads</em> as a PCR gauge on a real screen. That is the
  * human's check, and it is in the task report as such.
@@ -136,9 +143,56 @@ class GaugeArtTest {
         int fillInk = opaquePixels(fill);
         assertTrue(trackInk > track.getWidth() * 2, "the track must be drawn, not transparent");
         assertTrue(fillInk > fill.getWidth() * 2, "the fill must be drawn, not transparent");
-        assertNotEquals(trackInk, fillInk, "a track and a fill with the same ink are the same picture");
+        // The two layers are deliberately the SAME shape (that is the point of a trough), so their ink counts
+        // must agree — see theTrackAndTheFillShareASilhouette. What must differ is the colour: a fill that was
+        // the trough's own neutral would draw a bar that "fills" invisibly.
+        assertEquals(trackInk, fillInk,
+                "the pair shares a silhouette, so the same pixels are above the alpha threshold in both");
         assertNotEquals(averageArgb(track), averageArgb(fill),
-                "the fill must be brighter than its track, or the charge is invisible");
+                "the fill must differ from its track in colour, or the charge is invisible");
+    }
+
+    /**
+     * The trough and the fill share a <b>silhouette</b>: the fill can sit inside the track it was cut from.
+     *
+     * <p>This is what makes the pair a gauge. The trough is the official bar's own alpha, painted one dark colour;
+     * the fill is the same alpha with the art's colours. If the two alphas diverged — the obvious way being a
+     * re-export of one file and not the other — the "empty" channel and the "filled" bar would have different
+     * outlines, and a half-full gauge would show a crescent of trough inside the fill.
+     */
+    @Test
+    void theTrackAndTheFillShareASilhouette() throws Exception {
+        BufferedImage track = load(GaugeArt.TRACK_PATH);
+        BufferedImage fill = load(GaugeArt.FILL_PATH);
+        for (int y = 0; y < track.getHeight(); y++) {
+            for (int x = 0; x < track.getWidth(); x++) {
+                int trackAlpha = (track.getRGB(x, y) >>> 24) & 0xFF;
+                int fillAlpha = (fill.getRGB(x, y) >>> 24) & 0xFF;
+                assertEquals(trackAlpha, fillAlpha,
+                        "alpha differs at " + x + "," + y + " — the fill would not sit inside the trough");
+            }
+        }
+        // And the trough really is one colour, so an empty bar cannot read as half-charged.
+        java.util.Set<Integer> troughColours = new java.util.HashSet<>();
+        for (int y = 0; y < track.getHeight(); y++) {
+            for (int x = 0; x < track.getWidth(); x++) {
+                if (((track.getRGB(x, y) >>> 24) & 0xFF) > 200) {
+                    troughColours.add(track.getRGB(x, y) & 0x00FFFFFF);
+                }
+            }
+        }
+        assertEquals(1, troughColours.size(),
+                "the trough must be a single neutral, got " + troughColours.size() + " colours");
+    }
+
+    /** The committed art is the fever bar, not the square gauge tile it replaced: a bar is wider than it is tall. */
+    @Test
+    void theArtIsABarNotASquareTile() {
+        assertTrue(GaugeArt.SOURCE_WIDTH > GaugeArt.SOURCE_HEIGHT * 4,
+                "a square tile stretched into a bar is exactly what the human rejected; the committed art is "
+                        + GaugeArt.SOURCE_WIDTH + "x" + GaugeArt.SOURCE_HEIGHT);
+        assertTrue(HudLayout.BAR_WIDTH > HudLayout.BAR_HEIGHT * 4,
+                "and the HUD draws it as a bar");
     }
 
     /** The HUD's own numbers still make a drawable bar, so the blit cannot be handed an empty rect. */

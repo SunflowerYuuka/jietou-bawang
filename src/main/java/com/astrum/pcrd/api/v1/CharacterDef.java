@@ -40,12 +40,36 @@ import org.jetbrains.annotations.ApiStatus;
  *                      cannot also be one girl's face. Pointing this field at it is exactly the defect
  *                      of 2026-11-14: the roster drew the shared card while her real face sat unused
  *                      at {@code textures/gui/portrait/djeeta.png}
+ * @param icon1st       the <b>1-star</b> avatar, drawn while the character is at affection tier 1. The
+ *                      official art set ships one avatar per rarity for every unit, and they are
+ *                      visibly different pictures, so the face in the book and the HUD follows the
+ *                      character's growth instead of staying the picture she was enrolled with.
+ *                      Empty means "no separate 1-star art": {@link #avatar} is used, which is what
+ *                      every pack written before this field existed gets
+ * @param icon3rd       the <b>3-star</b> avatar, drawn at affection tier 2 — and at tier 3 when no
+ *                      6-star art is given, which is the spec §9.4 degradation rule
+ * @param icon6th       the <b>6-star</b> avatar, drawn at affection tier 3. Empty means "this character
+ *                      has no 6-star art", and tier 3 falls back to {@link #icon3rd}
+ * @param still         her <b>full-body still</b>, drawn as the 角色册 panel's background — the official
+ *                      {@code still_unit_<artId>.png}, downscaled by {@code tools/gen_still_backgrounds.py}
+ *                      and not the ~1 MB original. Empty means "no still art", and the panel then keeps
+ *                      its plain dark body rather than showing an unrelated picture
  */
 @ApiStatus.Experimental
 public record CharacterDef(int schemaVersion, String displayName, Dimension dimension,
                            Optional<ResourceLocation> portrait, Optional<ResourceLocation> model,
                            List<EffectHook> effects, UbDef ub, GrowthDef growth, AffectionDef affection,
-                           Optional<String> skillName, Optional<ResourceLocation> avatar) {
+                           Optional<String> skillName, Optional<ResourceLocation> avatar,
+                           Optional<ResourceLocation> icon1st,
+                           Optional<ResourceLocation> icon3rd,
+                           Optional<ResourceLocation> icon6th,
+                           Optional<ResourceLocation> still) {
+
+    /** The affection tier at which the 3-star art takes over: the middle rung of the three-tier ladder. */
+    private static final int MIDDLE_TIER = 2;
+
+    /** The last affection tier (spec §6.2): the one the 6-star art is drawn at. */
+    private static final int TOP_TIER = 3;
 
     public static final Codec<CharacterDef> CODEC = RecordCodecBuilder.create(instance -> instance.group(
             Codec.INT.fieldOf("schemaVersion").forGetter(CharacterDef::schemaVersion),
@@ -58,7 +82,13 @@ public record CharacterDef(int schemaVersion, String displayName, Dimension dime
             GrowthDef.CODEC.fieldOf("growth").forGetter(CharacterDef::growth),
             AffectionDef.CODEC.fieldOf("affection").forGetter(CharacterDef::affection),
             Codec.STRING.optionalFieldOf("skillName").forGetter(CharacterDef::skillName),
-            ResourceLocation.CODEC.optionalFieldOf("avatar").forGetter(CharacterDef::avatar)
+            ResourceLocation.CODEC.optionalFieldOf("avatar").forGetter(CharacterDef::avatar),
+            // The three rarity avatars. Optional and additive: a pack that names none keeps loading and
+            // draws `avatar` at every tier, which is exactly the behaviour it had before these fields.
+            ResourceLocation.CODEC.optionalFieldOf("icon1st").forGetter(CharacterDef::icon1st),
+            ResourceLocation.CODEC.optionalFieldOf("icon3rd").forGetter(CharacterDef::icon3rd),
+            ResourceLocation.CODEC.optionalFieldOf("icon6th").forGetter(CharacterDef::icon6th),
+            ResourceLocation.CODEC.optionalFieldOf("still").forGetter(CharacterDef::still)
     ).apply(instance, CharacterDef::new));
 
     /**
@@ -110,5 +140,75 @@ public record CharacterDef(int schemaVersion, String displayName, Dimension dime
      */
     public Optional<ResourceLocation> face() {
         return portrait.isPresent() ? portrait : avatar;
+    }
+
+    /**
+     * The <b>1-star</b> portrait this character draws on a surface that does not know her tier.
+     *
+     * <p>Same field order as {@link #face()} — the book's override first, then her one picture — but
+     * starting from {@link #icon1st} when the pack ships it. It exists for the roster grid <em>before</em>
+     * the client has a progress row for a character: a cell must still draw <em>something</em>, and the
+     * lowest tier is the only tier that is never a promise the player has not earned.
+     */
+    public Optional<ResourceLocation> faceAtLowestTier() {
+        return icon1st.isPresent() ? icon1st : face();
+    }
+
+    /**
+     * {@return the avatar for affection tier {@code tier}: 1★ at tier 1, 3★ at 2, 6★ at 3}
+     *
+     * <h2>The rule, and the one degradation it allows</h2>
+     * Spec §9.4: the icon tier <b>is</b> the avatar for the character's affection tier, and a character
+     * with no 6-star art degrades to her 3-star art at tier 3 rather than falling back to the generic
+     * picture. So:
+     *
+     * <pre>
+     *   tier 1 -> icon1st   (else 3★, else the plain face)
+     *   tier 2 -> icon3rd   (else 1★, else the plain face)
+     *   tier 3 -> icon6th   (else icon3rd — the documented degradation)
+     * </pre>
+     *
+     * <p>The tier is <b>passed in</b>, never computed here: it is
+     * {@code AffectionKernel.tier(affection, def.affection())} / {@code GrowthFacts.tier}, and those are
+     * the single implementations of the ladder. Re-deriving it from an affection number in this record
+     * would be a second copy of the rule — the failure this project has shipped three times.
+     *
+     * <h2>Why the fallback chain, rather than "null means the plain face"</h2>
+     * A pack written before these fields existed names none of them, and its characters must look exactly
+     * as they did: every tier then answers {@link #face()} (portrait, else avatar). A pack that ships only
+     * a 6-star variant — a real thing in the official set, where the 3-star art is missing for some
+     * units — still gets sensible pictures, because the chain climbs back up rather than showing nothing.
+     *
+     * <p>This is a pure function of the record, which is what lets
+     * {@code CharacterDefCodecTest}/{@code TierAvatarTest} pin all four cases (1→1★, 2→3★, 3→6★,
+     * 3→3★ when no 6★) with no client, no registry and no PNG.
+     *
+     * @param tier the affection tier, {@code 1}–{@code 3}, from {@code GrowthFacts.tier}
+     */
+    public Optional<ResourceLocation> face(int tier) {
+        if (tier >= TOP_TIER) {
+            // The documented degradation: no 6-star art means her 3-star art, not a generic picture.
+            return firstPresent(icon6th, icon3rd, icon1st).or(this::face);
+        }
+        if (tier >= MIDDLE_TIER) {
+            return firstPresent(icon3rd, icon1st, icon6th).or(this::face);
+        }
+        return firstPresent(icon1st, icon3rd, icon6th).or(this::face);
+    }
+
+    /**
+     * {@return the first of {@code candidates} that is present, or empty}
+     *
+     * <p>Written out rather than a stream over an array so the absence of a static container is visible
+     * on the page: this runs per roster cell per frame.
+     */
+    private static Optional<ResourceLocation> firstPresent(Optional<ResourceLocation> first,
+            Optional<ResourceLocation> second) {
+        return first.isPresent() ? first : second;
+    }
+
+    private static Optional<ResourceLocation> firstPresent(Optional<ResourceLocation> first,
+            Optional<ResourceLocation> second, Optional<ResourceLocation> third) {
+        return first.isPresent() ? first : firstPresent(second, third);
     }
 }

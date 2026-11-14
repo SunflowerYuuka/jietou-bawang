@@ -32,12 +32,18 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>What the bar is drawn from</h2>
  * <b>Official PCR art</b>, two layers: {@code gui/ub_gauge_track.png} under {@code
- * gui/ub_gauge_fill.png}, both cut from the game's own result-screen gauge pair by
- * {@code tools/gen_ub_gauge_texture.py}. The fill is <b>clipped</b>, not squashed: the destination and
- * the source crop are the same charge fraction, which is {@link GaugeArt}'s arithmetic and
- * {@code GaugeArtTest}'s assertion. The hue ramp ({@link HudLayout#chargeColor}) is kept as the
- * <em>tint</em> over the fill, so the bar still turns from cold to hot as it charges — the art gives it
- * a shape, the tint gives it the reading.
+ * gui/ub_gauge_fill.png}, both cut from the game's own <b>horizontal fever bar</b>
+ * ({@code pct_fever_bar.png}) by {@code tools/gen_ub_gauge_texture.py}. The fill is <b>clipped</b>, not
+ * squashed: the destination and the source crop are the same charge fraction, which is {@link GaugeArt}'s
+ * arithmetic and {@code GaugeArtTest}'s assertion.
+ *
+ * <p><b>Why the hue ramp is no longer painted over it.</b> The previous bar was a <em>square</em> gauge tile
+ * stretched into a bar — the human's 「UB槽的UI不行，用官方的」, with a screenshot of a yellow bar and a dark
+ * three-segment tail. The fever bar is a real bar and already carries the game's own rainbow ramp
+ * (mint → cyan → blue → violet → pink → peach → yellow), so the cold-to-hot reading the tint used to add is
+ * <em>in the art</em>. A wash over it would mute precisely the gradient the human asked to see, so the
+ * ordinary charge has no wash at all and only the refusal flash tints the fill. {@link HudLayout#chargeColor}
+ * stays: it is still the ready outline's colour, and {@code HudLayoutTest} still pins its ends.
  *
  * <h2>What it reads</h2>
  * {@link ClientUbCache} — the client's mirror of the server's gauge, the readers of which exist for
@@ -64,17 +70,20 @@ public final class UbHud {
     /** Ring colour when nothing is cooling down. */
     private static final int READY_COLOUR = 0xFF2E2E2E;
 
-    /** Background of the gauge bar, under the track art: the art's own glow is translucent. */
-    private static final int BAR_BACKGROUND = 0xA0101010;
+    /**
+     * Background painted under the track art.
+     *
+     * <p>The fever bar's capsule has fully transparent corners, so without a floor behind it the world (or a
+     * chest, or the sun) shows through the rounded ends of the gauge. Opaque enough to be a channel, dark
+     * enough that the trough art on top of it still reads as the trough.
+     */
+    private static final int BAR_BACKGROUND = 0xE0101010;
 
     /** Outline drawn around the bar when the ultimate is ready to fire. */
     private static final int READY_OUTLINE = 0xFFFFC93C;
 
     /** Colour the bar flashes when a cast was refused. */
     private static final int REFUSAL_FLASH = 0xFFFF4040;
-
-    /** Alpha of the ordinary charge wash over the official gauge art. */
-    private static final int TINT_ALPHA = 0x6A;
 
     /** Alpha of the refusal wash: strong enough to read as "no" at a glance. */
     private static final int REFUSAL_TINT_ALPHA = 0xB0;
@@ -221,16 +230,20 @@ public final class UbHud {
 
         int filled = GaugeArt.fillWidth(fraction, HudLayout.BAR_WIDTH);
         if (filled > 0) {
-            // Source crop = the same fraction as the destination, so the gold gradient is clipped
-            // rather than squashed into a shorter copy of itself.
+            // Source crop = the same fraction as the destination, so the rainbow is clipped rather than
+            // squashed into a shorter copy of itself.
             int sourceWidth = Math.max(1, GaugeArt.sourceWidth(fraction));
             graphics.blit(GaugeArt.FILL, barX, barY, filled, HudLayout.BAR_HEIGHT,
                     0.0F, 0.0F, sourceWidth, GaugeArt.SOURCE_HEIGHT, GaugeArt.SOURCE_WIDTH,
                     GaugeArt.SOURCE_HEIGHT);
-            // The hue ramp rides over the art: the shape is official, the colour is the reading.
-            int colour = refusing ? REFUSAL_FLASH : HudLayout.chargeColor(fraction);
-            graphics.fill(barX, barY, barX + filled, barY + HudLayout.BAR_HEIGHT,
-                    tintOverlay(colour, refusing));
+            if (refusing) {
+                // Only the refusal washes over the art. The ordinary charge does not: the fever bar's own
+                // ramp IS the cold-to-hot reading, and a wash over it was muting the thing the human asked
+                // for. A refusal still has to be unmistakable (spec §5.4 forbids silent failure), and red
+                // over a rainbow reads as "no" at a glance.
+                graphics.fill(barX, barY, barX + filled, barY + HudLayout.BAR_HEIGHT,
+                        tintOverlay(REFUSAL_FLASH, true));
+            }
         }
         if (fraction >= 1.0 && CooldownTracker.fraction(span, now) <= 0.0) {
             // Ready: a thin gold frame around the bar, so "full but still cooling" reads differently
@@ -245,19 +258,18 @@ public final class UbHud {
     }
 
     /**
-     * {@return the charge colour as a translucent wash over the art}
+     * {@return {@code argb} as a translucent wash}
      *
-     * <p>Opaque would hide the gold and the white core, which is the whole point of using the official
-     * art; invisible would lose the cold-to-hot reading. {@link #TINT_ALPHA} keeps the art's structure
-     * while shifting its hue far enough to be seen at ten pixels. The refusal wash is stronger on
-     * purpose — it is the one state that must be unmistakable, and a refusal that reads as "charging
-     * slowly" would be the silent failure spec §5.4 forbids.
+     * <p>Opaque would hide the art; invisible would not be a flash. {@link #REFUSAL_TINT_ALPHA} keeps the
+     * bar's shape and its fill length readable while making the colour unmistakably red — the one state that
+     * must be obvious, because a refusal that reads as "charging slowly" is the silent failure spec §5.4
+     * forbids.
      *
-     * @param argb     the opaque charge colour from {@link HudLayout#chargeColor}
-     * @param refusing whether this frame is a refusal flash
+     * @param argb     the opaque colour
+     * @param refusing whether this frame is a refusal flash (the only caller that tints at all)
      */
     private static int tintOverlay(int argb, boolean refusing) {
-        int alpha = refusing ? REFUSAL_TINT_ALPHA : TINT_ALPHA;
+        int alpha = refusing ? REFUSAL_TINT_ALPHA : 0x00;
         return (alpha << 24) | (argb & 0x00FFFFFF);
     }
 }

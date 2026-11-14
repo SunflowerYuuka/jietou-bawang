@@ -1,7 +1,6 @@
 package com.astrum.pcrd.impl.client;
 
 import com.astrum.pcrd.impl.client.BookLayout.Box;
-import com.astrum.pcrd.impl.item.BookTheme;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -215,22 +214,18 @@ class NineSliceTest {
     // -----------------------------------------------------------------------------------------
 
     /**
-     * {@link NineSlice.Rects#piece(int)} agrees with {@link NineSlice.Rects#all()}, and the order is the
-     * one {@link BookTheme.Part} declares.
+     * {@link NineSlice.Rects#piece(int)} agrees with {@link NineSlice.Rects#all()}, and the order is
+     * {@link NineSlice#PIECE_NAMES}.
      *
-     * <p>The screen blits nine <em>different textures</em> into nine boxes, so this order is the contract
-     * between the layout and the art: a swapped pair draws the left edge across the top, which reads as
-     * "the art is broken" rather than "the index is wrong". The names live on the theme enum (which owns
-     * the textures), and this test is where the two lists are proved to be the same list.
+     * <p>The screen blits nine <em>different</em> cells of one frame sheet into nine boxes, so this order is
+     * the contract between the layout and the art: a swapped pair draws the left edge across the top, which
+     * reads as "the art is broken" rather than "the index is wrong". The names used to live on the deleted
+     * {@code BookTheme} enum; they live on {@link NineSlice} now, next to the rectangles they index.
      */
     @Test
-    void thePieceOrderMatchesTheThemeEnum() {
-        List<String> fromTheme = new ArrayList<>();
-        for (BookTheme.Part part : BookTheme.Part.values()) {
-            fromTheme.add(part.suffix());
-        }
-        assertEquals(NineSlice.PIECES, fromTheme.size());
-        assertEquals(List.of("tl", "t", "tr", "l", "c", "r", "bl", "b", "br"), fromTheme,
+    void thePieceOrderIsTheDocumentedOne() {
+        assertEquals(NineSlice.PIECES, NineSlice.PIECE_NAMES.size());
+        assertEquals(List.of("tl", "t", "tr", "l", "c", "r", "bl", "b", "br"), NineSlice.PIECE_NAMES,
                 "the nine suffixes are the nine-slice order, top-left first and row-major");
 
         NineSlice.Rects r = rects(300, 200);

@@ -216,7 +216,11 @@ public final class WheelOverlay {
 
         boolean enhanced = ClientPartyCache.enhanced(slot);
         Optional<CharacterDef> def = definition(id.get());
-        WheelIcon icon = WheelIcon.of(def.flatMap(CharacterDef::face), enhanced);
+        // The tier avatar, not the plain face: the wheel is one of the surfaces a player reads "how grown is
+        // she" from, and a wheel that showed the enrolled picture while the book beside it showed her 6★ art
+        // would be the same two-fields defect the book's face resolution exists to prevent.
+        WheelIcon icon = WheelIcon.of(
+                def.flatMap(definition -> TierAvatar.forPartySlot(definition, id.get())), enhanced);
         int vertices = 0;
         if (layout.showIcon()) {
             // The icon itself is drawn by WheelIconDraw, which the cast pad also uses: the rings, the

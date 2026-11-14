@@ -17,12 +17,13 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The six themed items and the dish, as files on the classpath.
+ * The two 角色册-family items and the dish, as files on the classpath.
  *
  * <h2>Why an item-registration test looks at JSON</h2>
  * Nothing this task added is a rule: it is <b>content</b>, and content fails silently. A new item with no
@@ -31,7 +32,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * world load, and the player simply cannot craft it. None of those throws, and none of them is visible to
  * {@code AstrumItems}' own compilation.
  *
- * <p>So the ids are derived from the same {@link BookTheme} table the registration uses
+ * <p>So the ids are derived from the same path constants the registration uses
  * ({@link AstrumItems#themedItemIds()}), and each one is checked for the three files that make it a real
  * item: a model, a texture behind that model, and a name in both language files. The lang half is also
  * covered by {@code LangParityTest}; it is repeated here because the failure it prevents — an item whose
@@ -49,17 +50,17 @@ class AstrumItemsTest {
      * Every themed id maps to a model file whose {@code layer0} names a texture that exists.
      *
      * <p>The chain matters: the model is what the client loads, and its {@code layer0} is the path it looks
-     * up. A model pointing at {@code astrum:item/character_book_sakura} when the file is at
-     * {@code item/theme_sakura/character_book.png} is the exact bug this catches — the model parses, the
-     * item registers, and the icon is a purple-and-black checkerboard.
+     * up. A model pointing at {@code astrum:item/character_book} when the file is at
+     * {@code item/character_book.png} under a different name is the exact bug this catches — the model parses,
+     * the item registers, and the icon is a purple-and-black checkerboard.
      */
     @Test
     void everyThemedItemHasAModelThatPointsAtARealTexture() {
         Map<String, String> ids = AstrumItems.themedItemIds();
-        // `themedItemIds()` carries exactly one themed BOOK per theme. The card is deliberately not
-        // in it: a single card serves every character and is not themed, so it is registered plainly.
-        assertEquals(BookTheme.values().length, ids.size(),
-                "one themed book per theme: " + ids.keySet());
+        // Two ids: the one card and the one book. The two re-skinned books and their ids were deleted
+        // (「将2个皮肤版本的角色册道具删除，仅保留最开始的那个」), so this number going up is a change of feature,
+        // not an accident.
+        assertEquals(2, ids.size(), "one card and one book: " + ids.keySet());
 
         for (Map.Entry<String, String> entry : ids.entrySet()) {
             ResourceLocation id = ResourceLocation.parse(entry.getKey());
@@ -137,22 +138,39 @@ class AstrumItemsTest {
     }
 
     /**
-     * Each theme's book and card ids are the ids the theme itself reports.
+     * The id table is the registration's own paths.
      *
-     * <p>{@code AstrumItems.themedItemIds()} is built from the enum, so this looks tautological; it is not.
-     * The point is that the <em>registration</em> also builds its {@code DeferredItem}s from
-     * {@link BookTheme#bookPath()} / {@link BookTheme#cardPath()}, so a test that starts from the enum
-     * cannot pass while the registration used a literal.
+     * <p>{@code AstrumItems.themedItemIds()} is built from {@link AstrumItems#CARD_PATH} and
+     * {@link AstrumItems#BOOK_PATH}, so this looks tautological; it is not. The point is that the
+     * <em>registration</em> also builds its {@code DeferredItem}s from those two constants, so a test that
+     * starts from the constants cannot pass while the registration used a literal string.
+     *
+     * <p>Also pins the part of the deletion that a file-existence check cannot see: there is no
+     * {@code astrum:character_book_sakura} and no {@code astrum:character_book_forest} in this table, and
+     * therefore no model or lang key for them either.
      */
     @Test
-    void theIdTableIsTheThemeTable() {
-        for (BookTheme theme : BookTheme.values()) {
-            assertSame(theme, BookTheme.ofItemId(InternalIds.id(theme.bookPath())));
-            assertTrue(AstrumItems.themedItemIds().containsKey(theme.bookItemId().toString()));
+    void theIdTableIsTheRegistrationTable() {
+        assertTrue(AstrumItems.themedItemIds().containsKey(InternalIds.id(AstrumItems.BOOK_PATH).toString()),
+                "the one book must be in the table");
+        assertTrue(AstrumItems.themedItemIds().containsKey(InternalIds.id(AstrumItems.CARD_PATH).toString()),
+                "the one card must be in the table");
+        assertEquals(AstrumItems.BOOK_PATH, AstrumItems.themedItemIds()
+                .get(InternalIds.id(AstrumItems.BOOK_PATH).toString()),
+                "the map must key a model path by its own item id");
+        assertEquals(AstrumItems.CARD_PATH, AstrumItems.cardPath());
+
+        for (String gone : List.of("astrum:character_book_sakura", "astrum:character_book_forest")) {
+            assertTrue(!AstrumItems.themedItemIds().containsKey(gone), gone + " must be gone");
+            assertFalse(AstrumItemsTest.class.getResource("/assets/astrum/models/item/"
+                    + gone.substring("astrum:".length()) + ".json") != null, gone + " model must be gone");
+            for (String language : List.of("en_us", "zh_cn")) {
+                assertTrue(!json("/assets/astrum/lang/" + language + ".json").has("item." + gone),
+                        language + " still names the deleted " + gone);
+            }
         }
-        assertTrue(AstrumItems.themedItemIds().containsKey(RICE_BOWL)
-                        == false,
-                "the dish is not a themed book or card");
+        assertTrue(!AstrumItems.themedItemIds().containsKey(RICE_BOWL),
+                "the dish is not a 角色册-family item");
     }
 
     private static JsonObject json(String resource) {

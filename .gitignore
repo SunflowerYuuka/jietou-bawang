@@ -27,3 +27,7 @@ desktop.ini
 .probe/
 .superpowers/
 .worktrees/
+
+# Python caches (tools/*.py)
+__pycache__/
+*.pyc

@@ -30,31 +30,14 @@ public final class BookText {
     public static final String KEY_ITEM = "item.astrum.character_book";
 
     /**
-     * {@return the item-name key of the {@code theme}'s book}
+     * {@return every book item name}, which is exactly one name, for {@code LangParityTest}
      *
-     * <p>Derived from the same suffix the item id uses ({@link com.astrum.pcrd.impl.item.BookTheme}),
-     * so the name key, the item id, the model file and the texture name are one string with four uses.
-     * The plain book keeps the literal {@link #KEY_ITEM} it has always had.
-     *
-     * @param theme the book's theme
-     */
-    public static String itemKey(com.astrum.pcrd.impl.item.BookTheme theme) {
-        return "item.astrum." + theme.bookPath();
-    }
-
-    /**
-     * {@return every book item name}, one per theme, for {@code LangParityTest}
-     *
-     * <p>Derived by walking the enum rather than listed: a fourth theme gets its name key checked by the
-     * parity test without anybody remembering to add it here, which is the whole failure mode this method
-     * exists to prevent.
+     * <p>A method rather than {@link #KEY_ITEM} read directly by the caller, because the set is what the
+     * parity test consumes and the day a second book id exists this is the one place that has to notice.
+     * It used to walk the deleted {@code BookTheme} enum.
      */
     public static Set<String> itemKeys() {
-        Set<String> keys = new LinkedHashSet<>();
-        for (com.astrum.pcrd.impl.item.BookTheme theme : com.astrum.pcrd.impl.item.BookTheme.values()) {
-            keys.add(itemKey(theme));
-        }
-        return Set.copyOf(keys);
+        return Set.of(KEY_ITEM);
     }
 
     /** The item's tooltip: what a right-click does. */

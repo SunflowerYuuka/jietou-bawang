@@ -43,7 +43,10 @@ DEFAULT_SOURCE = os.path.join("K:\\", "AI", "Minecraft", "assets", "pcr", "extra
 #:   3015  自buff   (self buff)         -> stack
 #:   1023  灼烧     (burn)              -> detonate
 #:   1022  中毒     (poison)            -> apply_effect
-#:   3010  自buff   (self buff, attack) -> attack_buff
+#:
+#: ``attack_buff`` is NOT here: the human replaced its icon with the official ``caravan_icon_buff_00005``
+#: badge (「获得的攻击提升图标就使用提供的buff图标」), which ``tools/gen_buff_icon.py`` writes. Eight skill
+#: icons, not nine.
 ICONS = {
     "extra_damage": 1001,
     "lifesteal": 2005,
@@ -53,7 +56,6 @@ ICONS = {
     "stack": 3015,
     "detonate": 1023,
     "apply_effect": 1022,
-    "attack_buff": 3010,
 }
 
 #: Output size. 64 keeps the gold frame and the art's shapes readable when the book draws a row icon;

@@ -75,10 +75,14 @@ public final class PresetFace {
      *
      * <p>The game-side half: reads the preset and the party from their caches, then the definition from
      * the loaded pack through the same public facade the book uses
-     * ({@link AstrumApi#characters()}), and finally the face through
-     * {@link CharacterDef#face()} — the same call {@code CharacterBookScreen} and
-     * {@code PartyEffectClient} make, so the circle, the roster and the effect row cannot show three
-     * different pictures.
+     * ({@link AstrumApi#characters()}), and finally the face through {@link TierAvatar#forPartySlot} — the
+     * same call {@code CharacterBookScreen}'s party slots and {@code PartyEffectClient} make, so the circle,
+     * the roster and the effect row cannot show three different pictures.
+     *
+     * <p><b>The circle follows the affection tier too</b> (「角色头像要跟随好感度进行变化」): a slot's character
+     * wears her 1★ / 3★ / 6★ avatar here exactly as she does in the book. It used to read
+     * {@link CharacterDef#face()} directly, which is the avatar field and would have frozen her at whatever
+     * single picture the pack named.
      *
      * <p>Empty in a world with no registry (a dedicated server, a disconnect) and for a character
      * whose {@code avatar} and {@code portrait} are both absent.
@@ -89,8 +93,11 @@ public final class PresetFace {
         if (character.isEmpty()) {
             return Optional.empty();
         }
+        // No face filter here any more: the picture is chosen per tier by CharacterDef.face(int), which can
+        // answer from icon1st/icon3rd/icon6th even when `avatar` is absent, so filtering on face() at this
+        // level would hide a character that the tier rule can in fact draw.
         return AstrumApi.characters().map(registry -> registry.get(character.get()))
-                .filter(definition -> definition != null && definition.face().isPresent());
+                .filter(definition -> definition != null);
     }
 
     /**
@@ -100,6 +107,16 @@ public final class PresetFace {
      * when it changes, which is the only moment a probe cares about.
      */
     public static Optional<ResourceLocation> face() {
-        return definition().flatMap(CharacterDef::face);
+        Optional<CharacterDef> definition = definition();
+        if (definition.isEmpty()) {
+            return Optional.empty();
+        }
+        Optional<ResourceLocation> character =
+                characterOf(WheelPreset.slot(), ClientPartyCache.latest().slots());
+        if (character.isEmpty()) {
+            return Optional.empty();
+        }
+        // The tier join, not a raw field read: the circle follows the affection tier exactly as the book does.
+        return TierAvatar.forPartySlot(definition.get(), character.get());
     }
 }

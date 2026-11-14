@@ -1,7 +1,7 @@
 package com.astrum.pcrd.impl.growth;
 
 import com.astrum.pcrd.impl.InternalIds;
-import com.astrum.pcrd.impl.item.BookTheme;
+import com.astrum.pcrd.impl.item.AstrumItems;
 import java.util.Set;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.ItemStack;
@@ -103,9 +103,9 @@ class DishesTest {
      */
     @Test
     void noBookOrCardIsADish() {
-        for (BookTheme theme : BookTheme.values()) {
-            assertFalse(Dishes.isDishId(theme.bookItemId()),
-                    theme + " book must not be feedable");
-        }
+        assertFalse(Dishes.isDishId(InternalIds.id(AstrumItems.CARD_PATH)),
+                "the character card must not be feedable");
+        assertFalse(Dishes.isDishId(InternalIds.id(AstrumItems.BOOK_PATH)),
+                "the character book must not be feedable");
     }
 }

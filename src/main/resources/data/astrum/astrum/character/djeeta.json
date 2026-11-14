@@ -3,8 +3,12 @@
   "displayName": "姬塔",
   "skillName": "星河一天",
   "avatar": "astrum:textures/gui/portrait/djeeta.png",
+  "icon1st": "astrum:textures/gui/portrait/djeeta_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/djeeta_3.png",
+  "icon6th": "astrum:textures/gui/portrait/djeeta_6.png",
+  "still": "astrum:textures/gui/still/djeeta.png",
   "dimension": "charge",
-  "_notes": "数值推导见 docs/balance-derivation.md：UB 20.0/段 是比例锚点，技能1 = 20 x 118431/355293 = 6.7；TP 的 8.0 是设计值、未与真实 TP 条标定。avatar 指她本人的官方头像（tools/gen_portraits.py 由 3★ 头像重采样为 64x64），队伍效果图标与角色册头像都画它；textures/item/character_card.png 是通用的角色卡贴图（同一张给所有人），不是任何人的脸，不得指给它。",
+  "_notes": "数值推导见 docs/balance-derivation.md：UB 20.0/段 是比例锚点，技能1 = 20 x 118431/355293 = 6.7；TP 的 8.0 是设计值、未与真实 TP 条标定。avatar 指她本人的官方头像（tools/gen_portraits.py 由 3★ 头像重采样为 64x64），队伍效果图标与角色册头像都画它；icon1st/icon3rd/icon6th 是三档好感头像（官方 icon_unit_105711/105731/105761，tools/gen_tier_avatars.py 各重采样为 64x64），由 CharacterDef.face(tier) 按 1★/3★/6★ 选用、6★ 缺失时退回 3★；still 是官方完全立绘 still_unit_105731（tools/gen_still_backgrounds.py 缩到 512x288、280 KB 提交，不提交 970 KB 原图），画在角色册面板当背景。textures/item/character_card.png 是通用的角色卡贴图（同一张给所有人），不是任何人的脸，不得指给它。",
   "effects": [
     { "trigger": "melee_hit", "effect": "extra_damage",
       "triggerParams": { "skill": "wide_slash" },

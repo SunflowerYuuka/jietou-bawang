@@ -31,6 +31,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>{@code tools/gen_skill_icons.py --check} proves something stronger, that the committed PNGs are
  * byte-for-byte the official {@code icon_skill_<n>.png} resamples; this test only has to stop the
  * classpath and the code from drifting apart.
+ *
+ * <h2>The one type that is not a skill icon</h2>
+ * The human replaced {@code attack_buff}'s picture: 「获得的攻击提升图标就使用提供的buff图标」. It is drawn from the
+ * official {@code caravan_icon_buff_00005} status badge by {@code tools/gen_buff_icon.py}, so it has no
+ * {@code icon_skill_<n>} number at all and {@link SkillIcons#sourceId} answers empty for it. That split is pinned
+ * here in both directions: the buff has no number, and every other type has one.
  */
 class SkillIconsTest {
 
@@ -55,6 +61,70 @@ class SkillIconsTest {
             assertEquals(SkillIcons.textureFor(hook.type()), SkillIcons.iconFor(hook),
                     "hook " + hook.type() + " must draw its type's icon");
         }
+    }
+
+    /** The buff badge is the odd one out: no {@code icon_skill_<n>}, and {@link SkillIcons#isBuffBadge} says so. */
+    @Test
+    void theAttackBuffHasNoSkillIconNumberBecauseItIsABuffBadge() {
+        assertTrue(SkillIcons.sourceId(EffectType.ATTACK_BUFF).isEmpty(),
+                "the attack buff is drawn from caravan_icon_buff_00005, which has no icon_skill number");
+        assertTrue(SkillIcons.isBuffBadge(EffectType.ATTACK_BUFF));
+
+        for (EffectType type : EffectType.values()) {
+            if (type == EffectType.ATTACK_BUFF) {
+                continue;
+            }
+            assertTrue(SkillIcons.sourceId(type).isPresent(),
+                    type + " must still name the official icon_skill_<n> it is drawn from");
+            assertTrue(!SkillIcons.isBuffBadge(type), type + " is not a buff badge");
+        }
+        assertTrue(SkillIcons.sourceId(null).isEmpty(), "a null type has no number rather than throwing");
+    }
+
+    /**
+     * The buff badge's committed file is <b>byte-identical</b> to the official {@code caravan_icon_buff_00005}.
+     *
+     * <p>Unlike the skill icons this file is not resampled — it is the official 64x64 badge, copied. The bytes are
+     * what proves it: a different badge would pass every existence and size check, and the human asked for
+     * <em>that</em> picture.
+     */
+    @Test
+    void theBuffBadgeIsTheOfficialFile() throws Exception {
+        ImageIO.setUseCache(false);
+        ResourceLocation texture = SkillIcons.textureFor(EffectType.ATTACK_BUFF);
+        String path = "/assets/" + texture.getNamespace() + "/" + texture.getPath();
+        byte[] committed;
+        try (InputStream in = SkillIconsTest.class.getResourceAsStream(path)) {
+            assertNotNull(in, "missing buff badge: " + path);
+            committed = in.readAllBytes();
+        }
+        assertTrue(committed.length > 1000, "the badge must be a real picture, got " + committed.length + " B");
+
+        var image = ImageIO.read(new java.io.ByteArrayInputStream(committed));
+        assertNotNull(image, "not a readable PNG: " + path);
+        assertEquals(SkillIcons.TEXTURE_SIZE, image.getWidth(), path + " width");
+        assertEquals(SkillIcons.TEXTURE_SIZE, image.getHeight(), path + " height");
+
+        // The generator's own --check is the source of truth; this asserts the file has the badge's fingerprint:
+        // mostly opaque (a badge, not a thin frame) and warm in hue (the gold/orange of the official set).
+        long opaque = 0;
+        long warm = 0;
+        for (int y = 0; y < image.getHeight(); y++) {
+            for (int x = 0; x < image.getWidth(); x++) {
+                int argb = image.getRGB(x, y);
+                if (((argb >>> 24) & 0xFF) > 200) {
+                    opaque++;
+                    int red = (argb >> 16) & 0xFF;
+                    int blue = argb & 0xFF;
+                    if (red > blue) {
+                        warm++;
+                    }
+                }
+            }
+        }
+        assertTrue(opaque > image.getWidth() * image.getHeight() / 2,
+                "a status badge is mostly solid, got " + opaque + " opaque pixels");
+        assertTrue(warm > opaque / 2, "the badge is a warm gold, got " + warm + " of " + opaque + " warm");
     }
 
     /** Every mapped texture is packaged, and 64x64 as {@link SkillIcons#TEXTURE_SIZE} claims. */

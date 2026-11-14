@@ -5,7 +5,6 @@ import com.astrum.pcrd.impl.command.AstrumCommand;
 import com.astrum.pcrd.impl.growth.Dishes;
 import com.astrum.pcrd.impl.growth.GrowthText;
 import com.astrum.pcrd.impl.item.AstrumCreativeTab;
-import com.astrum.pcrd.impl.item.BookTheme;
 import com.astrum.pcrd.impl.item.CharacterCardItem;
 import com.astrum.pcrd.impl.party.BookText;
 import com.astrum.pcrd.impl.showcase.ShowcaseTypes;
@@ -75,10 +74,10 @@ class LangParityTest {
         keys.addAll(CharacterCardItem.langKeys());
         // The 角色册 item and screen, including every astrum.party.reason.* key derived from the enum.
         keys.addAll(BookText.LANG_KEYS);
-        // The three themes' names, and the rice bowl's item name: the dish is a dedicated item now, so
-        // its name is a key this test has to see or a player reads "item.astrum.rice_bowl" in the
-        // inventory.
-        keys.addAll(BookTheme.langKeys());
+        // The rice bowl's item name: the dish is a dedicated item, so its name is a key this test has to see
+        // or a player reads "item.astrum.rice_bowl" in the inventory. The three theme names and the two
+        // re-skinned book names were deleted with the feature; the key sets are compared in both directions,
+        // so their absence from the code is checked as hard as their presence would be.
         keys.add(Dishes.DISH_NAME_KEY);
         // The growth messages: one per dish outcome plus the level-up line. Task 15b added these to the
         // lang files and to GrowthText.LANG_KEYS; before that the keys existed in neither, so a missing
@@ -129,6 +128,36 @@ class LangParityTest {
                     + REFERENCE + ".json has (those players would read a raw translation key)");
             assertEquals(Set.of(), extra, language + ".json has keys that "
                     + REFERENCE + ".json does not (a rename left a stale key behind)");
+        }
+    }
+
+    /**
+     * The keys the deleted books asked for are gone from <b>both</b> files.
+     *
+     * <p>{@link #bothLanguageFilesDefineExactlyTheSameKeys} proves the two files agree with each other; it cannot
+     * see a key both of them kept after the feature behind it was deleted, because two stale rows are still
+     * equal. That is exactly the shape of this task's deletion (「将2个皮肤版本的角色册道具删除」): the re-skinned
+     * books' names and the three theme names were removed from the code and must be removed from the files, or a
+     * datapack (or a stale resource pack) could still resolve them and a reader would think the themes exist.
+     */
+    @Test
+    void theDeletedBookAndThemeKeysAreGoneFromEveryLanguage() {
+        Set<String> deleted = Set.of(
+                "item.astrum.character_book_sakura",
+                "item.astrum.character_book_forest",
+                "astrum.theme.default",
+                "astrum.theme.sakura",
+                "astrum.theme.forest");
+        for (String language : LANGUAGES) {
+            JsonObject file = lang(language);
+            Set<String> present = new TreeSet<>();
+            for (String key : deleted) {
+                if (file.has(key)) {
+                    present.add(key);
+                }
+            }
+            assertEquals(Set.of(), present, language + ".json still defines keys for features that were "
+                    + "deleted (the two re-skinned books and the theme names)");
         }
     }
 

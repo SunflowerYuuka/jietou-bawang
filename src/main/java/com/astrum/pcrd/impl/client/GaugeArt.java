@@ -55,10 +55,15 @@ public final class GaugeArt {
     }
 
     /** Source width of both committed textures, in pixels. */
-    public static final int SOURCE_WIDTH = 128;
+    public static final int SOURCE_WIDTH = 256;
 
-    /** Source height of both committed textures, in pixels. */
-    public static final int SOURCE_HEIGHT = 16;
+    /**
+     * Source height of both committed textures, in pixels.
+     *
+     * <p>24 rather than the previous 16: the fever bar is a capsule, and cutting its soft top and bottom
+     * glow leaves a band tall enough that the rounded caps survive being drawn at 10 GUI pixels.
+     */
+    public static final int SOURCE_HEIGHT = 24;
 
     private GaugeArt() {
     }

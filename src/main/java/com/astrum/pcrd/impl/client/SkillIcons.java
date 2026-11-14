@@ -16,6 +16,14 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code assets/astrum/textures/gui/skill/<effect>.png} by {@code tools/gen_skill_icons.py}. Nine
  * icons, not sixty-one: the other fifty-two stay in the official asset tree.
  *
+ * <h2>{@code attack_buff} is a <em>buff</em> icon, not a skill icon</h2>
+ * The human's correction: 「获得的攻击提升图标就使用提供的buff图标」. So {@code attack_buff} is the odd row out — it
+ * is drawn from the official {@code caravan_icon_buff_00005} badge (two raised fists, {@code +100%}) through
+ * {@code tools/gen_buff_icon.py}, not from any {@code icon_skill_<n>}. The reason for that particular badge,
+ * and the two the human could swap it for, are in that script's docstring. {@link #SOURCE_ID} therefore has
+ * one fewer entry than {@code EffectType} has values, and {@link #sourceId} answers an empty optional for the
+ * buff rather than inventing a number.
+ *
  * <h2>Which icon, and why — the official category</h2>
  * The 61 official icons are filed in <b>families by their first digit</b>, and the category a picture
  * belongs to is what the review asks about. The first version of this table invented a reason per
@@ -34,15 +42,15 @@ import org.jetbrains.annotations.ApiStatus;
  *   stack          3015   自buff              a small figure on a podium, spotlight above
  *   detonate       1023   灼烧                an orange flame
  *   apply_effect   1022   中毒                a stoppered flask with bubbles
- *   attack_buff    3010   自buff              golden flame engulfing a figure
  * </pre>
+ *
+ * <p>{@code attack_buff} is not in that table — see the previous section.
  *
  * <p><b>The one reservation worth stating.</b> {@code gain_charge} (3014) and {@code area_charge}
  * (2006) are both 充能 — the official set has exactly two charge icons and the two effects are exactly
  * two charge effects (self and area), so the pairing is right, but at the 9x9 a hook row draws they are
  * near-identical pictures. They are distinguished by their row text and by which character's list they
- * appear in, never by shape. {@code attack_buff} is 3010 rather than 3015 because 3015 is already
- * {@code stack}: both are officially 自buff, and two rows of the same book must not share a picture.
+ * appear in, never by shape.
  *
  * <p>{@code SkillIconsTest} pins the mapping as data (all types distinct, all textures on the
  * classpath, each 64x64, and this table equal to the generator's {@code ICONS}), so a re-pick has to
@@ -69,6 +77,10 @@ public final class SkillIcons {
      * {@code icon_skill_1001} for 附加伤害" would be a claim about a script nobody runs, and a re-pick
      * could change the generator while the code kept blitting the old picture.
      * {@code SkillIconsTest} asserts the table and the generator's {@code ICONS} dict are the same pairs.
+     *
+     * <p>Eight entries, not nine: {@link EffectType#ATTACK_BUFF} is drawn from the official
+     * {@code caravan_icon_buff_00005} badge by {@code tools/gen_buff_icon.py}, so it has no
+     * {@code icon_skill_<n>} behind it at all.
      */
     private static final java.util.Map<EffectType, Integer> SOURCE_ID = java.util.Map.of(
             EffectType.EXTRA_DAMAGE, 1001,
@@ -78,23 +90,33 @@ public final class SkillIcons {
             EffectType.AREA_CHARGE, 2006,
             EffectType.STACK, 3015,
             EffectType.DETONATE, 1023,
-            EffectType.APPLY_EFFECT, 1022,
-            EffectType.ATTACK_BUFF, 3010);
+            EffectType.APPLY_EFFECT, 1022);
 
     private SkillIcons() {
     }
 
     /**
-     * {@return the official icon number an effect type is drawn from, e.g. {@code 1001}}
+     * {@return the official {@code icon_skill_<n>} an effect type is drawn from, or empty when it is drawn
+     * from a buff badge instead}
+     *
+     * <p>Total, and it used to throw. The old contract was "every effect type has a skill icon"; the human
+     * changed that contract for one type (「获得的攻击提升图标就使用提供的buff图标」), and an accessor that still
+     * promises a number would push every caller into a special case. Empty is the honest answer: there is no
+     * number for {@code attack_buff}, and {@code SkillIconsTest} pins which types are in which set.
      *
      * @param type the hook's effect type
      */
-    public static int sourceId(EffectType type) {
-        Integer id = SOURCE_ID.get(type);
-        if (id == null) {
-            throw new IllegalStateException("no skill icon chosen for effect type " + type);
+    public static java.util.OptionalInt sourceId(EffectType type) {
+        if (type == null) {
+            return java.util.OptionalInt.empty();
         }
-        return id;
+        Integer id = SOURCE_ID.get(type);
+        return id == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(id);
+    }
+
+    /** {@return whether {@code type} is drawn from an official {@code caravan_icon_buff_*} badge} */
+    public static boolean isBuffBadge(EffectType type) {
+        return type == EffectType.ATTACK_BUFF;
     }
 
     /**

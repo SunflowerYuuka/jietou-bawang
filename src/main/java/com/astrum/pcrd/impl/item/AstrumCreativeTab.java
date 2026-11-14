@@ -85,18 +85,17 @@ import org.jetbrains.annotations.ApiStatus;
  * Card, then books, then everything else (today: the dish). That is the order of the loop a player
  * actually runs — the card is the only way a character enters the book, the books are the screen used
  * afterwards, the dish is what is spent on the character once it is in the book — and it matches the book
- * screen's own sections. Inside the books the theme order is {@link BookTheme}'s declaration order (blue,
- * sakura, forest), which is the order the three themes shipped in.
+ * screen's own sections.
  *
  * <p>Today's registration order happens to agree with that rule, which is precisely why the rule is
- * written down and tested rather than relied on: {@code AstrumItems} orders its fields by {@code BookTheme}'s
- * table, so a fourth theme, or a block item added between the cards and the books, would silently reorder
- * the tab. {@code AstrumCreativeTabTest} pins the five ids in this order, so a change of order is a
- * decision someone makes in the test, not an accident of where a field was typed.
+ * written down and tested rather than relied on: a block item added between the cards and the books would
+ * silently reorder the tab. {@code AstrumCreativeTabTest} pins the ids in this order, so a change of order is
+ * a decision someone makes in the test, not an accident of where a field was typed.
  *
- * <p>There is one card. {@code _sakura} / {@code _forest} card items were deleted (see
- * {@code BookTheme}'s javadoc): a card names a character, not a theme, and any of the three books shows
- * every character the player has enrolled.
+ * <p>There is one card and one book. The {@code _sakura} / {@code _forest} books were deleted
+ * (「将2个皮肤版本的角色册道具删除，仅保留最开始的那个」), so the tab no longer has a per-theme ordering step at
+ * all — the comparator's second key was the deleted enum's ordinal, and with one book it would have been
+ * "compare zero with zero".
  */
 @ApiStatus.Internal
 public final class AstrumCreativeTab {
@@ -130,23 +129,22 @@ public final class AstrumCreativeTab {
     private static final DeferredItem<CharacterBookItem> ICON_ENTRY = AstrumItems.CHARACTER_BOOK;
 
     /**
-     * The family ranks: 0 card, 1 books, 2 everything else. Prefixes rather than exact ids so a fourth
-     * theme lands in the right family without touching this class.
+     * The family ranks: 0 card, 1 book, 2 everything else. A prefix test rather than an exact id so a future
+     * sibling ({@code character_book_gold}) lands in the right family without touching this class.
      */
     private static final int RANK_CARD = 0;
     private static final int RANK_BOOK = 1;
     private static final int RANK_OTHER = 2;
 
     /**
-     * The one ordering rule: family, then theme, then path.
+     * The one ordering rule: family, then path.
      *
      * <p>The path tie-break is not decoration — it makes the order total, so two items in the same family
-     * and theme (which cannot happen today) still have a stable, reproducible position instead of
-     * inheriting whatever a {@code HashSet} iteration produced.
+     * still have stable, reproducible positions instead of inheriting whatever a {@code HashSet} iteration
+     * produced. It used to sort by theme ordinally in between, which is gone with the themes.
      */
     private static final Comparator<ResourceLocation> ORDER = Comparator
             .comparingInt(AstrumCreativeTab::familyRank)
-            .thenComparingInt(id -> BookTheme.ofItemId(id).ordinal())
             .thenComparing(ResourceLocation::getPath);
 
     private AstrumCreativeTab() {
@@ -243,10 +241,10 @@ public final class AstrumCreativeTab {
     /** {@return 0 for a character card, 1 for a character book, 2 for anything else} */
     private static int familyRank(ResourceLocation id) {
         String path = id.getPath();
-        if (path.startsWith(BookTheme.CARD_PATH)) {
+        if (path.startsWith(AstrumItems.CARD_PATH)) {
             return RANK_CARD;
         }
-        if (path.startsWith(BookTheme.BOOK_PATH)) {
+        if (path.startsWith(AstrumItems.BOOK_PATH)) {
             return RANK_BOOK;
         }
         return RANK_OTHER;

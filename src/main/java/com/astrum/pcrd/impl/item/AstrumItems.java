@@ -1,6 +1,7 @@
 package com.astrum.pcrd.impl.item;
 
 import com.astrum.pcrd.Astrum;
+import com.astrum.pcrd.impl.InternalIds;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import net.minecraft.world.food.FoodProperties;
@@ -11,7 +12,7 @@ import net.neoforged.neoforge.registries.DeferredRegister;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Registration for the mod's items — one 角色卡, three 角色册 and the 料理.
+ * Registration for the mod's items — one 角色卡, one 角色册 and the 料理.
  *
  * <h2>Why the registration lives here and not inside the item classes</h2>
  * The item class is behaviour (what a right-click does) and this class is wiring (what exists and under
@@ -19,24 +20,33 @@ import org.jetbrains.annotations.ApiStatus;
  * test can look at the enrol rules without touching a registry, and {@code Astrum} keeps one call per
  * subsystem instead of one per register.
  *
- * <h2>Three books and <em>one</em> card</h2>
- * A book's theme comes from its <b>item id</b> ({@link BookTheme#ofItemId}); {@code BookTheme}'s javadoc
- * gives the whole reasoning and the cost. The ids follow the theme's {@link BookTheme#itemSuffix()}, so
- * {@code astrum:character_book} keeps the id it already has in players' worlds and the two new books are
- * {@code astrum:character_book_sakura} / {@code _forest}.
+ * <h2>One book and <em>one</em> card</h2>
+ * The book was three items for a while — a plain one plus two re-skins — and the human deleted the re-skins:
+ * 「将2个皮肤版本的角色册道具删除，仅保留最开始的那个」. So {@code astrum:character_book_sakura} and
+ * {@code astrum:character_book_forest} (items, recipes, models, textures, lang keys) and the
+ * {@code BookTheme} enum behind them are gone, and the surviving id is the one players already own.
  *
- * <p>The card has no theme and no variants. It is a ticket naming one character in its
- * {@code astrum:character_id} component, and the roster it writes into is the player's, shared by all
- * three books — so a sakura card would have been a second item with the same behaviour and a different
- * picture, and the human's rule is one card per character (「一个角色卡右键使用后应该是放进三个角色册」).
- * {@code CHARACTER_CARD_SAKURA} / {@code CHARACTER_CARD_FOREST} and their recipes, models, textures and
- * lang keys are gone.
+ * <p>The card never had variants. It is a ticket naming one character in its {@code astrum:character_id}
+ * component, and the roster it writes into is the player's — so a per-book card would have been a second item
+ * with the same behaviour and a different picture, and the human's rule is one card per character
+ * (「一个角色卡右键使用后应该是放进三个角色册」).
+ *
+ * <h2>The two content paths, in one place</h2>
+ * {@link #BOOK_PATH} and {@link #CARD_PATH} are the mod-relative ids of the two things a player can hold that
+ * are not food. They live here rather than on the deleted enum because the creative tab's family ranking and
+ * the tests both key off them, and "what ids does this mod register" is this class's own subject.
  */
 @ApiStatus.Internal
 public final class AstrumItems {
 
     /** Item registrations, on the mod bus. */
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(Astrum.MOD_ID);
+
+    /** The single 角色册's mod-relative item path: {@code astrum:character_book}. */
+    public static final String BOOK_PATH = "character_book";
+
+    /** The single 角色卡's mod-relative item path: {@code astrum:character_card}. */
+    public static final String CARD_PATH = "character_card";
 
     /**
      * The character card: right-click to enrol the character named by its {@code astrum:character_id}
@@ -51,7 +61,7 @@ public final class AstrumItems {
      * claim the item <em>is</em> that character (see {@code tools/gen_character_card_texture.py}).
      */
     public static final DeferredItem<CharacterCardItem> CHARACTER_CARD =
-            ITEMS.registerItem(BookTheme.CARD_PATH, CharacterCardItem::new,
+            ITEMS.registerItem(CARD_PATH, CharacterCardItem::new,
                     new Item.Properties().stacksTo(16));
 
     /**
@@ -62,17 +72,7 @@ public final class AstrumItems {
      * one book is all a player ever needs.
      */
     public static final DeferredItem<CharacterBookItem> CHARACTER_BOOK =
-            ITEMS.registerItem(BookTheme.DEFAULT.bookPath(), CharacterBookItem::new,
-                    new Item.Properties().stacksTo(1));
-
-    /** The sakura book: same screen, pink panel art and divider. */
-    public static final DeferredItem<CharacterBookItem> CHARACTER_BOOK_SAKURA =
-            ITEMS.registerItem(BookTheme.SAKURA.bookPath(), CharacterBookItem::new,
-                    new Item.Properties().stacksTo(1));
-
-    /** The forest book: same screen, green panel art and divider. */
-    public static final DeferredItem<CharacterBookItem> CHARACTER_BOOK_FOREST =
-            ITEMS.registerItem(BookTheme.FOREST.bookPath(), CharacterBookItem::new,
+            ITEMS.registerItem(BOOK_PATH, CharacterBookItem::new,
                     new Item.Properties().stacksTo(1));
 
     /** Hunger points one rice bowl restores: 6, the same as a bowl of mushroom stew. */
@@ -108,25 +108,23 @@ public final class AstrumItems {
     }
 
     /**
-     * {@return every themed book id to its mod-relative path, for {@code AstrumItemsTest}}
+     * {@return every item id this build registers that is not the dish}, for {@code AstrumItemsTest}
      *
-     * <p>Not used by the game: it exists so the test can check that a model and a lang key exist for every
-     * id this build registers, without reflecting over a registry that is not up in a unit test. Three
-     * entries, derived from the enum, so a fourth theme is covered by the same test without editing it.
+     * <p>Not used by the game: it exists so a test can check that a model and a lang key exist for every id
+     * this build registers, without reflecting over a registry that is not up in a unit test. Two entries —
+     * the card and the book — derived from the two path constants, so renaming one is a change in one place.
      *
-     * <p>Books only. The card is not themed any more — see the class javadoc — so it is not in this map;
-     * {@code AstrumItemsTest} asserts its model and name separately, which is the point at which "the card
-     * is a single item" would break if somebody re-added a variant.
+     * <p>The dish is excluded on purpose and checked separately: it is content, not a 角色册-family item, and
+     * conflating the two is what would let a future dish inherit a book's model by accident.
      */
     public static Map<String, String> themedItemIds() {
         // LinkedHashMap for a stable iteration order, then an immutable copy: the test prints these in
         // failure messages, and a HashMap would give a different order per JVM. Rebuilt on demand rather
-        // than cached in a static: six strings are cheaper than a static container the guard has to warn
+        // than cached in a static: four strings are cheaper than a static container the guard has to warn
         // about.
         Map<String, String> ids = new LinkedHashMap<>();
-        for (BookTheme theme : BookTheme.values()) {
-            ids.put(theme.bookItemId().toString(), theme.bookPath());
-        }
+        ids.put(InternalIds.id(CARD_PATH).toString(), CARD_PATH);
+        ids.put(InternalIds.id(BOOK_PATH).toString(), BOOK_PATH);
         return Map.copyOf(ids);
     }
 
@@ -137,7 +135,7 @@ public final class AstrumItems {
      * this" without writing the string a second time.
      */
     public static String cardPath() {
-        return BookTheme.CARD_PATH;
+        return CARD_PATH;
     }
 
     /**

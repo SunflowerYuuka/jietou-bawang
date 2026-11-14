@@ -165,36 +165,43 @@ class BookLayoutTest {
     }
 
     /**
-     * The frame is drawn at <b>no more than 2.5x</b> compression of its 64-pixel tiles — in the
-     * comfortable tier, which is the one the human sees and reported on.
+     * The frame is drawn at a <b>readable scale</b>: the frame cell is never reduced below 1:1, and the
+     * comfortable tier magnifies it by less than 2.5x.
      *
-     * <p>This is the actual defect, stated as a number. The ornament ink lives in each tile's outer
-     * ~8 pixels, so a slice much below 26 squeezes that band into the body and the frame reads as a
-     * flat border — 「UI很粗糙，上下像是被压缩了」. The bound is on the ratio rather than on the constant so a
-     * future art change can pick a different number and still be held to the same rule.
+     * <p>This test is the same rule as before, re-expressed for the official art. It used to bound a
+     * <em>compression</em> ratio, because the frame was nine 64-pixel tiles squeezed into a 30-pixel slice and
+     * anything past ~2.5x blurred its 8-pixel filigree band into the body — the human's 「UI很粗糙，上下像是被压缩了」.
+     * The frame is now nine 16-pixel cells of the game's own rounded frame
+     * ({@code fx_ui_gachabutton_frame_tex.png}, sliced by {@code tools/gen_book_panel_texture.py}), so the same
+     * slice <em>magnifies</em> it instead. Both directions are bounded: shrinking the cell blurs its one-pixel
+     * stroke, and magnifying it past 2.5x turns that stroke into a fat band.
      *
      * <h2>Why the compact tier is exempt, on purpose</h2>
-     * {@link BookLayout.Metrics#COMPACT} exists for windows that cannot fit the comfortable panel at all
-     * (it is chosen when the comfortable panel would not fit with {@code MIN_MARGIN} to spare), and there
-     * the <b>body</b> is worth more than the ornament: 26 of slice plus 28 of padding on the compact
-     * numbers makes a 313x245 panel, which no longer fits the 320x240 screen this tier exists for. So the
-     * compact frame keeps its 18 and its compression, and the comfortable one — the shipped look — is
-     * held to the rule. Stating the exemption here is what keeps it a decision rather than an oversight.
+     * {@link BookLayout.Metrics#COMPACT} exists for windows that cannot fit the comfortable panel at all (it is
+     * chosen when the comfortable panel would not fit with {@code MIN_MARGIN} to spare), and there the <b>body</b>
+     * is worth more than the frame: a 30-pixel slice plus 30 of padding makes a panel that no longer fits the
+     * 320x240 screen this tier exists for. So the compact tier draws a thinner frame, and the comfortable one —
+     * the shipped look — is held to the rule. Stating the exemption here is what keeps it a decision rather than
+     * an oversight.
      */
     @Test
-    void theFrameIsNotCompressedPastTwoAndAHalfTimes() {
-        double compression = NineSlice.PIECE_PIXELS / (double) NineSlice.SHIPPED_SLICE;
-        assertTrue(compression <= 2.6,
-                "the " + NineSlice.SHIPPED_SLICE + "-pixel labelled slice compresses the 64-pixel "
-                        + "ornament " + String.format("%.2f", compression)
-                        + "x, which blurs it into the body");
-        assertEquals(2.13, compression, 0.05, "the shipped comfortable frame is a ~2.1x reduction");
+    void theFrameIsDrawnAtAReadableScale() {
+        double comfortable = NineSlice.SHIPPED_SLICE / (double) NineSlice.PIECE_PIXELS;
+        assertTrue(comfortable <= 2.5,
+                "the " + NineSlice.SHIPPED_SLICE + "-pixel slice magnifies the " + NineSlice.PIECE_PIXELS
+                        + "-pixel frame cell " + String.format("%.2f", comfortable)
+                        + "x, which turns its one-pixel stroke into a band");
+        assertTrue(comfortable >= 1.0,
+                "a slice smaller than one cell (" + String.format("%.2f", comfortable)
+                        + "x) shrinks the art and blurs the stroke");
 
-        // The comfortable tier really uses it, and the compact tier really is the exempt one.
+        // The comfortable tier really uses it, and the compact tier really is the thinner one.
         assertEquals(NineSlice.SHIPPED_SLICE, BookLayout.Metrics.COMFORTABLE.slice(),
                 "the comfortable tier is the one the human sees: it must draw the shipped frame");
         assertTrue(BookLayout.Metrics.COMPACT.slice() < NineSlice.SHIPPED_SLICE,
                 "the compact tier deliberately keeps the thinner frame, for a smaller panel");
+        assertTrue(BookLayout.Metrics.COMPACT.slice() >= NineSlice.PIECE_PIXELS,
+                "but never below one whole cell: " + BookLayout.Metrics.COMPACT.slice());
     }
 
     /**

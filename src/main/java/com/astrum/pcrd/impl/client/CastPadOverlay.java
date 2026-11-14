@@ -150,7 +150,10 @@ public final class CastPadOverlay {
         }
         Optional<CharacterDef> definition = AstrumApi.characters()
                 .flatMap(registry -> Optional.ofNullable(registry.get(id.get())));
-        WheelIcon icon = WheelIcon.of(definition.flatMap(CharacterDef::face),
+        // Same tier join as the wheel and the book: one rule, so the pad's chip cannot show an older picture
+        // than the roster cell a few keys away.
+        WheelIcon icon = WheelIcon.of(
+                definition.flatMap(value -> TierAvatar.forPartySlot(value, id.get())),
                 ClientPartyCache.enhanced(slot));
         return WheelIconDraw.draw(graphics, x, y, icon, definition, ICON_RADIUS);
     }

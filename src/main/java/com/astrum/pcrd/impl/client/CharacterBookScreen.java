@@ -7,7 +7,6 @@ import com.astrum.pcrd.api.v1.EffectHook;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.growth.DishFeedHook;
 import com.astrum.pcrd.impl.growth.GrowthFacts;
-import com.astrum.pcrd.impl.item.BookTheme;
 import com.astrum.pcrd.impl.network.PartyEditPayload;
 import com.astrum.pcrd.impl.network.RosterSyncPayload;
 import com.astrum.pcrd.impl.party.BookText;
@@ -100,10 +99,11 @@ public final class CharacterBookScreen extends Screen {
     /** Bottom of the same gradient; one step darker, as vanilla's own two stops are. */
     private static final int COLOR_DIM_BOTTOM = 0x60000000;
 
-    // Section headings and body text are theme-independent: they are drawn *on* the panel, and a
-    // cream heading on a dark body reads the same on all three. Everything that is part of the panel's
-    // own surface — the wells, the slots, the accent rules — comes from the theme (see the getters at
-    // the bottom of this block), so a pink panel cannot end up with a blue cell border.
+    // Section headings, body text and the two progress bars are fixed colours: they are drawn *on* the
+    // panel, and a cream heading on a dark body reads the same whatever is behind it. Everything that is
+    // part of the panel's own surface — the wells, the slots, the accent rules — comes from
+    // {@link BookPalette}, which derives all of it from one base colour, so a cell border cannot end up in
+    // a hue that is not in the family.
     private static final int COLOR_EXP_BAR = 0xFF55C8FF;
     private static final int COLOR_AFFECTION_BAR = 0xFFFF9AD5;
     private static final int COLOR_PIP = 0xFFFFC93C;
@@ -113,14 +113,14 @@ public final class CharacterBookScreen extends Screen {
     private static final int COLOR_DIM = 0xFF9AA4B8;
     private static final int COLOR_REFUSED = 0xFFFF7070;
 
-    /** {@return the theme's accent, for the thin rules drawn on the panel (hover frames, feed entry)} */
+    /** {@return the accent, for the thin rules drawn on the panel (hover frames, feed entry)} */
     private int colorAccent() {
-        return theme.accentTint();
+        return BookPalette.accent();
     }
 
-    /** {@return the theme's cut-in surface: roster cells, party slots and bar backs} */
+    /** {@return the cut-in surface: roster cells, party slots and bar backs} */
     private int colorSurface() {
-        return theme.surfaceTint();
+        return BookPalette.surface();
     }
 
     /**
@@ -146,34 +146,39 @@ public final class CharacterBookScreen extends Screen {
      */
     private final Set<String> faceBranchLogged = new HashSet<>();
 
-    /** The character the growth view is showing, or {@code null} when nothing is selected. */
+    /**
+     * The character the growth view is showing — <b>and</b> whose still fills the panel.
+     *
+     * <p>One field for both jobs, deliberately. The human asked for two things that are the same question:
+     * 「点击头像后，显示完全的角色立绘当背景」 (a click shows that character's still) and the growth column shows
+     * her level and affection. Two fields would let the picture behind the panel describe one character while
+     * the numbers on it describe another, which is the kind of defect nobody notices until it is on screen.
+     *
+     * <p>Seeded on open by {@link TierAvatar#defaultSelection()} — party slot 1, then the roster's head, then
+     * nobody — which is 「默认使用角色1当背景」.
+     */
     private @Nullable ResourceLocation selected;
 
     /** Absolute roster index a left-drag started on, or {@code -1} when no drag is in progress. */
     private int dragFrom = -1;
 
     /**
-     * The theme this screen was opened with — the theme of the item the player right-clicked.
+     * The character whose still was drawn last, so the swap is logged once per change rather than per frame.
      *
-     * <p>Decided by {@link CharacterBookItem} from the item's registry id
-     * ({@link BookTheme#ofItemId}) and passed in at {@link #open}, never read from a static or a config:
-     * the player may own all three books, and the one they right-clicked is the one whose screen this is.
-     * A field rather than a constructor parameter only because it is read on every frame and must survive
-     * {@link #init()} (a window resize re-inits this screen; it must not lose the theme).
+     * <p>Instance state, cleared in {@link #init()} with the rest of the screen's: a static here would outlive
+     * the screen, and the thing being logged is "this open drew this picture".
      */
-    private BookTheme theme = BookTheme.DEFAULT;
+    private @Nullable ResourceLocation loggedStill;
 
     /**
      * Opens the book: the only entry point, called from {@code CharacterBookItem.use} on the client.
      *
-     * <p>The theme is a parameter, not a lookup: the screen has no access to the hand that opened it, and
-     * the item is the only thing that knows which of the player's books was used.
-     *
-     * @param theme the theme of the book that was right-clicked; {@code null} means the blue book
+     * <p>No arguments. The screen used to take a {@code BookTheme} because there were three books; there is
+     * one book now, so there is nothing left for the caller to decide and nothing that could disagree with
+     * the item.
      */
-    public CharacterBookScreen(@Nullable BookTheme theme) {
+    public CharacterBookScreen() {
         super(Component.translatable(BookText.KEY_TITLE));
-        this.theme = BookTheme.resolve(theme);
     }
 
     /**
@@ -184,13 +189,10 @@ public final class CharacterBookScreen extends Screen {
      * hide a bug rather than prevent one — but a disconnect landing between the click and this call is
      * real, and a screen without a world would draw an empty book for nobody.
      *
-     * <p>Re-opening while the same screen is already up is a no-op, which also means right-clicking a
-     * <em>different</em> book while one is open does not swap the theme underneath the player's cursor.
-     * The screen is modal; the next open takes the theme of the next click.
-     *
-     * @param theme the theme of the stack that was right-clicked; {@code null} means the blue book
+     * <p>Re-opening while the same screen is already up is a no-op: the screen is modal, and the next open
+     * starts from the default selection again.
      */
-    public static void open(@Nullable BookTheme theme) {
+    public static void open() {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.player == null || minecraft.level == null) {
             return;
@@ -198,7 +200,7 @@ public final class CharacterBookScreen extends Screen {
         if (minecraft.screen instanceof CharacterBookScreen) {
             return;
         }
-        minecraft.setScreen(new CharacterBookScreen(theme));
+        minecraft.setScreen(new CharacterBookScreen());
     }
 
     @Override
@@ -209,26 +211,35 @@ public final class CharacterBookScreen extends Screen {
         // worth logging again (they are the same characters, but "the branch I took" is what the log is
         // for, and this is the one place a screen's state starts).
         faceBranchLogged.clear();
+        loggedStill = null;
         if (selected != null && !ClientRosterCache.owns(selected)) {
             // The selected character is gone (a different player's book, or a save swap): clearing keeps
             // the growth view from describing somebody else's character.
             selected = null;
         }
+        if (selected == null) {
+            // 「默认使用角色1当背景」: party slot 1, then the roster's head, then nobody. Resolved through
+            // TierAvatar so the rule has one implementation and one test, not a second copy here.
+            selected = TierAvatar.defaultSelection().orElse(null);
+        }
         // What this open resolved to, and the geometry it will draw with. This line is the only evidence
-        // available for "the theme came from the item that opened the screen" and "the nine rectangles
-        // for the size this window actually has are non-degenerate": the panel size comes from the
-        // player's window and GUI scale, so neither can be asserted offline.
+        // available for "the nine rectangles for the size this window actually has are non-degenerate",
+        // for "the still is the default selection the human asked for", and for which character's art the
+        // panel will blit: the panel size comes from the player's window and GUI scale, so none of it can
+        // be asserted offline.
         NineSlice.Rects rects = NineSlice.rects(layout.panel(), layout.slice());
-        ThemedPanel.isUsable(rects);
-        Astrum.LOGGER.debug("astrum: character book opened ({}x{} gui, theme {}, tier {} — panel {}x{} "
-                        + "at {},{} of a {}x{} screen; margins l/r/t/b {}/{}/{}/{}; slice {} -> centre "
-                        + "{}x{}; {} owned, {} in party{})",
-                width, height, theme, layout.tierName(), layout.panel().width(),
+        OfficialPanel.isUsable(rects);
+        Astrum.LOGGER.debug("astrum: character book opened ({}x{} gui, tier {} — panel {}x{} at {},{} of "
+                        + "a {}x{} screen; margins l/r/t/b {}/{}/{}/{}; slice {} -> centre {}x{}; {} owned, "
+                        + "{} in party; selected {} -> still {}{})",
+                width, height, layout.tierName(), layout.panel().width(),
                 layout.panel().height(), layout.panel().x(), layout.panel().y(), width, height,
                 layout.panel().x(), width - layout.panel().right(), layout.panel().y(),
                 height - layout.panel().bottom(), layout.slice(),
                 rects.centre().width(), rects.centre().height(), ClientRosterCache.size(),
                 ClientPartyCache.latest().slots().stream().filter(Optional::isPresent).count(),
+                selected == null ? "(none)" : selected,
+                stillOf(selected).map(ResourceLocation::toString).orElse("(no still art, plain dark body)"),
                 ClientRosterCache.quarantined() ? ", quarantined save" : "");
         Astrum.LOGGER.debug("astrum: character book background is the world, dimmed {} -> {} behind a "
                         + "{}x{} panel; the world is visible on all four sides",
@@ -272,11 +283,16 @@ public final class CharacterBookScreen extends Screen {
     @Override
     public void render(GuiGraphics graphics, int mouseX, int mouseY, float partialTick) {
         renderBackground(graphics, mouseX, mouseY, partialTick);
-        // The panel is the theme's nine-slice art, drawn by ThemedPanel with geometry from NineSlice
-        // (both pure and unit-tested). Its own opaque body fill replaces the old flat COLOR_PANEL and
-        // the four COLOR_FRAME lines: the art carries the frame, so drawing a flat rectangle around it
-        // would put a second, square border outside the ornamented one.
-        ThemedPanel.draw(graphics, theme, layout.panel(), layout.divider(), layout.slice());
+        // The panel is official art, nine-sliced: the frame from `gui/book_panel.png` (cut from the game's own
+        // rounded frame by tools/gen_book_panel_texture.py), and the body is the selected character's official
+        // still. Geometry is NineSlice's (pure, tested) and the still's crop is StillCover's (pure, tested),
+        // so "the panel we drew has no seam" and "the picture is not stretched" are assertions rather than
+        // claims about a screenshot.
+        ResourceLocation stillCharacter = stillCharacter();
+        ResourceLocation still = stillOf(stillCharacter).orElse(null);
+        logStillOnce(stillCharacter, still);
+        OfficialPanel.draw(graphics, layout.panel(), StillCover.bodyOf(layout.panel()), still,
+                layout.divider(), layout.slice());
 
         drawCentred(graphics, title, layout.title(), COLOR_TITLE);
 
@@ -374,13 +390,18 @@ public final class CharacterBookScreen extends Screen {
             RosterSyncPayload.Entry entry = entries.get(first + i);
             boolean isSelected = entry.id().equals(selected);
             boolean hovered = cell.contains(mouseX, mouseY);
-            int background = isSelected ? theme.surfaceSelectedTint()
-                    : hovered ? theme.surfaceHoverTint() : colorSurface();
+            int background = isSelected ? BookPalette.surfaceSelected()
+                    : hovered ? BookPalette.surfaceHover() : colorSurface();
             graphics.fill(cell.x(), cell.y(), cell.right(), cell.bottom(), background);
 
             CharacterDef definition = definitionOf(entry.id());
-            WheelIcon icon = WheelIcon.of(faceOf(definition),
+            // The avatar follows the affection tier (1★ / 3★ / 6★): TierAvatar joins the row this cell is
+            // already drawing with the definition's per-tier art, and CharacterDef.face(int) owns the
+            // degradation rule. The tier comes from the server's row, never re-derived here.
+            WheelIcon icon = WheelIcon.of(
+                    TierAvatar.forRosterEntry(definition, entry),
                     entry.tier() >= GrowthFacts.MAX_TIER);
+            logTierOnce(definition, entry);
             WheelIconDraw.draw(graphics, layout.cellIconCentreX(i), cell.centreY(), icon,
                     Optional.ofNullable(definition), layout.cellIconRadius());
 
@@ -425,7 +446,7 @@ public final class CharacterBookScreen extends Screen {
             }
             Optional<ResourceLocation> occupant = ClientPartyCache.slot(slot);
             boolean hovered = box.contains(mouseX, mouseY);
-            int background = occupant.isPresent() ? theme.slotFilledTint() : colorSurface();
+            int background = occupant.isPresent() ? BookPalette.slotFilled() : colorSurface();
             graphics.fill(box.x(), box.y(), box.right(), box.bottom(), background);
             if (hovered) {
                 graphics.fill(box.x(), box.y(), box.right(), box.y() + 1, colorAccent());
@@ -440,7 +461,12 @@ public final class CharacterBookScreen extends Screen {
                 continue;
             }
             CharacterDef definition = definitionOf(occupant.get());
-            WheelIcon icon = WheelIcon.of(faceOf(definition),
+            // Same rule as the roster cell, so a character cannot wear one face in the grid and another in
+            // the slot beside it. The slot has no progress row of its own, so the tier comes from the roster
+            // through TierAvatar.forPartySlot. The ring is now a frame *around* her face rather than the
+            // only thing in the circle ("编队槽也有这个问题").
+            WheelIcon icon = WheelIcon.of(
+                    TierAvatar.forPartySlot(definition, occupant.get()),
                     ClientPartyCache.enhanced(slot));
             WheelIconDraw.draw(graphics, box.centreX(), box.centreY(), icon,
                     Optional.ofNullable(definition), layout.slotIconRadius());
@@ -514,7 +540,7 @@ public final class CharacterBookScreen extends Screen {
         boolean feedable = DishFeedHook.available();
         BookLayout.Box feed = layout.feedEntry();
         if (feedable) {
-            graphics.fill(feed.x(), feed.y(), feed.right(), feed.bottom(), theme.slotFilledTint());
+            graphics.fill(feed.x(), feed.y(), feed.right(), feed.bottom(), BookPalette.slotFilled());
             graphics.fill(feed.x(), feed.y(), feed.right(), feed.y() + 1, colorAccent());
             drawClipped(graphics, Component.translatable(BookText.KEY_FEED_AVAILABLE), feed, COLOR_TEXT);
         } else {
@@ -612,7 +638,9 @@ public final class CharacterBookScreen extends Screen {
         if (cell.isPresent()) {
             RosterSyncPayload.Entry entry = ClientRosterCache.entries().get(cell.getAsInt());
             if (button == 0) {
-                selected = entry.id().equals(selected) ? null : entry.id();
+                // The toggle rule lives in BookSelection, where it is unit-tested: a click on another cell
+                // changes the still behind the panel (「点击头像后，显示完全的角色立绘当背景」).
+                selected = BookSelection.select(selected, entry.id());
                 dragFrom = selected == null ? -1 : cell.getAsInt();
                 ClientBookFeedback.clear();
             }
@@ -751,31 +779,82 @@ public final class CharacterBookScreen extends Screen {
     }
 
     /**
-     * {@return the face to blit for a definition, empty when it has none}
+     * {@return the character whose still fills the panel}
      *
-     * <p>Delegates to {@link CharacterDef#face()}, which owns the resolution order
-     * ({@code portrait → avatar}) so this screen, the wheel and the cast pad cannot each decide
-     * differently. Reading {@code definition.portrait()} here directly is the defect that made the
-     * roster draw a glyph for a character whose avatar the party effect was displaying two rectangles
-     * to the right.
-     *
-     * <p>The branch it takes is logged <b>once per character</b>, not per frame: a per-frame
-     * {@code LOGGER.debug} would be a formatting cost on every frame at 300 fps for a fact that cannot
-     * change while the screen is open. {@link #faceBranchLogged} is the memory, and it is cleared in
-     * {@link #init()} — the only place a new screen's state starts.
+     * <p>The selection, or — when the player has deselected everything by clicking the same cell twice — the
+     * default again. That is deliberate and it is the human's rule, not a convenience: he asked for
+     * 「默认使用角色1当背景」, so the panel has <em>some</em> character behind it whenever the book holds one.
+     * A deselected book showing a flat black panel would be the state he complained about (「深色底替」) coming
+     * back through a different door. The growth column still goes blank on a deselect, because "no character
+     * selected" is a real answer for numbers and never a real answer for a background.
      */
-    private Optional<ResourceLocation> faceOf(@Nullable CharacterDef definition) {
-        if (definition == null) {
-            return Optional.empty();
+    private @Nullable ResourceLocation stillCharacter() {
+        return BookSelection.background(selected).orElse(null);
+    }
+
+    /**
+     * {@return the still to draw behind the panel for {@code characterId}, empty when there is none}
+     *
+     * <p>Delegates to {@link TierAvatar#stillOf}, which is where the "which picture fills the panel" rule is
+     * written. Reading {@code definition.still()} here directly would work today and would be the second
+     * copy the moment anything else needs the same answer.
+     *
+     * @param characterId the character, or {@code null} for "nothing selected"
+     */
+    private Optional<ResourceLocation> stillOf(@Nullable ResourceLocation characterId) {
+        return characterId == null ? Optional.empty()
+                : TierAvatar.stillOf(definitionOf(characterId));
+    }
+
+    /**
+     * Logs, once per change, which character's still the panel is drawing.
+     *
+     * <p>This is the evidence for the two things the human asked for and no test can see: that the book opens
+     * with slot 1's character as the background (「默认使用角色1当背景」), and that clicking another cell swaps it
+     * (「点击头像后，显示完全的角色立绘当背景」). A per-frame line would be a formatting cost at 300 fps for a fact
+     * that only moves when the player clicks, so it fires on a change and names both ids.
+     *
+     * @param characterId the selected character, or {@code null}
+     * @param still       the texture that will be blitted, or {@code null}
+     */
+    private void logStillOnce(@Nullable ResourceLocation characterId, @Nullable ResourceLocation still) {
+        if (java.util.Objects.equals(characterId, loggedStill)) {
+            return;
         }
-        Optional<ResourceLocation> face = definition.face();
-        if (faceBranchLogged.add(definition.displayName())) {
-            Astrum.LOGGER.debug("astrum: book face for {} -> {} (branch: {})", definition.displayName(),
-                    face.map(ResourceLocation::toString).orElse("(none)"),
-                    face.isEmpty() ? "glyph disc, no portrait and no avatar"
-                            : definition.portrait().isPresent() ? "portrait" : "avatar (portrait absent)");
+        ResourceLocation before = loggedStill;
+        loggedStill = characterId;
+        if (characterId == null) {
+            Astrum.LOGGER.info("astrum: book still background -> (none): nothing is selected, so the panel "
+                    + "keeps its plain dark body (was {})", before == null ? "(none)" : before);
+            return;
         }
-        return face;
+        Astrum.LOGGER.info("astrum: book still background {} -> {} draws {}",
+                before == null ? "(none)" : before, characterId,
+                still == null ? "(no still art, plain dark body)" : still.toString());
+    }
+
+    /**
+     * Logs, once per character per open, which avatar the affection tier resolved to.
+     *
+     * <p>The human's request is 「角色头像要跟随好感度进行变化，符合前面的1* 3* 6*的要求」, and the sketch the
+     * appearance of that rule is the one thing no test can see. So the chosen texture and the tier that chose
+     * it are written down, once per character per open — {@link #faceBranchLogged} is the memory and
+     * {@link #init()} is where it starts, so a resize relogs and a 300 fps render does not.
+     *
+     * @param definition the character, or {@code null} when the pack no longer defines her
+     * @param entry      her progress row, or {@code null}
+     */
+    private void logTierOnce(@Nullable CharacterDef definition, @Nullable RosterSyncPayload.Entry entry) {
+        if (definition == null || !faceBranchLogged.add(definition.displayName())) {
+            return;
+        }
+        int tier = entry == null || entry.tier() <= 0 ? TierAvatar.UNSYNCED_TIER : entry.tier();
+        Astrum.LOGGER.debug("astrum: book avatar for {} at tier {} (affection {}) -> {} [1★={} 3★={} 6★={}]",
+                definition.displayName(), tier, entry == null ? "(no row)" : entry.affection(),
+                definition.face(tier).map(ResourceLocation::toString).orElse("(none, glyph disc)"),
+                definition.icon1st().map(ResourceLocation::getPath).orElse("(none)"),
+                definition.icon3rd().map(ResourceLocation::getPath).orElse("(none)"),
+                definition.icon6th().map(ResourceLocation::getPath).orElse("(none, falls back to 3★)"));
     }
 
     /** {@return the name to show, falling back to the raw id for a character the pack does not define} */

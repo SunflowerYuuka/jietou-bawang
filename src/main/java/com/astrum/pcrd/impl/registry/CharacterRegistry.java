@@ -105,6 +105,7 @@ public final class CharacterRegistry {
                             OptionalDouble.empty(), Optional.empty())),
             new GrowthDef(0, 0.0, 0),
             new AffectionDef(0, 0, List.of()),
+            Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
             Optional.empty(), Optional.empty());
 
     /**

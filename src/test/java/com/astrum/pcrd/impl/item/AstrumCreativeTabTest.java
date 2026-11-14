@@ -27,13 +27,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * The creative tab's one rule: <b>which items, in which order</b>.
  *
  * <h2>Why the order is a test and not a comment</h2>
- * The tab holds seven items today and the population path is derived from
+ * The tab holds three items today and the population path is derived from
  * {@code AstrumItems.ITEMS} — which is what makes a future item appear without an edit, and also what
  * makes the order fragile: it is decided by a comparator over registry ids, so adding a block item, a
  * fourth theme, or moving a field in {@code AstrumItems} reorders the tab silently. The player-visible
  * consequence is a tab whose first row is not the loop a player runs (card → book → dish), and nothing
- * anywhere fails. So the seven ids are pinned <b>as a list, in order</b>, and a change has to be made here
- * on purpose.
+ * anywhere fails. So the ids are pinned <b>as a list, in order</b>, and a change has to be made here on
+ * purpose. The list was five until the two re-skinned books were deleted (「将2个皮肤版本的角色册道具删除，仅
+ * 保留最开始的那个」); it is three now, and the deletion is visible here as three names instead of five.
  *
  * <h2>What is deliberately not asserted here</h2>
  * That the registry contains these ids, that {@code BuildCreativeModeTabContentsEvent} really fires, and
@@ -48,12 +49,9 @@ class AstrumCreativeTabTest {
 
     /** Every item this build registers, in the order the tab must show them. */
     private static final List<String> EXPECTED_ORDER = List.of(
-            // One card for every character, not one per book theme: the human's rule is that a single
-            // card enrols into whichever of the three themed books the player owns.
+            // One card for every character, then the one book, then the dish.
             "astrum:character_card",
             "astrum:character_book",
-            "astrum:character_book_sakura",
-            "astrum:character_book_forest",
             "astrum:rice_bowl");
 
     /**
@@ -62,8 +60,7 @@ class AstrumCreativeTabTest {
      * <p>Three claims in one assertion, and each is the reason the order exists: a card comes first because
      * a card is the only way a character gets into the book; the books follow because the book is the
      * screen used afterwards; the dish is last because it is spent on a character that is already in the
-     * book. Inside a family the theme order is {@link BookTheme}'s declaration order, which is the order
-     * the three themes shipped in.
+     * book.
      */
     @Test
     void theTabHoldsEveryItemInCardsThenBooksThenDishOrder() {
@@ -112,18 +109,17 @@ class AstrumCreativeTabTest {
     void theIdRuleRanksCardsBeforeBooksBeforeEverythingElse() {
         List<ResourceLocation> ids = List.of(
                 InternalIds.id("rice_bowl"),
-                InternalIds.id("character_book_forest"),
-                InternalIds.id("character_card_sakura"),
-                InternalIds.id("character_book"),
-                InternalIds.id("character_card"));
+                InternalIds.id("character_book_gold"),
+                InternalIds.id("character_card"),
+                InternalIds.id("character_book"));
 
         assertEquals(List.of(
                         "astrum:character_card",
-                        "astrum:character_card_sakura",
                         "astrum:character_book",
-                        "astrum:character_book_forest",
+                        "astrum:character_book_gold",
                         "astrum:rice_bowl"),
-                AstrumCreativeTab.orderedIds(ids).stream().map(ResourceLocation::toString).toList());
+                AstrumCreativeTab.orderedIds(ids).stream().map(ResourceLocation::toString).toList(),
+                "a future sibling book still lands in the book family, sorted by path");
 
         // An empty register (a build with no items) must produce an empty tab rather than throw: the
         // population path runs on every tab rebuild, including in a world opened before items exist.
