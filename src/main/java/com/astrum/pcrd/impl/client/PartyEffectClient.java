@@ -43,10 +43,15 @@ import org.jetbrains.annotations.Nullable;
  * <h2>Why the avatar can be drawn at all</h2>
  * {@code IClientMobEffectExtensions} offers a render hook for the HUD icon and the inventory icon;
  * returning {@code true} suppresses vanilla's own sprite. That is the override the effect needs, so no
- * per-slot atlas sprite is used in the normal case. When the slot's character has no {@code avatar}
- * (an older pack, or the client has not received the party sync yet) the hook returns {@code false}
- * and vanilla falls back to {@code astrum:textures/mob_effect/party_<n>.png} — a generic slot rune that
- * the mod ships, rather than the purple missing-texture checker.
+ * per-slot atlas sprite is used in the normal case. When the slot's character has no face — an older
+ * pack, or the client has not received the party sync yet — the hook returns {@code false} and vanilla
+ * falls back to {@code astrum:textures/mob_effect/party_<n>.png} — a generic slot rune that the mod
+ * ships, rather than the purple missing-texture checker.
+ *
+ * <p>The face is {@link CharacterDef#face()}, the same call the 角色册 makes, so the HUD icon and the
+ * book portrait are one picture. That is not a convenience: the defect of 2026-11-14 was a character
+ * whose book drew the generic {@code item/character_card} while her own face was already packaged and
+ * drawn on the HUD, because the two sites read different fields.
  *
  * <p>The avatar is blitted with {@code uWidth == textureWidth}, which samples the <b>whole</b> texture
  * whatever its pixel size, so a pack may ship a 32x32 or a 128x128 avatar and both are drawn complete
@@ -172,10 +177,17 @@ final class PartyEffectClient implements IClientMobEffectExtensions {
                 ICON_SIZE, ICON_SIZE);
     }
 
-    /** {@return the slot's avatar texture, or {@code null} when the client does not know it} */
+    /**
+     * {@return the slot's icon texture, or {@code null} when the client does not know it}
+     *
+     * <p>Reads {@link CharacterDef#face()}, the same resolution the 角色册's roster cell and party slot
+     * use, so the picture on the HUD row and the picture in the book are one picture and cannot drift
+     * apart. That is not cosmetic: the defect of 2026-11-14 was a character whose <em>book</em> drew a
+     * generic card and whose HUD row drew her face, because the two read different fields.
+     */
     private static @Nullable ResourceLocation avatar(int slot) {
         CharacterDef definition = definition(slot);
-        return definition == null ? null : definition.avatar().orElse(null);
+        return definition == null ? null : definition.face().orElse(null);
     }
 
     /**

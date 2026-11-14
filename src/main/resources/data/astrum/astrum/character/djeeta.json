@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "displayName": "姬塔",
   "skillName": "星河一天",
-  "avatar": "astrum:textures/item/character_card.png",
+  "avatar": "astrum:textures/gui/portrait/djeeta.png",
   "dimension": "charge",
-  "_notes": "数值推导见 docs/balance-derivation.md：UB 20.0/段 是比例锚点，技能1 = 20 x 118431/355293 = 6.7；TP 的 8.0 是设计值、未与真实 TP 条标定。",
+  "_notes": "数值推导见 docs/balance-derivation.md：UB 20.0/段 是比例锚点，技能1 = 20 x 118431/355293 = 6.7；TP 的 8.0 是设计值、未与真实 TP 条标定。avatar 指她本人的官方头像（tools/gen_portraits.py 由 3★ 头像重采样为 64x64），队伍效果图标与角色册头像都画它；textures/item/character_card.png 是通用的角色卡贴图（同一张给所有人），不是任何人的脸，不得指给它。",
   "effects": [
     { "trigger": "melee_hit", "effect": "extra_damage",
       "triggerParams": { "skill": "wide_slash" },

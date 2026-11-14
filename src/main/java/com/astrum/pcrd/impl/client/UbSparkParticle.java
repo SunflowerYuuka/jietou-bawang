@@ -1,32 +1,31 @@
 package com.astrum.pcrd.impl.client;
 
 import com.astrum.pcrd.Astrum;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.particle.ParticleRenderType;
 import net.minecraft.client.particle.SpriteSet;
 import net.minecraft.client.particle.TextureSheetParticle;
-import net.minecraft.world.entity.player.Player;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.api.distmarker.OnlyIn;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * One slash of the UB's outward ring: the fast half of the burst, cut from Djeeta's official
+ * One slash of the UB's burst on a victim's body: the fast half, cut from Djeeta's official
  * effect art.
  *
  * <h2>Where its motion comes from, and why</h2>
- * The server spawns each slash at a point on the ring (see {@code UbBurstPlan}) but does not send a
- * velocity: vanilla's particle packet randomises the velocity it carries, which would make the ring
- * spray in arbitrary directions. So the direction is computed <b>here</b>, from the spawn point and
- * the local player's position. That is sound because the burst is caster-only — the player receiving
- * the packet is the caster (the server's per-player overload guarantees it) — and it means every
- * slash leaves the ring outward instead of back through the caster.
+ * The <b>server</b> decides it. A slash has a direction — it lands on the victim <em>from</em> the
+ * caster — and only the server knows where the caster was relative to the body that was hit, so
+ * {@code UbBurstPlan} sends each point with its own velocity and this class applies it. Deriving the
+ * direction here, from the local player's position (which is what this class used to do), was only
+ * correct while the burst was caster-only; now that the victim's own client receives it too, "the
+ * local player" is not the burst's centre and the spray would point the wrong way for everybody
+ * except the caster.
  *
- * <p>Only direction is taken from the player; the spawn position, the ring radius and the count all
- * came from the server. The result is a real world-space burst: individual slashes drift outward,
- * arc under gravity, fade on their own lifetime, and can be hidden by a wall because they are
- * ordinary particles.
+ * <p>What stays client-side is everything that must vary per particle: which atlas cell, the size,
+ * the lifetime, and a small random spread <em>around</em> the server's direction so a ring of slashes
+ * is not a regimented fan. Speed is the server's, because it is what makes the burst lean along the
+ * blow.
  *
  * <h2>The sprite atlas is a set of variants, not an animation</h2>
  * {@code particles/ub_spark.json} names one {@code ub_spark.png}, which is a horizontal strip of
@@ -48,6 +47,14 @@ final class UbSparkParticle extends TextureSheetParticle {
     /** Cells in {@code ub_spark.png}; must match the committed atlas and {@code UbParticleAtlasTest}. */
     static final int TILES = 10;
 
+    /**
+     * Peak sideways wobble added to the server's velocity, as a fraction of it.
+     *
+     * <p>Small on purpose: the direction is the effect, so this is the difference between "a spray"
+     * and "a printed stencil", not a re-randomisation.
+     */
+    private static final double SPREAD = 0.18;
+
     /** Set once, so a client log line can prove the provider really created a particle. */
     private static volatile boolean firstLogged;
 
@@ -55,13 +62,17 @@ final class UbSparkParticle extends TextureSheetParticle {
     private final int tile;
 
     /**
-     * @param level   the client level
-     * @param x       spawn x, already on the ring from the server
-     * @param y       spawn y
-     * @param z       spawn z
-     * @param sprites the sprite set from {@code ub_spark.json}
+     * @param level    the client level
+     * @param x        spawn x, already on the ring the server sent
+     * @param y        spawn y
+     * @param z        spawn z
+     * @param vx       the server's x velocity, blocks per tick
+     * @param vy       the server's y velocity
+     * @param vz       the server's z velocity
+     * @param sprites  the sprite set from {@code ub_spark.json}
      */
-    UbSparkParticle(ClientLevel level, double x, double y, double z, SpriteSet sprites) {
+    UbSparkParticle(ClientLevel level, double x, double y, double z, double vx, double vy, double vz,
+            SpriteSet sprites) {
         super(level, x, y, z);
         this.pickSprite(sprites);
         this.tile = this.random.nextInt(TILES);
@@ -76,26 +87,18 @@ final class UbSparkParticle extends TextureSheetParticle {
         this.roll = this.random.nextFloat() * (float) (Math.PI * 2.0);
         this.oRoll = this.roll;
 
-        // Outward from the caster. The receiver of a caster-only particle packet is the caster, so
-        // "the local player" is the burst's centre. A little jitter keeps the ring from looking ruled.
-        Player player = Minecraft.getInstance().player;
-        double dx = player == null ? 0.0 : x - player.getX();
-        double dz = player == null ? 0.0 : z - player.getZ();
-        double length = Math.sqrt(dx * dx + dz * dz);
-        double angle = length > 1.0E-3
-                ? Math.atan2(dz, dx)
-                : this.random.nextDouble() * Math.PI * 2.0;
-        angle += (this.random.nextDouble() - 0.5) * 0.6;
-        double speed = 0.16 + this.random.nextDouble() * 0.18;
-        this.xd = Math.cos(angle) * speed;
-        this.zd = Math.sin(angle) * speed;
-        this.yd = 0.02 + this.random.nextDouble() * 0.10;
+        // The server's direction, plus a little wobble. `setParticleSpeed` rather than the
+        // six-argument super constructor: that one re-randomises the speed it is handed.
+        double wobbleX = (this.random.nextDouble() - 0.5) * 2.0 * SPREAD;
+        double wobbleZ = (this.random.nextDouble() - 0.5) * 2.0 * SPREAD;
+        this.setParticleSpeed(vx * (1.0 + wobbleX), vy + (this.random.nextDouble() - 0.5) * 0.05,
+                vz * (1.0 + wobbleZ));
 
         if (!firstLogged) {
             firstLogged = true;
             Astrum.LOGGER.info("astrum: first UB spark particle created at ({}, {}, {}) — lifetime {}t, "
-                    + "quad {}, atlas cell {}/{}", fmt(x), fmt(y), fmt(z), this.lifetime,
-                    fmt(this.quadSize), this.tile, TILES);
+                    + "quad {}, atlas cell {}/{}, velocity ({}, {}, {})", fmt(x), fmt(y), fmt(z),
+                    this.lifetime, fmt(this.quadSize), this.tile, TILES, fmt(vx), fmt(vy), fmt(vz));
         }
     }
 

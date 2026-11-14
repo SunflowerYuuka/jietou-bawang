@@ -199,27 +199,61 @@ class CharacterDefCodecTest {
     }
 
     /**
-     * The two fields the party effect reads are optional: an older pack keeps loading, and its buff is
-     * named after the character instead of failing to render.
+     * The three face fields, and the two roles they express.
+     *
+     * <p>{@code avatar} is her one official picture; {@code portrait} is the book's own override. Both
+     * are optional (an older pack keeps loading, and its buff is named after the character instead of
+     * failing to render), and {@link CharacterDef#face()} is the one place the order is written.
      */
     @Test
     void skillNameAndAvatarAreOptionalAndDefaultToEmpty() {
         var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(DJEETA)).getOrThrow();
         assertTrue(def.skillName().isEmpty());
         assertTrue(def.avatar().isEmpty());
+        assertTrue(def.face().isEmpty(), "no avatar and no portrait means no face at all");
         assertEquals("姬塔", def.effectiveSkillName(), "no skill name means the display name");
 
         String withBoth = DJEETA.replace("\"dimension\":\"charge\",",
                 "\"dimension\":\"charge\",\"skillName\":\"广域斩击\","
-                        + "\"avatar\":\"astrum:textures/item/character_card.png\",");
+                        + "\"avatar\":\"astrum:textures/gui/portrait/djeeta.png\",");
         var named = CharacterDef.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(withBoth)).getOrThrow();
         assertEquals("广域斩击", named.skillName().orElseThrow());
-        assertEquals("astrum:textures/item/character_card.png", named.avatar().orElseThrow().toString());
+        assertEquals("astrum:textures/gui/portrait/djeeta.png", named.avatar().orElseThrow().toString());
         assertEquals("广域斩击", named.effectiveSkillName());
 
         // A blank skill name is not a name: the fallback rule (effectiveSkillName) is the single copy.
         var blank = CharacterDef.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(
                 withBoth.replace("\"skillName\":\"广域斩击\"", "\"skillName\":\"  \""))).getOrThrow();
         assertEquals("姬塔", blank.effectiveSkillName());
+    }
+
+    /**
+     * {@code portrait} is the book's override: it wins for the book and leaves the avatar alone.
+     *
+     * <p>This is the arrangement the 2026-11-14 defect needed written down as code. A pack may ship one
+     * picture (fill {@code avatar}) or two (add {@code portrait} for the 角色册's crop); {@code face()}
+     * answers "what the book draws" and never reaches for the item texture, because the item texture is
+     * a generic ticket and not a face.
+     */
+    @Test
+    void thePortraitOverridesTheAvatarForTheBookOnly() {
+        String avatar = "\"avatar\":\"astrum:textures/gui/portrait/djeeta.png\",";
+        String both = DJEETA.replace("\"dimension\":\"charge\",",
+                "\"dimension\":\"charge\"," + avatar
+                        + "\"portrait\":\"astrum:textures/gui/portrait/djeeta_alt.png\",");
+
+        var withOverride = CharacterDef.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(both))
+                .getOrThrow();
+        assertEquals("astrum:textures/gui/portrait/djeeta_alt.png",
+                withOverride.face().orElseThrow().toString(), "declared portrait wins for the book");
+        assertEquals("astrum:textures/gui/portrait/djeeta.png",
+                withOverride.avatar().orElseThrow().toString(),
+                "the override must not rewrite the field it overrides");
+
+        var avatarOnly = CharacterDef.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(
+                DJEETA.replace("\"dimension\":\"charge\",", "\"dimension\":\"charge\"," + avatar)))
+                .getOrThrow();
+        assertEquals(avatarOnly.avatar(), avatarOnly.face(),
+                "with no portrait the book draws the avatar — the normal case");
     }
 }

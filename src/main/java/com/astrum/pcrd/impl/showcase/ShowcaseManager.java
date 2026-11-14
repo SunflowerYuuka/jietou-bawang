@@ -188,7 +188,9 @@ public final class ShowcaseManager implements ShowcaseSink {
      */
     private static Runnable damageFor(ServerLevel level, ServerPlayer caster,
             ResourceLocation characterId, CharacterDef def, UbTier tier) {
-        return UbDamageSettlement.once(level, caster, characterId, def, tier);
+        // No ledger: the entity sink draws nothing with particles (the clip is the visual), so the
+        // victims it would record have no reader. `null` says that, rather than a list nobody drains.
+        return UbDamageSettlement.once(level, caster, characterId, def, tier, null);
     }
 
     // ------------------------------------------------------------------ the factory

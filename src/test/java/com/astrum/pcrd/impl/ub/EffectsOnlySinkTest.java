@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -89,8 +90,11 @@ class EffectsOnlySinkTest {
     /**
      * The sink's two halves, in order, once each — the composition {@code settle} performs.
      *
-     * <p>The damage must go first: the particle burst is the visible half of a hit that has to have already
-     * happened (and its log line says so).
+     * <p>The damage must go first, for two reasons now. It is the visible half of a hit that has to
+     * have already happened — and, since 2026-11-14, it is also where the victims are <b>discovered</b>:
+     * the settlement records every body {@code hurt()} actually landed on into the per-cast ledger,
+     * and the emitter draws on exactly those. Reversing the order would leave the emitter with an
+     * empty ledger and produce the old bug (nothing drawn, or a burst on the caster).
      */
     @Test
     void theCastSettlesDamageBeforeEmittingTheBurst() {
@@ -101,6 +105,34 @@ class EffectsOnlySinkTest {
 
         assertEquals(List.of("damage", "particle burst"), order,
                 "damage is settled first, then the particle burst is spawned");
+    }
+
+    /**
+     * The ledger the settlement fills is what the burst reads, and the order is the whole point: the
+     * second half must be able to see the first half's output.
+     *
+     * <p>This is the defect as a unit test. The old code had no channel at all between the two halves
+     * — which is why it could only anchor the burst at the caster. Here the ledger is filled by the
+     * damage half exactly as {@code UbDamageSettlement} fills it and read by the particle half.
+     */
+    @Test
+    void theParticleHalfDrawsOnTheVictimsTheDamageHalfRecorded() {
+        UUID victim = UUID.fromString("00000000-0000-0000-0000-0000000000b0");
+        UbBurstVictims.Ledger ledger = new UbBurstVictims.Ledger();
+        List<UbBurstTargets.Burst> seen = new ArrayList<>();
+
+        EffectsOnlySink.settleWith(
+                UbDamageSettlement.once(() -> {
+                    ledger.record(new UbBurstVictims.Victim(victim, 4.0, 64.0, 0.0, 1.8));
+                    ledger.record(new UbBurstVictims.Victim(victim, 4.0, 64.0, 0.0, 1.8));
+                }),
+                () -> seen.addAll(UbBurstTargets.bursts(0.5, 0.5, ledger.landed(),
+                        UUID.fromString("00000000-0000-0000-0000-0000000000c1"), false)));
+
+        assertEquals(1, seen.size(), "two hits on one body is one burst, and it is on that body");
+        assertEquals(4.0, seen.get(0).victim().x(), 1e-9);
+        assertTrue(seen.get(0).all().stream().allMatch(spawn -> spawn.x() > 3.0),
+                "every particle is out by the victim, not back at the caster");
     }
 
     /** Called once per accepted cast, the composition settles exactly once and emits particles exactly once. */

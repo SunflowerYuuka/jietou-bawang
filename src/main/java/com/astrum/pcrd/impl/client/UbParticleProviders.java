@@ -67,16 +67,22 @@ public final class UbParticleProviders {
      * client startup, before a config file is guaranteed to be loaded, and the toggle has to follow
      * an edit made in the config screen without a restart.
      *
+     * <p>The velocity the provider is handed is the <b>server's</b> — {@code UbBurstPlan} computed it
+     * from the blow's direction — and it is passed straight to the particle so both halves of a
+     * burst travel the way the cast did. That is also why the packet must carry it: the count-0 form
+     * of {@code sendParticles} is the only one that delivers a velocity unchanged (see
+     * {@code UbCastParticles#send}).
+     *
      * @param event NeoForge's client particle-provider event
      */
     static void onRegisterParticleProviders(RegisterParticleProvidersEvent event) {
         event.registerSpriteSet(UbParticles.SPARK.get(), sprites ->
                 (type, level, x, y, z, vx, vy, vz) -> enabled()
-                        ? new UbSparkParticle(level, x, y, z, sprites)
+                        ? new UbSparkParticle(level, x, y, z, vx, vy, vz, sprites)
                         : null);
         event.registerSpriteSet(UbParticles.MOTE.get(), sprites ->
                 (type, level, x, y, z, vx, vy, vz) -> enabled()
-                        ? new UbMoteParticle(level, x, y, z, sprites)
+                        ? new UbMoteParticle(level, x, y, z, vx, vy, vz, sprites)
                         : null);
         // One INFO line with the part a probe can check: both providers are wired, and the two JSONs
         // that bind them to sprites are named. The JSONs themselves are not read here: this event fires

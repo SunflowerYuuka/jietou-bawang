@@ -94,14 +94,16 @@ public final class UbDamageSettlement {
      * @param caster      the player whose ultimate fired
      * @param characterId the character that fired — attribution for the kill ledger
      * @param tier        the tier that fired
+     * @param landed      where to record every body a hit actually landed on; {@code null} discards
+     *                    them, which is the honest answer for a caller with no visual to draw
      */
     public static void apply(ServerLevel level, ServerPlayer caster, ResourceLocation characterId,
-            CharacterDef def, UbTier tier) {
+            CharacterDef def, UbTier tier, UbBurstVictims.Ledger landed) {
         if (level == null || caster == null || tier == null || characterId == null) {
             return;
         }
         try {
-            applyGuarded(level, caster, characterId, def, tier);
+            applyGuarded(level, caster, characterId, def, tier, landed);
         } catch (RuntimeException e) {
             Astrum.LOGGER.error("astrum: UB damage settlement for {} threw; the cast itself is "
                     + "unaffected", characterId, e);
@@ -126,10 +128,12 @@ public final class UbDamageSettlement {
      * @param characterId the character that fired — the kill ledger's only way to name it
      * @param def         that character's definition
      * @param tier        the tier that fired
+     * @param landed      where the settlement records the victims it actually hit; the particle
+     *                    burst reads it, so the two cannot disagree about who was struck
      */
     public static Runnable once(ServerLevel level, ServerPlayer caster, ResourceLocation characterId,
-            CharacterDef def, UbTier tier) {
-        return once(() -> apply(level, caster, characterId, def, tier));
+            CharacterDef def, UbTier tier, UbBurstVictims.Ledger landed) {
+        return once(() -> apply(level, caster, characterId, def, tier, landed));
     }
 
     /**
@@ -157,7 +161,7 @@ public final class UbDamageSettlement {
     }
 
     private static void applyGuarded(ServerLevel level, ServerPlayer caster,
-            ResourceLocation characterId, CharacterDef def, UbTier tier) {
+            ResourceLocation characterId, CharacterDef def, UbTier tier, UbBurstVictims.Ledger landed) {
         // Before the damage: the attack buff is a buff the receivers keep, so it must be live for
         // whatever follows this cast. Applying it first also means a cast whose damage hits nothing
         // (no target in reach) still grants the buff, which is what the wiki describes — the buff is a
@@ -200,25 +204,38 @@ public final class UbDamageSettlement {
             }
             DamageSource source = new DamageSource(holder, caster, caster);
             float before = victim.getHealth();
-            boolean landed;
+            boolean result;
             try {
-                landed = victim.hurt(source, hit.amount());
+                result = victim.hurt(source, hit.amount());
             } catch (RuntimeException e) {
                 Astrum.LOGGER.error("astrum: UB hit {}/{} on {} threw; the remaining hits still run",
                         hit.ordinal() + 1, tier.hits(), name(victim), e);
                 continue;
             }
             float lost = Math.max(0.0F, before - victim.getHealth());
-            if (landed) {
+            if (result) {
                 applied++;
+                // The visual half, read off the one fact that says the hit was real: `hurt()`
+                // answered true. Recorded here rather than re-derived by the emitter, so a target
+                // that died, went invulnerable or stepped out of reach between `plan` and `hurt`
+                // never gets a burst it did not earn.
+                if (landed != null) {
+                    landed.record(victimOf(victim));
+                }
             }
             Astrum.LOGGER.debug("astrum: UB {} hit {}/{} on {} -> {} damage, lost {} hp, landed={} "
                             + "(hp {}/{})", display, hit.ordinal() + 1, tier.hits(), name(victim),
-                    hit.amount(), lost, landed, victim.getHealth(), victim.getMaxHealth());
+                    hit.amount(), lost, result, victim.getHealth(), victim.getMaxHealth());
         }
         Astrum.LOGGER.debug("astrum: UB {} of {} settled {} of {} declared hits on {} target(s), "
                         + "{} damage asked in total", display, name(caster), applied, plan.hits().size(),
                 plan.targets().size(), plan.total());
+    }
+
+    /** {@return the victim's pose as the burst needs it — a value, so the emitter holds no entity} */
+    private static UbBurstVictims.Victim victimOf(LivingEntity victim) {
+        return new UbBurstVictims.Victim(victim.getUUID(), victim.getX(), victim.getY(),
+                victim.getZ(), victim.getBbHeight());
     }
 
     /**
