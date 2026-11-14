@@ -4,10 +4,17 @@
   "skillName": "星河一天",
   "avatar": "astrum:textures/item/character_card.png",
   "dimension": "charge",
+  "_notes": "数值推导见 docs/balance-derivation.md：UB 20.0/段 是比例锚点，技能1 = 20 x 118431/355293 = 6.7；TP 的 8.0 是设计值、未与真实 TP 条标定。",
   "effects": [
     { "trigger": "melee_hit", "effect": "extra_damage",
-      "effectParams": { "amount": 6.0 } },
+      "triggerParams": { "skill": "wide_slash" },
+      "effectParams": { "amount": 6.7 } },
+
+    { "trigger": "melee_hit", "effect": "attack_buff",
+      "triggerParams": { "skill": "weapon_burst" },
+      "effectParams": { "multiplier": 1.1, "seconds": 10.0, "radius": 0.0 } },
     { "trigger": "melee_hit", "effect": "gain_charge",
+      "triggerParams": { "skill": "weapon_burst" },
       "effectParams": { "amount": 8.0 } }
   ],
   "ub": {

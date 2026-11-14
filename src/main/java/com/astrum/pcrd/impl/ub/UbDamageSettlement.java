@@ -3,9 +3,9 @@ package com.astrum.pcrd.impl.ub;
 import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.api.v1.UbTier;
+import com.astrum.pcrd.impl.combat.AllyCandidates;
 import com.astrum.pcrd.impl.combat.AllyMode;
 import com.astrum.pcrd.impl.combat.LandedHit;
-import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.effect.AttackBuffs;
 import com.astrum.pcrd.impl.growth.ContributionTracker;
 import java.util.ArrayList;
@@ -74,7 +74,7 @@ import org.jetbrains.annotations.ApiStatus;
  * No multiplier chain: see {@link UbDamage}'s javadoc for why the tier's {@code damage} is applied
  * verbatim and why that is the correct reading of spec §5.4/§6.2 rather than an omission.
  * {@code teamChargeBonus} is still unimplemented, and is left visible in the schema rather than silently
- * dropped. {@code attackBuff} is applied here, after the damage — see {@link #settleBuff}.
+ * dropped. {@code attackBuff} is applied here, <b>before</b> the damage — see {@link #settleBuff}.
  */
 @ApiStatus.Internal
 public final class UbDamageSettlement {
@@ -158,7 +158,7 @@ public final class UbDamageSettlement {
 
     private static void applyGuarded(ServerLevel level, ServerPlayer caster,
             ResourceLocation characterId, CharacterDef def, UbTier tier) {
-        // Before the damage: 「提升自己的物理攻击」 is a buff the caster keeps, so it must be live for
+        // Before the damage: the attack buff is a buff the receivers keep, so it must be live for
         // whatever follows this cast. Applying it first also means a cast whose damage hits nothing
         // (no target in reach) still grants the buff, which is what the wiki describes — the buff is a
         // property of casting the ultimate, not of connecting with it.
@@ -166,7 +166,8 @@ public final class UbDamageSettlement {
         double reach = UbDamage.range(tier);
         List<UbDamage.Target> candidates = candidates(level, caster, reach);
         UbDamage.Plan plan = UbDamage.plan(tier,
-                new UbDamage.Caster(caster.getUUID(), alive(caster)), candidates, allyMode());
+                new UbDamage.Caster(caster.getUUID(), alive(caster)), candidates,
+                AllyCandidates.configuredMode());
         if (plan.isEmpty()) {
             Astrum.LOGGER.debug("astrum: UB {} of {} hit nothing ({} candidates within {} blocks, "
                     + "{} hits declared)", characterId, name(caster), candidates.size(), reach,
@@ -221,11 +222,18 @@ public final class UbDamageSettlement {
     }
 
     /**
-     * Applies the tier's {@code attackBuff} to the caster, if it declares one.
+     * Applies the tier's {@code attackBuff} to the caster <b>and her party inside the tier's radius</b>,
+     * if it declares one.
      *
      * <p>Settled here, next to the damage, because it is the other half of what the ultimate <em>does</em>
      * — and because this is already the one place a paid-for cast becomes real, so a second call site
      * would be a second answer to "what does an ultimate apply".
+     *
+     * <p>The buff is <b>not</b> a caster-only self buff: verified against gamewith's 星河一天 entry, the
+     * party-wide attack boost is part of the ultimate itself (not CHAIN), so it lands on the caster and
+     * on every ally within the ultimate's effect radius. The receiver rule is {@code AllySelector}'s,
+     * reached through {@code AttackBuffs}; the radius is the tier's own, so the buff reaches exactly as
+     * far as the ultimate does, falling back to the documented party default when the tier declares none.
      *
      * <p>Guarded like the damage: a buff that cannot be applied must not cost the hits that follow, and
      * the cast has already been paid for by the time this runs.
@@ -237,7 +245,11 @@ public final class UbDamageSettlement {
         }
         UbTier.AttackBuffDef wanted = buff.get();
         try {
-            AttackBuffs.apply(caster, wanted.multiplier(), wanted.seconds(), characterId);
+            int receivers = AttackBuffs.apply(caster, wanted.multiplier(), wanted.seconds(),
+                    characterId, tier.radius());
+            Astrum.LOGGER.debug("astrum: UB {} granted x{} attack for {}s to {} player(s) within {} "
+                            + "blocks of {}", characterId, wanted.multiplier(), wanted.seconds(),
+                    receivers, AttackBuffs.radiusFor(tier.radius()), name(caster));
         } catch (RuntimeException e) {
             Astrum.LOGGER.error("astrum: applying the attack buff of {} threw; the cast's damage is "
                     + "unaffected", characterId, e);
@@ -305,15 +317,11 @@ public final class UbDamageSettlement {
     /**
      * {@return the configured ally policy, falling back to the permissive one}
      *
-     * <p>The same fallback, for the same reason, as {@code GuardedAreaChargeSink}: an unreadable value
-     * must not switch the mechanic off for a table with no teams.
+     * <p>Delegates to {@link AllyCandidates#configuredMode()}, the one place the value is read, so this
+     * class cannot develop its own fallback that disagrees with {@code area_charge}'s.
      */
     private static AllyMode allyMode() {
-        try {
-            return AllyMode.parse(ServerConfig.MULTIPLAYER.allyMode.get());
-        } catch (RuntimeException notLoaded) {
-            return AllyMode.ALL_PLAYERS;
-        }
+        return AllyCandidates.configuredMode();
     }
 
     /** {@return the player's scoreboard team name, or empty — the name, never {@code isAlliedTo}} */

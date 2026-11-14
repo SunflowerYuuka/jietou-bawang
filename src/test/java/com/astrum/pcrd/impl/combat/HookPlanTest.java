@@ -103,40 +103,74 @@ class HookPlanTest {
 
     /**
      * The shipped character fires <b>one</b> small skill per {@code melee_hit}, and her two skills
-     * alternate: swing 1 runs {@code extra_damage} (广域斩击), swing 2 runs {@code gain_charge}
-     * (剑意迸发), swing 3 is back to {@code extra_damage}.
+     * alternate: swing 1 runs {@code extra_damage} (广域斩击), swing 2 runs <b>both</b> halves of
+     * 武器爆发 (attack_buff + gain_charge), swing 3 is back to {@code extra_damage}.
      *
-     * <p>This replaces the old "every effect of one trigger fires" expectation, which described the
-     * pre-rotation design. Her hooks are now two separate {@code melee_hit} entries whose rotation is
-     * tracked per character, so a single event produces exactly one effect.
+     * <p>This is the shape the human's 技能2 correction forced: ウェポンバースト is 「自分の物理攻撃力を
+     * 小アップし、TPを特大回復」, so it is two effects on one skill — not two skills, which would have
+     * made the rotation three long and dealt half of 广域斩击 on the swing that should have cast the
+     * whole of 武器爆发.
      *
-     * <p>Breaks if: the rotation stops advancing, advances on a failed chance roll, or something
-     * dedupes the list down to a single fixed hook.
+     * <p>Breaks if: the rotation stops advancing, advances on a failed chance roll, something dedupes
+     * the list down to a single fixed hook, <b>or the rotation counts hooks instead of skill groups</b>
+     * (swing 2 would then fire only attack_buff and swing 3 only gain_charge).
      */
     @Test
     void oneSwingFiresOneSmallSkillAndTheNextSwingFiresTheOther() throws Exception {
         CharacterDef djeeta = djeeta();
 
-        List<HookPlan.Fired> first = HookPlan.fire(djeeta.effects(),
+        HookPlan.Outcome first = HookPlan.fire(djeeta.effects(),
                 TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
                 (index, hook) -> Optional.empty(), invalid -> {
-                }, new SkillRotation(0)).fired();
-        assertEquals(List.of(EffectType.EXTRA_DAMAGE), types(first),
+                }, new SkillRotation(0));
+        assertEquals(List.of(EffectType.EXTRA_DAMAGE), types(first.fired()),
                 "swing 1 must run 广域斩击 (extra_damage) and nothing else");
 
-        List<HookPlan.Fired> second = HookPlan.fire(djeeta.effects(),
+        HookPlan.Outcome second = HookPlan.fire(djeeta.effects(),
                 TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
                 (index, hook) -> Optional.empty(), invalid -> {
-                }, new SkillRotation(1)).fired();
-        assertEquals(List.of(EffectType.GAIN_CHARGE), types(second),
-                "swing 2 must run 剑意迸发 (gain_charge) and nothing else");
+                }, first.rotation());
+        assertEquals(List.of(EffectType.ATTACK_BUFF, EffectType.GAIN_CHARGE), types(second.fired()),
+                "swing 2 must run BOTH halves of 武器爆发 (attack up + TP), in one rotation step");
+        assertEquals(List.of(1, 2), indices(second.fired()),
+                "and both are the two hooks tagged weapon_burst");
 
-        List<HookPlan.Fired> third = HookPlan.fire(djeeta.effects(),
+        HookPlan.Outcome third = HookPlan.fire(djeeta.effects(),
                 TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
                 (index, hook) -> Optional.empty(), invalid -> {
-                }, new SkillRotation(2)).fired();
-        assertEquals(List.of(EffectType.EXTRA_DAMAGE), types(third),
-                "swing 3 must wrap around to 广域斩击");
+                }, second.rotation());
+        assertEquals(List.of(EffectType.EXTRA_DAMAGE), types(third.fired()),
+                "swing 3 must wrap around to 广域斩击 — two skills, not three");
+        assertEquals(first.rotation(), third.rotation(),
+                "the period is 2: after swing 3 the cursor is back where it started");
+    }
+
+    /**
+     * The same claim counted from the outside: over four swings the rotation alternates
+     * 广域斩击 ↔ 武器爆发, and 武器爆发 always arrives as a pair.
+     *
+     * <p>Written separately from the test above because it asserts the <b>sequence</b> rather than
+     * three hand-fed cursors — a rotation whose {@code advance} were applied twice on a two-hook skill
+     * would still pass the cursor-by-cursor test (each call is given the right cursor) and fail here.
+     */
+    @Test
+    void fourSwingsAlternateTheTwoSkillsAndWeaponBurstAlwaysArrivesAsAPair() throws Exception {
+        CharacterDef djeeta = djeeta();
+        SkillRotation cursor = SkillRotation.START;
+        List<List<EffectType>> swings = new ArrayList<>();
+        for (int swing = 0; swing < 4; swing++) {
+            HookPlan.Outcome outcome = HookPlan.fire(djeeta.effects(),
+                    TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
+                    (index, hook) -> Optional.empty(), invalid -> {
+                    }, cursor);
+            swings.add(types(outcome.fired()));
+            cursor = outcome.rotation();
+        }
+        assertEquals(List.of(EffectType.EXTRA_DAMAGE), swings.get(0));
+        assertEquals(List.of(EffectType.ATTACK_BUFF, EffectType.GAIN_CHARGE), swings.get(1));
+        assertEquals(List.of(EffectType.EXTRA_DAMAGE), swings.get(2));
+        assertEquals(List.of(EffectType.ATTACK_BUFF, EffectType.GAIN_CHARGE), swings.get(3));
+        assertEquals(SkillRotation.START, cursor, "四次挥砍之后回到起点");
     }
 
     /**
@@ -161,6 +195,18 @@ class HookPlanTest {
 
         assertEquals(List.of(EffectType.EXTRA_DAMAGE), first,
                 "the adapter must run exactly one rotating skill on one swing");
+
+        List<EffectType> second = new ArrayList<>();
+        HookEvaluator.evaluateHooks(djeeta, TriggerFacts.forHit(true, false, false, 3, false),
+                chance -> true,
+                (index, hook) -> {
+                    second.add(hook.type());
+                    return Optional.empty();
+                },
+                invalid -> fail("no hook of the shipped character may be rejected: " + invalid.problem()),
+                new SkillRotation(1));
+        assertEquals(List.of(EffectType.ATTACK_BUFF, EffectType.GAIN_CHARGE), second,
+                "技能2 through the adapter is both of its effects, on one swing");
     }
 
     /**

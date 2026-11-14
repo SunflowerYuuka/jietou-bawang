@@ -3,6 +3,8 @@ package com.astrum.pcrd.api.v1;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.MapCodec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import java.util.Optional;
+import java.util.OptionalDouble;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -282,30 +284,41 @@ public sealed interface EffectHook
     }
 
     /**
-     * Temporarily raises the <b>attacker's own</b> attack damage (「特大幅度提升自己的物理攻击」).
+     * Temporarily raises attack damage — the attacker's and, within {@code radius}, her party's
+     * (「特大幅度提升自己的物理攻击」, and in the real game the same boost covers the area).
      *
      * <p>The one hook that changes a number the <em>player</em> carries rather than something the hit
-     * does: it is applied as a real {@code MobEffectInstance} on the caster, so vanilla's own effect HUD
-     * shows it and vanilla's own expiry takes it away again. See {@code AttackBuffs} for the stacking
-     * rule and for why no tick listener is involved.
+     * does: it is applied as a real {@code MobEffectInstance}, so vanilla's own effect HUD shows it and
+     * vanilla's own expiry takes it away again. See {@code AttackBuffs} for the receiver rule (the
+     * caster plus every ally inside the radius, selected by {@code AllySelector}), for the stacking rule
+     * and for why no tick listener is involved.
      *
      * @param multiplier attack multiplier while the buff lasts, {@code 1.5} = +50%; values at or below
      *                   {@code 1.0} are not a buff and are refused by the executor rather than applied
      *                   as a debuff
      * @param seconds    how long it lasts, in seconds (the datapack says seconds because the wiki does)
+     * @param radius     how far around the caster the buff reaches, in blocks; empty means the
+     *                   documented party default ({@code AttackBuffs.PARTY_RADIUS_DEFAULT}). An ultimate
+     *                   passes its own tier radius here, so the buff reaches exactly as far as the
+     *                   ultimate does
      */
     @ApiStatus.Experimental
     record AttackBuff(Trigger trigger, TriggerParams triggerParams, double chance, double multiplier,
-                      double seconds) implements EffectHook {
+                      double seconds, OptionalDouble radius) implements EffectHook {
         @Override
         public EffectType type() {
             return EffectType.ATTACK_BUFF;
         }
 
-        private record Params(double multiplier, double seconds) {
+        private record Params(double multiplier, double seconds, OptionalDouble radius) {
             private static final Codec<Params> CODEC = RecordCodecBuilder.create(instance -> instance.group(
                     Codec.DOUBLE.fieldOf("multiplier").forGetter(Params::multiplier),
-                    Codec.DOUBLE.fieldOf("seconds").forGetter(Params::seconds)
+                    Codec.DOUBLE.fieldOf("seconds").forGetter(Params::seconds),
+                    Codec.DOUBLE.optionalFieldOf("radius").xmap(
+                                    value -> value.map(OptionalDouble::of).orElse(OptionalDouble.empty()),
+                                    value -> value.isPresent() ? Optional.of(value.getAsDouble())
+                                            : Optional.empty())
+                            .forGetter(Params::radius)
             ).apply(instance, Params::new));
         }
 
@@ -313,8 +326,9 @@ public sealed interface EffectHook
                 Trigger.CODEC.fieldOf("trigger").forGetter(AttackBuff::trigger),
                 TriggerParams.CODEC.optionalFieldOf("triggerParams", TriggerParams.NONE).forGetter(AttackBuff::triggerParams),
                 Codec.DOUBLE.optionalFieldOf("chance", 1.0).forGetter(AttackBuff::chance),
-                Params.CODEC.fieldOf("effectParams").forGetter(h -> new Params(h.multiplier(), h.seconds()))
+                Params.CODEC.fieldOf("effectParams").forGetter(
+                        h -> new Params(h.multiplier(), h.seconds(), h.radius()))
         ).apply(instance, (trigger, triggerParams, chance, params) -> new AttackBuff(
-                trigger, triggerParams, chance, params.multiplier(), params.seconds())));
+                trigger, triggerParams, chance, params.multiplier(), params.seconds(), params.radius())));
     }
 }

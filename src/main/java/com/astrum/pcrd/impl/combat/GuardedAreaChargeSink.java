@@ -1,18 +1,15 @@
 package com.astrum.pcrd.impl.combat;
 
 import com.astrum.pcrd.Astrum;
-import com.astrum.pcrd.impl.config.ServerConfig;
 import com.astrum.pcrd.impl.ub.UbCharge;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.scores.PlayerTeam;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
@@ -36,12 +33,14 @@ import org.jetbrains.annotations.ApiStatus;
  *       exception reaches the damage sequence.</li>
  * </ol>
  *
- * <h2>Why the candidate list is built here</h2>
- * {@link AllySelector} must stay free of {@code Player}/{@code Level}, so this class is the adapter
- * that measures distance, reads the scoreboard team name (not {@code isAlliedTo}, which answers
- * {@code false} for team-less LAN players) and drops spectators or dead players. Non-player entities
- * never enter the list: {@link ServerLevel#players()} is players only, which is also why a mob can
- * never be charged — it has no UB gauge to charge.
+ * <h2>Where the candidate list comes from</h2>
+ * {@link AllySelector} must stay free of {@code Player}/{@code Level}, so <b>somebody</b> has to
+ * measure distance, read the scoreboard team name (not {@code isAlliedTo}, which answers {@code false}
+ * for team-less LAN players) and drop spectators or dead players. That adapter is
+ * {@link AllyCandidates}, shared with the ultimate's damage plan and with the party-wide attack buff —
+ * one implementation of the adapter, one kernel of the policy, no second "who is an ally" rule. Non-player
+ * entities never enter the list: {@link ServerLevel#players()} is players only, which is also why a mob
+ * can never be charged — it has no UB gauge to charge.
  *
  * <h2>Not a special case for single-player</h2>
  * There is no "is this a single-player world" branch (spec §7.4, and no
@@ -93,36 +92,21 @@ public final class GuardedAreaChargeSink implements AreaChargeSink {
         ServerLevel level = caster.serverLevel();
         long nowTick = level.getGameTime();
         long nowSecond = Math.floorDiv(nowTick, TICKS_PER_SECOND);
-        AllyMode mode = allyMode();
+        AllyMode mode = AllyCandidates.configuredMode();
 
-        List<AllySelector.Candidate> candidates = new ArrayList<>();
-        Map<UUID, ServerPlayer> receivers = new HashMap<>();
-        for (ServerPlayer player : level.players()) {
-            if (player == null || !player.isAlive() || player.isSpectator()) {
-                continue;
-            }
-            UUID id = player.getUUID();
-            boolean self = id.equals(caster.getUUID());
-            double distance = self ? 0.0 : Math.sqrt(player.distanceToSqr(caster));
-            if (!Double.isFinite(distance)) {
-                continue;
-            }
-            candidates.add(new AllySelector.Candidate(id, self, teamName(player), distance));
-            receivers.put(id, player);
-        }
-
-        List<AllySelector.Candidate> selected = AllySelector.select(candidates, caster.getUUID(),
-                mode, request.radius(), request.includeSelf());
+        AllyCandidates.Pool pool = AllyCandidates.around(caster);
+        List<ServerPlayer> selected = pool.allies(caster.getUUID(), mode, request.radius(),
+                request.includeSelf());
         Astrum.LOGGER.debug("astrum: area_charge from {} mode={} includeSelf={} radius={}: "
                         + "{} of {} eligible players selected",
                 caster.getName().getString(), mode, request.includeSelf(), request.radius(),
-                selected.size(), candidates.size());
+                selected.size(), pool.size());
 
         List<UUID> selectedIds = new ArrayList<>(selected.size());
-        for (AllySelector.Candidate candidate : selected) {
-            if (receivers.containsKey(candidate.id())) {
-                selectedIds.add(candidate.id());
-            }
+        Map<UUID, ServerPlayer> receivers = new HashMap<>();
+        for (ServerPlayer receiver : selected) {
+            selectedIds.add(receiver.getUUID());
+            receivers.put(receiver.getUUID(), receiver);
         }
 
         Map<UUID, Double> credits = grantEach(selectedIds, caster.getUUID(), request.amount(),
@@ -181,32 +165,5 @@ public final class GuardedAreaChargeSink implements AreaChargeSink {
     /** Forgets the budget when the world goes away; the next server starts from a clean clock. */
     public void reset() {
         budget.reset();
-    }
-
-    /**
-     * {@return the configured ally policy, falling back to {@link AllyMode#ALL_PLAYERS} if the file
-     * cannot be read}
-     *
-     * <p>The fallback is the permissive one for the same reason {@link AllyMode#parse} has one: an
-     * unreadable value must not switch the mechanic off for a table with no teams. In a running game
-     * the config is loaded before any hit can happen, so this is a belt, not the mechanism.
-     */
-    private static AllyMode allyMode() {
-        try {
-            return AllyMode.parse(ServerConfig.MULTIPLAYER.allyMode.get());
-        } catch (RuntimeException notLoaded) {
-            return AllyMode.ALL_PLAYERS;
-        }
-    }
-
-    /**
-     * {@return the player's scoreboard team name, or empty when they have none}
-     *
-     * <p>The name, not {@code isAlliedTo}: the latter reports {@code false} whenever either side has
-     * no team, which is the §7.4 trap. {@code SAME_TEAM_ONLY} compares these names in the kernel.
-     */
-    private static Optional<String> teamName(ServerPlayer player) {
-        PlayerTeam team = player.getTeam();
-        return team == null ? Optional.empty() : Optional.of(team.getName());
     }
 }

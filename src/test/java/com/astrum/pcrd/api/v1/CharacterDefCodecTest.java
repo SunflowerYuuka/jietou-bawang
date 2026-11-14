@@ -127,6 +127,63 @@ class CharacterDefCodecTest {
         assertEquals(Optional.of(hook), EffectHook.CODEC.parse(JsonOps.INSTANCE, reEncoded).result());
     }
 
+    /**
+     * The attack buff's optional {@code radius}, and the fact that <b>0 is a value, not "absent"</b>.
+     *
+     * <p>Absent means "the documented party default" and {@code 0} means "this player only" — two
+     * different behaviours, so they must not collapse into one on the way through the codec. {@code -0.5}
+     * and a huge value are also preserved verbatim: refusing nonsense is
+     * {@code AttackBuffs.radiusFor}'s job, at the point where it would be used, not the codec's.
+     */
+    @Test
+    void attackBuffRadiusIsOptionalAndZeroIsNotAbsent() {
+        var absent = EffectHook.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(
+                "{\"trigger\":\"melee_hit\",\"effect\":\"attack_buff\","
+                        + "\"effectParams\":{\"multiplier\":1.1,\"seconds\":10.0}}")).getOrThrow();
+        assertTrue(((EffectHook.AttackBuff) absent).radius().isEmpty(),
+                "没写 radius = 用默认队伍半径，而不是 0");
+
+        for (double declared : new double[] {0.0, 8.0, -0.5, 1e9}) {
+            var hook = (EffectHook.AttackBuff) EffectHook.CODEC.parse(JsonOps.INSTANCE,
+                    JsonParser.parseString("{\"trigger\":\"melee_hit\",\"effect\":\"attack_buff\","
+                            + "\"effectParams\":{\"multiplier\":1.1,\"seconds\":10.0,\"radius\":"
+                            + declared + "}}")).getOrThrow();
+            assertEquals(declared, hook.radius().getAsDouble(), 1e-9,
+                    "radius " + declared + " 必须原样保留");
+            var encoded = EffectHook.CODEC.encodeStart(JsonOps.INSTANCE, hook).getOrThrow();
+            assertEquals(Optional.of(hook), EffectHook.CODEC.parse(JsonOps.INSTANCE, encoded).result(),
+                    "radius " + declared + " 必须能往返");
+        }
+    }
+
+    /**
+     * {@code triggerParams.skill}: the tag that makes two hooks <b>one skill</b>.
+     *
+     * <p>Absent and blank both mean "a skill of its own" — {@code skillTag()} is the one place that
+     * reading is written — while a real tag survives a round trip, because a pack that is edited by
+     * tooling must not lose the rotation's grouping.
+     */
+    @Test
+    void theSkillTagIsOptionalAndBlankMeansAbsent() {
+        var untagged = EffectHook.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(
+                "{\"trigger\":\"melee_hit\",\"effect\":\"gain_charge\","
+                        + "\"effectParams\":{\"amount\":8.0}}")).getOrThrow();
+        assertTrue(untagged.triggerParams().skillTag().isEmpty());
+
+        var blank = EffectHook.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(
+                "{\"trigger\":\"melee_hit\",\"triggerParams\":{\"skill\":\"  \"},"
+                        + "\"effect\":\"gain_charge\",\"effectParams\":{\"amount\":8.0}}")).getOrThrow();
+        assertTrue(blank.triggerParams().skillTag().isEmpty(),
+                "空白标签不是技能名；否则不同技能会被静默合并");
+
+        var tagged = EffectHook.CODEC.parse(JsonOps.INSTANCE, JsonParser.parseString(
+                "{\"trigger\":\"melee_hit\",\"triggerParams\":{\"skill\":\"weapon_burst\"},"
+                        + "\"effect\":\"gain_charge\",\"effectParams\":{\"amount\":8.0}}")).getOrThrow();
+        assertEquals(Optional.of("weapon_burst"), tagged.triggerParams().skillTag());
+        var encoded = EffectHook.CODEC.encodeStart(JsonOps.INSTANCE, tagged).getOrThrow();
+        assertEquals(Optional.of(tagged), EffectHook.CODEC.parse(JsonOps.INSTANCE, encoded).result());
+    }
+
     @Test
     void unknownEffectTypeIsAnErrorNotACrash() {
         var bad = JsonParser.parseString(DJEETA.replace("\"effect\":\"gain_charge\"", "\"effect\":\"nonexistent\""));

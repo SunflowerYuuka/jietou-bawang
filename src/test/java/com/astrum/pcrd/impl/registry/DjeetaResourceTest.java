@@ -10,6 +10,7 @@ import java.io.InputStream;
 import javax.imageio.ImageIO;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 import net.minecraft.core.registries.Registries;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
@@ -35,8 +36,8 @@ class DjeetaResourceTest {
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
             assertEquals(Dimension.CHARGE, def.dimension());
-            // Two rotating small skills now: 广域斩击 and 剑意迸发. She has no splash.
-            assertEquals(2, def.effects().size());
+            // Three hooks, but TWO skills: 技能2 (武器爆发) is attack up + TP on the same swing.
+            assertEquals(3, def.effects().size());
             assertEquals(3, def.affection().tier2Threshold());
             assertEquals(8, def.affection().tier3Threshold());
         }
@@ -56,14 +57,63 @@ class DjeetaResourceTest {
         try (InputStream in = DjeetaResourceTest.class.getResourceAsStream(DJEETA_JSON)) {
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
-            // Hooks are a rotation: swing 1 runs 广域斩击 (single-target damage), swing 2 runs
-            // 剑意迸发 (self TP). Order matters because the cursor walks the list.
+            // Hooks are a rotation of two SKILLS, six effects[] entries being three:
+            //   swing 1 = 广域斩击 (extra_damage)
+            //   swing 2 = 武器爆发 (attack_buff + gain_charge, tagged the same skill)
             assertInstanceOf(EffectHook.ExtraDamage.class, def.effects().get(0));
-            assertInstanceOf(EffectHook.GainCharge.class, def.effects().get(1));
+            assertInstanceOf(EffectHook.AttackBuff.class, def.effects().get(1));
+            assertInstanceOf(EffectHook.GainCharge.class, def.effects().get(2));
+            assertEquals(Optional.of("weapon_burst"),
+                    def.effects().get(1).triggerParams().skillTag(),
+                    "攻击力上升与充能必须同属一个技能，否则一斩会变成两个半技能");
+            assertEquals(def.effects().get(1).triggerParams().skillTag(),
+                    def.effects().get(2).triggerParams().skillTag());
+            assertEquals(Optional.of("wide_slash"), def.effects().get(0).triggerParams().skillTag());
             assertEquals("tempest_blade", def.ub().base().animation());
             assertEquals(4, def.ub().enhanced().hits());
             assertEquals(0, def.affection().tier2HookModifiers().get(0).hookIndex());
             assertEquals(1.5, def.affection().tier2HookModifiers().get(0).mult());
+        }
+    }
+
+    /**
+     * The damage numbers are a <b>ratio</b> of the real game's, not invented ones.
+     *
+     * <h2>The derivation this pins</h2>
+     * gamewith's 姬塔 (Lv208) gives 疾风剑雨 / 星河一天 as <b>355293</b> and 技能1 广域斩击 as
+     * <b>118431</b>. The mod's numbers are the same ratio at the scale the ultimate already used:
+     *
+     * <pre>
+     *   UB           355293            -> 20.0   (the scale anchor, per hit × 4 hits)
+     *   技能1        118431 / 355293   -> 6.66…  -> 6.7
+     * </pre>
+     *
+     * <p>Re-derive it in one line whenever the real numbers change:
+     * {@code 技能 = 20.0 * 技能伤害 / 355293}, rounded to one decimal. The assertion is against the
+     * <b>shipped JSON text</b> rather than a Java constant, because the JSON is what a future author
+     * edits — a drift between the two would otherwise be invisible until somebody re-read gamewith.
+     *
+     * <p>Hits stay at 4 on both tiers: 星河一天 strengthens 疾风剑雨, it does not change how many times
+     * it strikes.
+     */
+    @Test
+    void theDamageNumbersAreTheRealGamesRatioAtTheUltimatesScale() throws Exception {
+        try (InputStream in = DjeetaResourceTest.class.getResourceAsStream(DJEETA_JSON)) {
+            var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
+            var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
+
+            double ubPerHit = def.ub().base().damage();
+            assertEquals(20.0, ubPerHit, 1e-9, "UB 每段 20.0 是比例锚点");
+            assertEquals(4, def.ub().base().hits());
+            assertEquals(4, def.ub().enhanced().hits(), "强化 tier 只加强，不改变段数");
+
+            double realUb = 355293.0, realSkill1 = 118431.0;
+            double derived = Math.round(ubPerHit * realSkill1 / realUb * 10.0) / 10.0;
+            assertEquals(6.7, derived, 1e-9, "118431/355293 × 20 = 6.66…，取一位小数");
+
+            double shipped = ((EffectHook.ExtraDamage) def.effects().get(0)).amount();
+            assertEquals(derived, shipped, 1e-9,
+                    "djeeta.json 的 extra_damage 必须等于这条推导；实际 " + shipped);
         }
     }
 

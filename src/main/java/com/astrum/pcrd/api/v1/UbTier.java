@@ -19,8 +19,8 @@ import org.jetbrains.annotations.ApiStatus;
  * @param animation   animation name played by the showcase
  * @param hits        number of damage ticks
  * @param damage      damage per hit
- * @param radius      area radius, empty for a single-target UB
- * @param attackBuff  the self attack buff this tier grants, empty for none
+ * @param radius      area radius, empty for a single-target UB; also the reach of {@link #attackBuff}
+ * @param attackBuff  the attack buff this tier grants the caster and her party, empty for none
  * @param teamChargeBonus charge granted to allies, empty for none
  * @param extra       free-form extra tag, e.g. {@code armor_break}
  */
@@ -49,7 +49,7 @@ public record UbTier(String animation, int hits, double damage, OptionalDouble r
     }
 
     /**
-     * The self attack buff one UB tier grants (「特大幅度提升自己的物理攻击」).
+     * The attack buff one UB tier grants (「特大幅度提升自己的物理攻击」).
      *
      * <p>Its own record rather than two scalars on {@link UbTier} because the two numbers only mean
      * something together — a multiplier with no duration is not a buff, and a duration with no
@@ -58,6 +58,13 @@ public record UbTier(String animation, int hits, double damage, OptionalDouble r
      *
      * <p>The same two-field shape is what {@link EffectHook.AttackBuff} takes in {@code effectParams},
      * so a pack author writes the buff the same way whether it hangs off an ultimate or off a swing.
+     *
+     * <h2>Who receives it</h2>
+     * 「自己」 notwithstanding, the game's 星河一天 raises the <b>whole party's</b> physical attack: the
+     * boost is part of the ultimate itself (verified against gamewith, not a CHAIN effect), i.e. an area
+     * effect. So it lands on the caster <em>and</em> every ally inside {@link UbTier#radius()}, and
+     * {@code AttackBuffs} owns that rule (through {@code AllySelector}, never a second ally test).
+     * A tier with no radius still buffs its party, at that class's documented default.
      *
      * @param multiplier attack multiplier while it lasts, {@code 1.5} = +50%; at or below {@code 1.0}
      *                   is not a buff and is refused when it is applied

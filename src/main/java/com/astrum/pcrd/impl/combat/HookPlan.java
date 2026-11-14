@@ -64,7 +64,15 @@ import org.jetbrains.annotations.ApiStatus;
  * a swing skill, it is a different event that happens to be able to fire at the same time. A single
  * character may legitimately have one rotating hook and three conditional ones.
  *
- * <p>The chosen hook is the <b>cursor-th</b> entry of the rotating sub-list (not of {@code effects[]}),
+ * <p><b>What one turn of the rotation is: a skill, not a hook.</b> A skill may be several effects —
+ * djeeta's 技能2 is 「自分の物理攻撃力を小アップし、TPを特大回復」, attack up <em>and</em> TP — and
+ * counting those as two entries would make her rotation three long instead of two, so one swing would
+ * deal half of 广域斩击 and half of 武器爆发. So the unit is the <b>skill group</b>:
+ * {@link SkillGroups} groups the rotating hooks by {@code triggerParams.skill}, and the cursor indexes
+ * the groups. Every hook of the chosen group fires on that swing; the cursor advances once, however
+ * many effects the skill has.
+ *
+ * <p>The chosen group is the <b>cursor-th</b> of the rotating groups (not of {@code effects[]}),
  * so a character's rotation is unchanged by where the author puts her conditional hooks. The cursor
  * advances <b>only when her skill actually fires</b>: a failed chance roll leaves it where it is, so the
  * player gets that skill on the next swing instead of silently skipping it. The consequence worth
@@ -171,15 +179,12 @@ public final class HookPlan {
             EffectRun effects, Consumer<Invalid> onInvalid, SkillRotation rotation,
             boolean allowStackFull) {
         List<Fired> fired = new ArrayList<>();
-        int rotating = countRotating(hooks);
-        int target = rotation.peek(rotating);
-        int seen = 0;
+        SkillGroups groups = SkillGroups.of(hooks);
+        int target = rotation.peek(groups.count());
         boolean rotatingSkillFired = false;
         SkillRotation current = rotation;
         for (int index = 0; index < hooks.size(); index++) {
             EffectHook hook = hooks.get(index);
-            boolean rotates = hook.trigger() == Trigger.MELEE_HIT;
-            int position = rotates ? seen++ : -1;
             Optional<String> problem = invalidReason(hook);
             if (problem.isPresent()) {
                 onInvalid.accept(new Invalid(index, hook, problem.get()));
@@ -188,13 +193,14 @@ public final class HookPlan {
             if (!facts.observes(hook.trigger(), hook.triggerParams())) {
                 continue;
             }
-            if (rotates && position != target) {
+            int group = groups.skillOf(index);
+            if (group != SkillGroups.NOT_ROTATING && group != target) {
                 continue;   // her other small skills wait for their own swing
             }
             if (!chance.test(hook.chance())) {
                 continue;   // a miss must not consume the swing: the cursor stays put
             }
-            if (rotates) {
+            if (group != SkillGroups.NOT_ROTATING) {
                 rotatingSkillFired = true;
             }
             fired.add(new Fired(index, hook));
@@ -206,25 +212,10 @@ public final class HookPlan {
             }
         }
         // Advanced once, after the walk: advancing inside the loop would move the cursor under the
-        // feet of the very pass that is deciding what runs.
-        current = rotatingSkillFired ? current.advance(rotating) : current;
+        // feet of the very pass that is deciding what runs. One advance per swing, not per effect —
+        // a two-effect skill is still one skill.
+        current = rotatingSkillFired ? current.advance(groups.count()) : current;
         return new Outcome(fired, current);
-    }
-
-    /**
-     * {@return how many of {@code hooks} take part in the character's rotation}
-     *
-     * <p>Derived from the trigger, never stored: adding or removing a {@code melee_hit} hook in a pack
-     * re-derives the period on the next swing, and a stale count cannot outlive the JSON that caused it.
-     */
-    private static int countRotating(List<EffectHook> hooks) {
-        int rotating = 0;
-        for (EffectHook hook : hooks) {
-            if (hook.trigger() == Trigger.MELEE_HIT) {
-                rotating++;
-            }
-        }
-        return rotating;
     }
 
     /**

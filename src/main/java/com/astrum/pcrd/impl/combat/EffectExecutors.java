@@ -249,7 +249,8 @@ public final class EffectExecutors {
     }
 
     /**
-     * {@code attack_buff}: a real {@code MobEffectInstance} on the <b>caster</b>, so it expires by itself.
+     * {@code attack_buff}: a real {@code MobEffectInstance}, on the caster and on her party in radius,
+     * so it expires by itself.
      *
      * <p>The one hook whose number is <b>not</b> scaled by the multiplier chain, deliberately: its
      * "amount" is a ratio ({@code 1.5} = +50%) over which {@link EffectQuantities#scaled} is meaningless
@@ -260,12 +261,17 @@ public final class EffectExecutors {
      *
      * <p>The <b>duration</b> is a quantity and is still not scaled: the wiki states a fixed 18 seconds,
      * and a per-slot-different lifetime would make one ultimate behave differently by party position.
+     *
+     * <p>The receiver set is {@code AttackBuffs}' — the caster plus every ally inside the hook's
+     * {@code radius} — so this arm only passes the radius through; it does not decide who is an ally.
      */
     private static void attackBuff(EffectHook.AttackBuff hook, HookContext ctx) {
-        boolean applied = AttackBuffs.apply(ctx.attacker(), hook.multiplier(), hook.seconds(),
-                ctx.characterId());
-        Astrum.LOGGER.debug("astrum: attack_buff x{} for {}s on {} applied={} (character {})",
-                hook.multiplier(), hook.seconds(), name(ctx.attacker()), applied, ctx.characterId());
+        int receivers = AttackBuffs.apply(ctx.attacker(), hook.multiplier(), hook.seconds(),
+                ctx.characterId(), hook.radius());
+        Astrum.LOGGER.debug("astrum: attack_buff x{} for {}s within {} blocks of {} -> {} receiver(s) "
+                        + "(character {})",
+                hook.multiplier(), hook.seconds(), AttackBuffs.radiusFor(hook.radius()),
+                name(ctx.attacker()), receivers, ctx.characterId());
     }
 
     /**

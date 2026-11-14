@@ -247,7 +247,7 @@ astrum: UB 姬塔 of Dev settled 4 of 4 declared hits on 1 target(s), 80.0 damag
 | 7 | 合成料理：碗 + 小麦×2；手持右键方块 | 「吃下…，N 名角色好感提升」；同一料理同一天再喂会被拒 | ✅ 好感 +1，同日再喂被拒且不扣 |
 | 8 | 连续几天各喂一份 | 好感达到 8 → 3 阶 | ✅ `affection=8 threshold=8 daysFed=6` |
 | 9 | 充满气槽，按 `V` | 屏幕上一道金白剑气 + 爆环 + 姬塔切入图，约 1 秒淡出；伤害**立刻**落到目标 | ✅ 21 项探针（§5.1）：0 实体、20 点伤害、特效层绘制 |
-| 10 | 好感 3 阶后按 `V` | 强化 UB：4 段，共 80 点；特效层同样触发（`enhanced` 位为真） | ✅ 探针实测 4×20 = 80；⚠️ 特效**好不好看**未人肉目视 |
+| 10 | 好感 3 阶后按 `V` | 强化 UB：4 段 × **28** = 112 点；**自己与身边（默认 8 格内）的队友一起拿到 +50% 物理攻击 18 秒**；特效层同样触发（`enhanced` 位为真） | ✅ 4 段与 20.0/28.0 这两个数由 `DjeetaResourceTest` 钉住；✅ 三人实测（§6.4）：4 格内的队友攻击 1.0→1.5、40 格外的不变；⚠️ 强化版 112 点是**数据**，不是实机伤害探针（见下方注）；⚠️ 特效**好不好看**未人肉目视 |
 | 11 | 按 `K` 打开设置界面 | 三个小节（轮盘/HUD/UB 特效）可改，改完立刻生效 | ⚠️ 未人肉目视（键集可由日志证明，见 §6.2） |
 
 **关于第 4、5 步——组队走的是角色册，不是 `B`。** `B` 是**预设轮盘**（按住 → 数字键切换预设），
@@ -260,8 +260,15 @@ astrum: UB 姬塔 of Dev settled 4 of 4 declared hits on 1 target(s), 80.0 damag
 所以第 9 步的「1.4 秒后」已不成立。「特效长什么样」只有人能判断——见 §7。
 
 **关于第 10、11 步**：强化 UB 的**数据**在 `astrum:djeeta` 的 `ub.enhanced` 里、**判定**由
-`AffectionKernel.usesEnhancedUb` 单一实现，单测覆盖了阶梯，探针也实测了 4×20 = 80 点伤害；但
-「按 `V` 肉眼看到的那一秒值不值得看」需要人看屏幕。
+`AffectionKernel.usesEnhancedUb` 单一实现，单测覆盖了阶梯；但「按 `V` 肉眼看到的那一秒值不值得看」
+需要人看屏幕。
+
+> **一处遗留的口径错误，本次一并改正。** 这一行原先写「强化版 4 段，共 80 点」并标 PASS，依据是
+> 「探针实测 4×20 = 80」。可是 `ub.enhanced.damage` 在本仓库里**从来不是 20**：`49a6a1f` 与
+> `c93433f` 是 `"hits": 4, "damage": 20.0`（= 80 没错），而 `711b63d` 把它改成了 `28.0`，
+> 所以强化版现在是 **4 × 28 = 112**。也就是说旧的「80」在数据改动之后就已经过期，只是没人重算。
+> 现在这一行给的是 4 段与 20/28 两个数（`DjeetaResourceTest` 钉住），并注明 112 是**数据推算**——
+> 这一轮没有为强化版重跑一次实机伤害探针（本轮验的是 5★ 之外的增益与技能，见 §6.4）。
 
 判定标准很简单：**任何一步与「应当看到」不符，就是缺陷，请连同日志一起报。**
 
@@ -359,6 +366,80 @@ client keys = [hud.enableUbHud, hud.hudAnchor, hud.hudOffsetX, hud.hudOffsetY,
 
 **这只是服务端的一半。** 「HUD 上的条是否肉眼可见在涨」「`0` 之后条真的停住不动」需要人看屏幕——
 见 §6 第 11 步与 §7。另外探针跑完已由 `sdd.ps1 clean` 删除，`guard` 复查 `no probe junk` 为 OK。
+
+### 6.4 全队攻击增益与技能轮转这次实测了什么（Task 25）
+
+2026-11-14 在一台**真实专用服务端**上跑（`gradlew runServer`，先 `sdd.ps1 mute`；一次性平顶世界
+`astrum-t25-probe`，跑完删除）。探针通过 `PlayerList.placeNewPlayer(EmbeddedChannel, ...)` 放了
+**三个真实 `ServerPlayer`**（不是 `FakePlayer`——它不在 `ServerLevel.players()` 里，且
+`isInvulnerableTo()` 恒真），分别站在施放者 **0 格 / 4 格 / 40 格**处。全程没有截图、没有点击、
+没有输入、没有聚焦窗口，鼠标未移动；服务端由探针自己 `halt(false)`，退出码 0。
+
+**A. 6★ 必杀的攻击增益铺到队伍，而不是只给施放者**（`ub.enhanced.attackBuff` 1.5 × 18 s，
+tier 没有写 `radius` → 用默认 8 格）：
+
+```
+[T25] PASS three real players are in ServerLevel.players() — level.players=3
+[T25] distances: near=4.0 far=40.0
+astrum: attack_buff on T25-Caster -> x1.5 for 18.0s (360 ticks, amplifier 50) added=true …
+astrum: attack_buff on T25-Near   -> x1.5 for 18.0s (360 ticks, amplifier 50) added=true …
+astrum: attack_buff of astrum:djeeta -> x1.5 for 18.0s on 2 of 3 player(s) within 8.0 blocks …
+astrum: UB astrum:djeeta granted x1.5 attack for 18.0s to 2 player(s) within 8.0 blocks of T25-Caster
+[T25] attack after cast: caster 1.0 -> 1.5  near 1.0 -> 1.5  far 1.0 -> 1.0
+[T25] PASS the caster gains the buff — hasEffect=true
+[T25] PASS an ally 4 blocks away gains the buff — hasEffect=true
+[T25] PASS an ally 40 blocks away gains nothing — hasEffect=false
+[T25] PASS both in-range receivers get the same +50% at 18s — caster amp=50 near amp=50
+[T25] PASS the amplified total is the base attack x 1.5 — expected 1.5 got 1.5
+```
+
+**B. 重复施放是刷新，不是叠加**——第二次施放后攻击仍是 1.5，而日志里 `added=false` 正是
+「同一个实例被合并、时长取较长者」的现场，此时统计口径改成 `holds`（否则一次**成功的**刷新会被读成
+「0 个接收者」）：
+
+```
+astrum: attack_buff on T25-Caster -> x1.5 for 18.0s (360 ticks, amplifier 50) added=false holds=true …
+astrum: attack_buff of astrum:djeeta -> x1.5 for 18.0s on 2 of 3 player(s) within 8.0 blocks …
+[T25] PASS a recast refreshes instead of stacking — after two casts 1.5 (one buff would be 1.5)
+```
+
+**C. 技能2 ウェポンバースト = 物理攻击力小上升 **且** TP 特大回复，一次挥砍两个效果，轮转仍是两步。**
+这一段有两个测量陷阱，都已排除而不是绕过：`ubChargePerDamage` / `ubChargePerDamageTaken` 在这段窗口里
+置 0（否则**任何**伤害都会充能，广域斩击会被误读成给了 TP），以及每次挥砍前清 `invulnerableTime`
+（同一 tick 内连打四下，僵尸的受击无敌帧会吞掉后三下）：
+
+```
+[T25] swing window: ubChargePerDamage=0.0 ubChargePerDamageTaken=0.0 (both restored afterwards…)
+[T25] swing 1: landed=true charge 0.0 -> 0.0 | attack 1.0 -> 1.0 | attack_buff amp=none dur=none | ally 4 blocks away buffed=false
+[T25] PASS swing 1 is 广域斩击: no TP, no attack buff — charge=0.0 buff=false
+astrum: attack_buff of astrum:djeeta -> x1.1 for 10.0s on 1 of 3 player(s) within 0.0 blocks (amplifier 10, 200 ticks) …
+astrum: gain_charge 8.0 x 1.0 = 8.0 for T25-Caster
+[T25] swing 2: landed=true charge 0.0 -> 8.0 | attack 1.0 -> 1.1 | attack_buff amp=10 dur=200 | ally 4 blocks away buffed=false
+[T25] PASS swing 2 is 武器爆发: TP AND attack buff together — charge=8.0 amp=10 dur=200
+[T25] PASS swing 2 TP amount is the hook's 8.0 — charge=8.0
+[T25] PASS swing 2 attack buff is self-only (its radius is 0) — ally buffed=false
+[T25] PASS swing 3 is 广域斩击: no TP, no attack buff — charge=0.0 buff=false
+[T25] PASS swing 4 is 武器爆发: TP AND attack buff together — charge=8.0 amp=10 dur=200
+[T25] PASS swing 4 TP amount is the hook's 8.0 — charge=8.0
+[T25] PASS swing 4 attack buff is self-only (its radius is 0) — ally buffed=false
+[T25] swing window closed: rates restored to 1.0/0.33
+[T25] rotation over four swings: [[EXTRA_DAMAGE], [ATTACK_BUFF, GAIN_CHARGE], [EXTRA_DAMAGE], [ATTACK_BUFF, GAIN_CHARGE]]
+[T25] PASS one skill per swing, alternating, 武器爆发 always a pair
+```
+
+**D. 伤害是真实游戏的比例**（gamewith Lv208：UB 355293、技能1 118431）：
+
+```
+[T25] damage derivation: UB 20.0 per hit x 4 hits; 技能1 6.7 (118431/355293 x 20.0 = 6.7)
+[T25] PASS 技能1 equals the ratio 118431/355293 of the UB — shipped 6.7 derived 6.7
+[T25] PASS the UB keeps 4 hits on both tiers — base=4 enhanced=4
+```
+
+`[T25] === 20 checks, 0 failures ===`
+
+**这一段没验的是什么**：「队友屏幕上有没有多出一行 buff 图标」需要**两个真实客户端**——探针的三个
+`ServerPlayer` 各自只有一条 `EmbeddedChannel`，没有画面。同样没验「+50% 攻击在近战里手感如何」
+（僵尸被打死需要真手挥）。这两条在 §6 第 10 步。
 
 ---
 
