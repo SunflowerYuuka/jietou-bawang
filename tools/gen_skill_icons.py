@@ -40,15 +40,19 @@ DEFAULT_SOURCE = os.path.join("K:\\", "AI", "Minecraft", "assets", "pcr", "extra
 #:   3013  破甲     (armour break)      -> splash
 #:   3014  充能     (charge)            -> gain_charge
 #:   2006  充能     (charge)            -> area_charge
-#:   3015  自buff   (self buff)         -> stack
+#:   3015  自buff/层数 (stack counter) -> stack
 #:   1023  灼烧     (burn)              -> detonate
 #:   1022  中毒     (poison)            -> apply_effect
 #:
-#: ``attack_buff`` is NOT here: it shares the 自buff picture with ``stack``, by the human's rule
-#: (「这种自buff提升，统一使用之前决定的自buff图标」), and ``tools/gen_buff_icon.py`` writes both of its
-#: files — the 64x64 book copy and the 18x18 HUD copy — from ``icon_skill_3015``. So this dict has eight
-#: entries and the ``gui/skill`` directory has nine files; ``SkillIconsTest`` asserts the ninth is
-#: byte-identical to ``stack.png`` rather than letting the two drift into two pictures.
+#: ``attack_buff`` is NOT here: it is the self-buff, and the human named its art explicitly
+#: (「你用的3015/2012/1012，我要的是3010/2003/1003」). ``tools/gen_buff_icon.py`` writes both of its files — the
+#: 64x64 book copy and the 64x64 HUD copy — from ``icon_skill_3010``. So this dict has eight entries and
+#: the ``gui/skill`` directory has nine files, all nine distinct: no two effect types share a picture, and
+#: ``SkillIconsTest`` asserts the bytes differ rather than letting them drift back into one.
+#:
+#: ``stack`` keeps 3015 because nothing has overridden it and 姬塔 never uses it — not because it shares a
+#: category with ``attack_buff``. ``stack`` is a per-target layer counter that lands on the victim
+#: (``StackKernel``/``StackState``, spec §4.4); it is not a self-buff.
 ICONS = {
     "extra_damage": 1001,
     "lifesteal": 2005,

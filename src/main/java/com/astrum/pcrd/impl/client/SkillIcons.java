@@ -17,24 +17,27 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code assets/astrum/textures/gui/skill/<effect>.png} by {@code tools/gen_skill_icons.py}. Nine
  * files, not sixty-one icons' worth: the rest stay in the official asset tree.
  *
- * <h2>Two self-buffs, one picture — by his rule, not by accident</h2>
- * 「这种自buff提升，统一使用之前决定的自buff图标」: every <em>self-buff</em> effect shares the one self-buff
- * icon, which is the official {@code icon_skill_3015} (3015 = 自buff in the category table he gave). So
- * {@link EffectType#ATTACK_BUFF} and {@link EffectType#STACK} answer the <b>same</b> picture, and
- * {@code attack_buff.png} is byte-identical to {@code stack.png} — {@code SkillIconsTest} asserts the
- * bytes rather than trusting this paragraph.
+ * <h2>Every effect has its own picture</h2>
+ * Nine types, nine distinct official files, nine distinct bytes: no two effect types share art. That was
+ * briefly not true — an earlier revision drew {@code attack_buff} from {@code stack}'s picture,
+ * {@code icon_skill_3015} — on a "every self-buff shares one picture" rule that was misapplied.
  *
- * <p><b>What was here before, and why it was wrong.</b> The first attempt gave {@code attack_buff} a
- * badge of its own, the official {@code caravan_icon_buff_00005} ({@code +100%}, two raised fists),
- * on the theory that "a fist means attack". It is a <em>reward banner</em> from the caravan set, not a
- * self-buff status icon, and it made the row read as a different <em>category</em> of thing from the
- * 自buff row next to it. The human rejected it twice. The category table wins over a story about shapes.
+ * <p><b>Why the rule was wrong.</b> {@code stack} is not a self-buff. It is a per-target layer counter
+ * ({@code StackKernel}/{@code StackState}, spec §4.4): it adds a layer to the <em>victim</em>, and
+ * {@code detonate} consumes it. Its target is the enemy, not the caster — so there was never a category
+ * holding {@code attack_buff} and {@code stack} together. {@code attack_buff} is the self-buff, and the
+ * human named its art explicitly: 「你用的3015/2012/1012，我要的是3010/2003/1003。」 — {@code 3010}, the figure
+ * engulfed in golden flames in a gold frame. {@code stack} keeps {@code 3015} simply because nothing has
+ * overridden it and 姬塔 ({@code djeeta.json}) never uses it.
  *
- * <h2>Why a shared picture needs no lookup</h2>
- * {@link #sourceId} is total again — every type names a number — which is the honest shape now that the
- * exception is gone. A caller that wants "is this one of the shared self-buffs" asks
- * {@link #selfBuff(EffectType)} rather than inferring it from an absent number, and a null type still
- * answers empty instead of throwing on a render path.
+ * <p><b>What was here before that, and why it was wrong too.</b> The first attempt gave
+ * {@code attack_buff} a badge of its own, the official {@code caravan_icon_buff_00005} ({@code +100%}, two
+ * raised fists), on the theory that "a fist means attack". It is a <em>reward banner</em> from the caravan
+ * set, not a status icon at all. The human rejected it twice.
+ *
+ * <h2>Why no lookup exception is needed</h2>
+ * {@link #sourceId} is total — every type names a number — which is now literally true rather than true
+ * modulo a shared value. A null type still answers empty instead of throwing on a render path.
  *
  * <h2>Which icon, and why — the official category</h2>
  * The 61 official icons are filed in <b>families by their first digit</b>, and the category a picture
@@ -51,8 +54,8 @@ import org.jetbrains.annotations.ApiStatus;
  *   splash         3013   破甲                a violet ring of blades bursting outward
  *   gain_charge    3014   充能                a plus-sign and a blue arc
  *   area_charge    2006   充能                a plus-sign and a blue arc
- *   stack          3015   自buff              a small figure on a podium, spotlight above
- *   attack_buff    3015   自buff              the same picture — see the section above
+ *   stack          3015   自buff/层数          a small figure on a podium, spotlight above
+ *   attack_buff    3010   攻击提升            a figure engulfed in golden flames, gold frame
  *   detonate       1023   灼烧                an orange flame
  *   apply_effect   1022   中毒                a stoppered flask with bubbles
  * </pre>
@@ -61,12 +64,11 @@ import org.jetbrains.annotations.ApiStatus;
  * (2006) are both 充能 — the official set has exactly two charge icons and the two effects are exactly
  * two charge effects (self and area), so the pairing is right, but at the 9x9 a hook row draws they are
  * near-identical pictures. They are distinguished by their row text and by which character's list they
- * appear in, never by shape. The same holds for the two 自buff rows, and there the row text is the
- * <em>only</em> difference: 叠层 and 攻击提升.
+ * appear in, never by shape.
  *
  * <p>{@code SkillIconsTest} pins the mapping as data (every type names a texture, every texture is on
- * the classpath and 64x64, the two self-buffs share their bytes, and this table equals the generators'
- * {@code ICONS}/ {@code SELF_BUFF}), so a re-pick has to change the tests too, and {@code --check} in the
+ * the classpath and 64x64, no two types share bytes, and this table equals the generators'
+ * {@code ICONS}/{@code ATTACK_BUFF}), so a re-pick has to change the tests too, and {@code --check} in the
  * generators proves the files are byte-identical to their official sources.
  */
 @ApiStatus.Internal
@@ -90,8 +92,9 @@ public final class SkillIcons {
      * could change the generator while the code kept blitting the old picture.
      * {@code SkillIconsTest} asserts the table and the generators' dicts are the same pairs.
      *
-     * <p>Nine entries for nine types, with one repeated value: {@link EffectType#ATTACK_BUFF} and
-     * {@link EffectType#STACK} both name 3015, the official 自buff icon.
+     * <p>Nine entries for nine types, all distinct: {@link EffectType#ATTACK_BUFF} names {@code 3010} and
+     * {@link EffectType#STACK} names {@code 3015}, two different official pictures — see the class javadoc
+     * for why the old shared value was a misreading of what {@code stack} is.
      */
     private static final java.util.Map<EffectType, Integer> SOURCE_ID = java.util.Map.of(
             EffectType.EXTRA_DAMAGE, 1001,
@@ -100,7 +103,7 @@ public final class SkillIcons {
             EffectType.GAIN_CHARGE, 3014,
             EffectType.AREA_CHARGE, 2006,
             EffectType.STACK, 3015,
-            EffectType.ATTACK_BUFF, 3015,
+            EffectType.ATTACK_BUFF, 3010,
             EffectType.DETONATE, 1023,
             EffectType.APPLY_EFFECT, 1022);
 
@@ -129,17 +132,22 @@ public final class SkillIcons {
     }
 
     /**
-     * {@return whether {@code type} is one of the effects that share the single self-buff picture}
+     * {@return whether {@code type} is a <b>self-buff</b>: an effect the caster puts on themselves}
      *
-     * <p>Two values, one picture: 「这种自buff提升，统一使用之前决定的自buff图标」. The predicate exists so the
-     * sharing is a statement the code makes rather than a coincidence two table rows happen to express,
-     * and so {@code SkillIconsTest} can assert the shared set exactly — adding a third self-buff later
-     * has to be a deliberate edit here, not a silent third copy of one picture.
+     * <p>Exactly one value today, {@link EffectType#ATTACK_BUFF}, and that is a fact about the effects
+     * rather than about the pictures. {@code stack} used to be listed here and is <b>not</b> a self-buff:
+     * it is a per-target layer counter that lands on the victim and is consumed by {@code detonate}
+     * (spec §4.4), so it is an effect on the <em>enemy</em>. The two are drawn from different official
+     * icons ({@code 3010} and {@code 3015}) and their files differ byte for byte.
+     *
+     * <p>The predicate survives the correction because it is still the right question to ask about an
+     * effect's semantics — "does this buff the caster" — even though it no longer implies "shares art".
+     * {@code SkillIconsTest} pins the set, so adding a second self-buff is a deliberate edit here.
      *
      * @param type the hook's effect type
      */
     public static boolean selfBuff(EffectType type) {
-        return type == EffectType.ATTACK_BUFF || type == EffectType.STACK;
+        return type == EffectType.ATTACK_BUFF;
     }
 
     /**

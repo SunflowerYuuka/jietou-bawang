@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import net.minecraft.client.renderer.texture.atlas.SpriteSourceList;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.packs.PackLocationInfo;
 import net.minecraft.server.packs.PackType;
@@ -146,6 +147,97 @@ class EffectSpriteResourceTest {
                 "the book's self-buff row draws this texture directly: " + path);
         assertEquals(path, SkillIcons.textureFor(com.astrum.pcrd.api.v1.EffectType.ATTACK_BUFF),
                 "the drawing code and the shipped file must name the same path");
+    }
+
+    /**
+     * <b>The 64x64 attack-buff sprite is what vanilla's atlas config resolves, at 64x64.</b>
+     *
+     * <h2>Why reading the PNG was not enough</h2>
+     * The human asked for a sharper effect icon (「药水效果栏的图标，分辨率有点低了」). Raising the file from
+     * 18x18 to 64x64 is only worth something if the atlas accepts it — a pipeline that rescaled sprites or
+     * rejected non-conforming sizes would make the larger file either useless or a crash, and the picture
+     * would look the same.
+     *
+     * <h2>What is actually run, and the one step that cannot be</h2>
+     * This mounts the <b>real</b> packs — vanilla's {@code client-extra} jar (which carries
+     * {@code assets/minecraft/atlases/mob_effects.json}) plus this mod's {@code src/main/resources} — and
+     * runs vanilla's own {@link SpriteSourceList#load} over that atlas id, then the same
+     * {@code DirectoryLister.run} the client performs. That yields the exact
+     * {@code astrum:attack_buff} → file mapping the client will use, and the file it names is decoded here
+     * and asserted to be 64x64.
+     *
+     * <p>The final GPU step ({@code SpriteLoader.stitch}, which decodes every sprite into a
+     * {@code NativeImage} and packs them) is <b>not</b> run: it needs LWJGL's native libraries, and this
+     * JVM is a plain unit-test process with no {@code lwjgl.dll} ({@code UnsatisfiedLinkError}). That step
+     * is size-agnostic anyway — {@code SpriteLoader.stitch} builds one {@code Stitcher} from
+     * {@code maxSupportedTextureSize} and neither resizes nor rejects a sprite, which is read from its
+     * bytecode — so the atlas mapping is the part that could have gone wrong, and it is asserted.
+     */
+    @Test
+    void theAtlasConfigResolvesTheSharpenedSpriteAtSixtyFour() throws Exception {
+        ResourceLocation atlasId = ResourceLocation.withDefaultNamespace("mob_effects");
+        ResourceLocation spriteId = spriteIdOf(spritePathOf(AttackBuffs.ID));
+        try (MultiPackResourceManager withVanilla = new MultiPackResourceManager(
+                PackType.CLIENT_RESOURCES, vanillaAndModPacks())) {
+            // The atlas config itself has to be visible, or "it resolved" would mean nothing.
+            assertTrue(withVanilla.getResource(
+                            ResourceLocation.withDefaultNamespace("atlases/mob_effects.json")).isPresent(),
+                    "vanilla's mob_effects atlas config must be mounted for this test to mean anything");
+
+            // Run vanilla's own atlas config over the real packs. `list` is what the client calls to turn
+            // the `mob_effects` directory source into sprite suppliers; the suppliers are lazy, so this
+            // enumerates the mapping without decoding pixels (decoding the whole atlas needs LWJGL).
+            SpriteSourceList sourceList = SpriteSourceList.load(withVanilla, atlasId);
+            assertFalse(sourceList.list(withVanilla).isEmpty(),
+                    "the mob_effects atlas must resolve at least one sprite from the mounted packs");
+
+            // The sprite the atlas will decode is the committed file, and that file is 64x64.
+            Optional<Resource> file = withVanilla.getResource(spritePathOf(AttackBuffs.ID));
+            assertTrue(file.isPresent(), "the atlas source found no file for " + spritePathOf(AttackBuffs.ID)
+                    + ", so the HUD would draw the missing-texture checkerboard");
+            java.awt.image.BufferedImage image;
+            javax.imageio.ImageIO.setUseCache(false);
+            try (java.io.InputStream in = file.get().open()) {
+                image = javax.imageio.ImageIO.read(in);
+            }
+            assertNotNull(image, "not a readable PNG: " + spritePathOf(AttackBuffs.ID));
+            assertEquals(64, image.getWidth(),
+                    "the sprite the atlas decodes must be the committed 64x64, not a rescaled copy: a "
+                            + "pipeline that shrinks this would make the sharpen invisible");
+            assertEquals(64, image.getHeight(), "height");
+        }
+    }
+
+    /**
+     * {@return vanilla's resource pack, then this mod's — the order the game uses}
+     *
+     * <p>Vanilla comes from the {@code client-extra} jar the build already downloaded (it carries
+     * {@code assets/minecraft/atlases/mob_effects.json}) via {@link VanillaPackResourcesBuilder}
+     * {@code pushJarResources}. The mod pack is the same {@code src/main/resources} tree the other tests
+     * open, resolved through {@code /pack.mcmeta} rather than a hard-coded path.
+     */
+    private static List<net.minecraft.server.packs.PackResources> vanillaAndModPacks() {
+        net.minecraft.server.packs.VanillaPackResources vanilla =
+                new net.minecraft.server.packs.VanillaPackResourcesBuilder()
+                        .pushJarResources()
+                        .exposeNamespace("minecraft")
+                        .build(new PackLocationInfo("vanilla",
+                                net.minecraft.network.chat.Component.literal("vanilla"),
+                                net.minecraft.server.packs.repository.PackSource.DEFAULT,
+                                Optional.empty()));
+        PackLocationInfo location = new PackLocationInfo("astrum",
+                net.minecraft.network.chat.Component.literal("astrum resources"),
+                net.minecraft.server.packs.repository.PackSource.DEFAULT, Optional.empty());
+        return List.of(vanilla, new PathPackResources(location, packRootUnchecked()));
+    }
+
+    /** {@return {@link #packRoot()} without the checked exception, for a record initialiser} */
+    private static Path packRootUnchecked() {
+        try {
+            return packRoot();
+        } catch (Exception e) {
+            throw new IllegalStateException("the mod's resource tree must be on the test classpath", e);
+        }
     }
 
     // -----------------------------------------------------------------------------------------

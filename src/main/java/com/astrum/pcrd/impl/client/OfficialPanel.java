@@ -35,7 +35,9 @@ import org.jetbrains.annotations.Nullable;
  * <ol>
  *   <li><b>the flat floor</b> — {@link #BODY_FLOOR}, a dark neutral sampled from the frame's own stroke
  *       family. It is painted under everything for two reasons: the still is drawn on top of it, and a
- *       character with no still must still have an opaque panel body rather than a hole onto the world;</li>
+ *       character with no still must still have an opaque panel body rather than a hole onto the world.
+ *       It is painted <b>inside the frame's silhouette</b>, not inside the panel's rectangle — see
+ *       {@link #paintFloor} and {@link CornerCutout}, which is the fix for the black corner blocks;</li>
  *   <li><b>the still</b>, cover-cropped to the body (never the whole panel: the frame's ink lives in the
  *       outer band, and running her face under the border is what would look wrong), with a dimming wash
  *       over it so the cream text stays readable;</li>
@@ -119,8 +121,10 @@ final class OfficialPanel {
         NineSlice.Rects rects = NineSlice.rects(panel, slice);
 
         // 1. The floor. Painted under the still, so a still with soft edges (or none at all) never shows
-        //    the world through the panel's own body.
-        graphics.fill(panel.x(), panel.y(), panel.right(), panel.bottom(), BODY_FLOOR);
+        //    the world through the panel's own body — but painted INSIDE the frame's rounded silhouette,
+        //    because the frame art's corners are curves on transparency and a rectangular fill turns the
+        //    four cut-outs into solid dark blocks. That was the defect: 「四个角是黑色的方块」.
+        paintFloor(graphics, panel, slice);
 
         // 2. The still, cover-cropped into the body.
         if (still != null) {
@@ -145,6 +149,113 @@ final class OfficialPanel {
             graphics.fill(divider.x(), y, divider.right(), y + 1, DIVIDER_INK);
         }
         return rects;
+    }
+
+    /**
+     * Paints {@link #BODY_FLOOR} inside the frame's rounded silhouette.
+     *
+     * <h2>Why this is not one {@code fill}</h2>
+     * One rectangle fill was the defect. The frame's corner cells are anti-aliased <b>arcs on
+     * transparency</b>: the outermost row of each corner has alpha 0 for its first five-to-seven pixels.
+     * A rectangle fill covers that empty wedge with the floor, and at the comfortable tier's 30-pixel slice
+     * the 16-pixel cell is magnified 1.9x, so the wedge reads as a solid dark block — the four black
+     * squares in the human's screenshot. Nothing about the sheet needed regenerating; the fill had to stop
+     * covering pixels the art does not paint.
+     *
+     * <h2>The three bands</h2>
+     * The panel's rows split into three groups, painted as horizontal spans:
+     * <ul>
+     *   <li><b>the top corner band</b> — {@code slice} rows below the panel's top edge, where each row
+     *       starts {@link CornerCutout#cleared} pixels in from the left and stops that many short of the
+     *       right;</li>
+     *   <li><b>the middle</b> — between the two bands, filled edge to edge. This is the bulk of the panel
+     *       and the reason the body stays opaque;</li>
+     *   <li><b>the bottom corner band</b> — the same, mirrored, counting inward from the bottom edge.</li>
+     * </ul>
+     * A row whose two insets meet or cross has nothing inside the silhouette and is skipped: that is a
+     * panel narrower than its own corner arcs, which {@link NineSlice#clampSlice} already keeps from
+     * happening, and drawing a negative-width span would be the one way to paint outside the panel.
+     *
+     * <h2>Why adjacent rows are merged, and why the merge has to be exact</h2>
+     * A row at a time would be one {@code fill} per pixel of panel height on every frame — several hundred
+     * draws to paint one flat colour. So consecutive rows with the <b>identical</b> span are emitted as one
+     * rectangle. The comparison is on both edges, not just the left one: merging rows that differ by a
+     * pixel on the right would paint a block a pixel outside the silhouette, which is the defect again in
+     * miniature.
+     *
+     * @param graphics the GUI buffer
+     * @param panel    the panel's outer rectangle
+     * @param slice    the nine-slice thickness the corners are drawn at
+     */
+    private static void paintFloor(GuiGraphics graphics, Box panel, int slice) {
+        if (panel.width() <= 0 || panel.height() <= 0) {
+            return;
+        }
+        int band = NineSlice.clampSlice(panel, slice);
+        int runTop = -1;
+        int runLeft = 0;
+        int runRight = 0;
+        for (int row = 0; row < panel.height(); row++) {
+            int left = floorLeft(panel, band, row);
+            int right = floorRight(panel, band, row);
+            boolean drawable = right > left;
+            boolean sameSpan = drawable && runTop >= 0 && left == runLeft && right == runRight;
+            if (sameSpan) {
+                continue;   // extend the open run downward; the flush below closes it
+            }
+            if (runTop >= 0) {
+                graphics.fill(runLeft, panel.y() + runTop, runRight, panel.y() + row, BODY_FLOOR);
+                runTop = -1;
+            }
+            if (drawable) {
+                runTop = row;
+                runLeft = left;
+                runRight = right;
+            }
+        }
+        if (runTop >= 0) {
+            graphics.fill(runLeft, panel.y() + runTop, runRight, panel.bottom(), BODY_FLOOR);
+        }
+    }
+
+    /**
+     * {@return the first column of {@code row} that is inside the frame's silhouette}
+     *
+     * <p>Zero inset unless the row falls in the top or bottom corner band; see {@link #paintFloor}.
+     */
+    private static int floorLeft(Box panel, int band, int row) {
+        if (band <= 0) {
+            return panel.x();
+        }
+        if (row < band) {
+            return panel.x() + CornerCutout.cleared(CornerCutout.TOP_LEFT_INDEX, row, band);
+        }
+        int fromBottom = panel.height() - 1 - row;
+        if (fromBottom < band) {
+            return panel.x() + CornerCutout.cleared(CornerCutout.BOTTOM_LEFT_INDEX, fromBottom, band);
+        }
+        return panel.x();
+    }
+
+    /**
+     * {@return the first column past the end of {@code row} that is inside the frame's silhouette}
+     *
+     * <p>The mirror of {@link #floorLeft}; kept separate rather than returned as a pair so the two
+     * asymmetric corner tables cannot be swapped by accident.
+     */
+    private static int floorRight(Box panel, int band, int row) {
+        if (band <= 0) {
+            return panel.right();
+        }
+        if (row < band) {
+            return panel.right() - CornerCutout.cleared(CornerCutout.TOP_RIGHT_INDEX, row, band);
+        }
+        int fromBottom = panel.height() - 1 - row;
+        if (fromBottom < band) {
+            return panel.right()
+                    - CornerCutout.cleared(CornerCutout.BOTTOM_RIGHT_INDEX, fromBottom, band);
+        }
+        return panel.right();
     }
 
     /**

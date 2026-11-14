@@ -15,7 +15,6 @@ import javax.imageio.ImageIO;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -37,11 +36,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * stronger, that the committed PNGs are byte-for-byte resamples of the official files; this test only has
  * to stop the classpath and the code from drifting apart.
  *
- * <h2>The two self-buffs share one picture — by his rule</h2>
- * 「这种自buff提升，统一使用之前决定的自buff图标」. {@code attack_buff} and {@code stack} both draw the official
- * 自buff icon ({@code icon_skill_3015}), so their two committed files are <b>byte-identical</b>. The test
- * below asserts the bytes rather than the intention, because the failure mode — two files that were one
- * picture and then quietly became two — is invisible on any surface this project can inspect.
+ * <h2>Every effect has its own picture — and that is now true literally</h2>
+ * Nine effect types, nine distinct official icons, nine distinct files. The earlier revision asserted the
+ * <em>opposite</em> for {@code attack_buff} and {@code stack}: that they were byte-identical, on a
+ * "every self-buff shares one picture" rule. The rule was misfiled — {@code stack} is a per-target layer
+ * counter that lands on the <em>victim</em> (spec §4.4), not a self-buff — so the assertion is now
+ * inverted: the two files must <b>differ</b>. {@link #attackBuffIsIconSkill3010()} pins the number the
+ * human named (「我要的是3010/2003/1003」), because "different bytes" alone would also accept the wrong
+ * picture.
  *
  * <h2>The HUD sprite, which is the bug this suite did not have a test for</h2>
  * {@link #everyRegisteredEffectHasTheSpriteVanillaAsksFor()} is the regression test for the defect the
@@ -95,34 +97,81 @@ class SkillIconsTest {
         assertTrue(SkillIcons.sourceId(null).isEmpty(), "a null type has no number rather than throwing");
     }
 
-    /** The two self-buff types are the shared set, and it is exactly those two. */
+    /** The only self-buff is {@code attack_buff}: {@code stack} is a victim-side counter, not a self-buff. */
     @Test
-    void theSharedSelfBuffSetIsExactlyTheTwoSelfBuffs() {
-        Set<EffectType> shared = new HashSet<>();
+    void theSelfBuffSetIsExactlyAttackBuff() {
+        Set<EffectType> selfBuffs = new HashSet<>();
         for (EffectType type : EffectType.values()) {
             if (SkillIcons.selfBuff(type)) {
-                shared.add(type);
+                selfBuffs.add(type);
             }
         }
-        assertEquals(Set.of(EffectType.ATTACK_BUFF, EffectType.STACK), shared,
-                "a third shared picture has to be a deliberate edit, not a silent copy");
+        assertEquals(Set.of(EffectType.ATTACK_BUFF), selfBuffs,
+                "a new self-buff has to be a deliberate edit, not a silent addition");
+        assertFalse(SkillIcons.selfBuff(EffectType.STACK),
+                "stack is a per-target layer counter on the victim (spec §4.4), not a self-buff");
         assertFalse(SkillIcons.selfBuff(null), "a null type is not a self-buff");
-        assertEquals(SkillIcons.sourceId(EffectType.STACK), SkillIcons.sourceId(EffectType.ATTACK_BUFF),
-                "the two self-buffs must name the same official icon_skill_<n>");
     }
 
     /**
-     * {@code attack_buff.png} and {@code stack.png} are the <b>same bytes</b>.
+     * {@code attack_buff} is drawn from the official {@code icon_skill_3010}, by name.
      *
-     * <p>「统一使用之前决定的自buff图标」 is only true while the two files are one picture. Two files that
-     * diverge after a re-pick would look like two categories to a player who has learned one.
+     * <p>「你用的3015/2012/1012，我要的是3010/2003/1003。」 — the human picked the number. 3010 is the figure
+     * engulfed in golden flames in a gold frame; 3015 (a figure on a podium under a spotlight) is what
+     * shipped and is wrong for this effect. Pinning the number rather than only "different from stack"
+     * is what stops a future re-pick from quietly choosing some other picture that also differs.
      */
     @Test
-    void theTwoSelfBuffsShipTheSamePicture() throws Exception {
-        assertArrayEquals(bytesOf(SkillIcons.textureFor(EffectType.STACK)),
-                bytesOf(SkillIcons.textureFor(EffectType.ATTACK_BUFF)),
-                "the two self-buff rows must draw the same picture (tools/gen_buff_icon.py and "
-                        + "tools/gen_skill_icons.py write it from icon_skill_3015)");
+    void attackBuffIsIconSkill3010() {
+        assertEquals(3010, SkillIcons.sourceId(EffectType.ATTACK_BUFF).orElse(-1),
+                "attack_buff must be drawn from icon_skill_3010");
+    }
+
+    /** {@code stack} keeps 3015 — the per-target counter's picture is unchanged. */
+    @Test
+    void stackKeepsIconSkill3015() {
+        assertEquals(3015, SkillIcons.sourceId(EffectType.STACK).orElse(-1),
+                "stack keeps its own picture; nothing overrode it and 姬塔 never uses it");
+    }
+
+    /**
+     * <b>{@code attack_buff.png} and {@code stack.png} are different bytes.</b>
+     *
+     * <p>The inverse of what this test asserted before. It used to require byte-identical files, on the
+     * "self-buffs share one picture" rule; that rule was misapplied (see the class javadoc), and the two
+     * effects are now two official pictures. Both halves are asserted because either one alone is
+     * insufficient: "different" without a pinned number accepts the wrong art, and a pinned number without
+     * "different" would not notice the files still being copies.
+     */
+    @Test
+    void attackBuffAndStackShipDifferentPictures() throws Exception {
+        assertFalse(java.util.Arrays.equals(bytesOf(SkillIcons.textureFor(EffectType.STACK)),
+                        bytesOf(SkillIcons.textureFor(EffectType.ATTACK_BUFF))),
+                "attack_buff (icon_skill_3010) and stack (icon_skill_3015) must be different pictures: "
+                        + "tools/gen_buff_icon.py and tools/gen_skill_icons.py write them from different "
+                        + "official sources");
+    }
+
+    /**
+     * No two effect types share a picture — all nine files differ.
+     *
+     * <p>This is the general form of the pair above, and it is the property the original
+     * {@code everyEffectTypeNamesItsOwnIconFile} premise was reaching for. It is asserted across every
+     * pair rather than only the one that was wrong, so a future re-pick that collapses two types onto one
+     * number fails here even if the pinned numbers are updated.
+     */
+    @Test
+    void everyEffectTypePaintsFromItsOwnPicture() throws Exception {
+        List<EffectType> types = List.of(EffectType.values());
+        for (int i = 0; i < types.size(); i++) {
+            for (int j = i + 1; j < types.size(); j++) {
+                assertFalse(java.util.Arrays.equals(bytesOf(SkillIcons.textureFor(types.get(i))),
+                                bytesOf(SkillIcons.textureFor(types.get(j)))),
+                        types.get(i) + " and " + types.get(j) + " ship identical art; every effect type "
+                                + "must have its own picture (" + SkillIcons.sourceId(types.get(i)) + " vs "
+                                + SkillIcons.sourceId(types.get(j)) + ")");
+            }
+        }
     }
 
     /** Every mapped texture is packaged, and 64x64 as {@link SkillIcons#TEXTURE_SIZE} claims. */
@@ -181,21 +230,24 @@ class SkillIconsTest {
     }
 
     /**
-     * The edge each shipped {@code mob_effect} file is committed at, with the reason for the two numbers.
+     * The edge each shipped {@code mob_effect} file is committed at, with the reason for the one number.
      *
-     * <p>There are two and they are both deliberate, so the table is written down rather than a single
-     * constant: <b>18</b> is what vanilla's own {@code textures/mob_effect/*.png} are
-     * ({@code strength.png}, {@code health_boost.png}), which is the size the {@code attack_buff} sprite is
-     * derived at so it sits in the 18x18 slot like a vanilla effect; <b>32</b> is what
-     * {@code tools/gen_party_effect_textures.py} draws the five party fallbacks at, because those are
-     * <em>runes</em> with a 2-pixel outline and pips, and 18px turned the pips to mush. The blit samples the
-     * whole texture whatever its size, so both edges work; the table exists so a silent re-export cannot
-     * change one of them.
+     * <p><b>64</b> for {@code attack_buff}, and {@code 18} is deliberately gone. The old value matched
+     * vanilla's own {@code textures/mob_effect/*.png} on the theory that the HUD needs an 18x18 file; that
+     * theory was wrong in the useful direction. {@code MobEffectTextureManager} stitches through
+     * {@code SpriteLoader}, which builds a {@code Stitcher} from {@code maxSupportedTextureSize} and
+     * imposes <b>no per-sprite size</b> — any sprite size is packed as-is. The HUD then blits it at a fixed
+     * 18x18 ({@code Gui.renderEffects} → {@code Graphics.blit(..., 0, 18, 18, sprite)}), so a bigger file
+     * does not make the icon bigger; it gives the sampler more pixels, which is the sharpness the human
+     * asked for (「分辨率有点低了」). {@code 18} was never enforced, so it was not the ceiling.
+     *
+     * <p><b>32</b> for the five party fallbacks, which {@code tools/gen_party_effect_textures.py} draws as
+     * <em>runes</em> with a 2-pixel outline and pips; 18px turned the pips to mush.
      */
     private static final class EffectSprite {
 
-        /** Matches vanilla's own effect sprites, and {@code tools/gen_buff_icon.py}'s {@code HUD_SIZE}. */
-        static final int VANILLA_EDGE = 18;
+        /** {@code tools/gen_buff_icon.py}'s {@code HUD_SIZE}: the official art survives the atlas. */
+        static final int ATTACK_BUFF_EDGE = 64;
 
         /** {@code tools/gen_party_effect_textures.py}'s {@code SIZE}: the rune fallbacks. */
         static final int RUNE_EDGE = 32;
@@ -205,7 +257,7 @@ class SkillIconsTest {
 
         /** {@return the committed edge for one effect's sprite} */
         static int edgeOf(ResourceLocation effectId) {
-            return PartyEffectSlots.ids().contains(effectId) ? RUNE_EDGE : VANILLA_EDGE;
+            return PartyEffectSlots.ids().contains(effectId) ? RUNE_EDGE : ATTACK_BUFF_EDGE;
         }
     }
 

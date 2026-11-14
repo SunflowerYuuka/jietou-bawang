@@ -31,3 +31,65 @@ desktop.ini
 # Python caches (tools/*.py)
 __pycache__/
 *.pyc
+
+# 派生自 Cygames 官方美术、不进仓库的贴图
+#
+# 为什么外置：这些图是从游戏资源里提取并加工出来的美术资产，版权属于 Cygames。
+# 仓库只放**代码和可复现的生成脚本**，不放这些成品图。想本地出图，按 README 的
+# 「素材准备」一节把官方资源解包到 K:\AI\Minecraft\assets\pcr\ 后跑 tools/ 下的脚本。
+#
+# 保留在仓库里的是**纯自产**贴图（程序绘制的图标、符文、UI 底色等），它们不依赖官方资源，
+# 所以即使不跑脚本，mod 也能加载（美术会退化成占位/纯色，但不会崩）。
+
+# 效果贴图：由官方 fx_djeeta* 经 tools/fx_from_ai.py + gen_ub_particles.py 加工
+/src/main/resources/assets/astrum/textures/effect/ub_burst.png
+/src/main/resources/assets/astrum/textures/effect/ub_flare.png
+/src/main/resources/assets/astrum/textures/effect/ub_strike.png
+/src/main/resources/assets/astrum/textures/effect/ub_slash.png
+/src/main/resources/assets/astrum/textures/effect/ub_shockwave.png
+
+# 粒子图集：从官方特效图集切出
+/src/main/resources/assets/astrum/textures/particle/ub_mote.png
+/src/main/resources/assets/astrum/textures/particle/ub_spark.png
+
+# 角色头像：官方 icon_unit_*
+/src/main/resources/assets/astrum/textures/gui/portrait/djeeta.png
+/src/main/resources/assets/astrum/textures/gui/portrait/djeeta_1.png
+/src/main/resources/assets/astrum/textures/gui/portrait/djeeta_3.png
+/src/main/resources/assets/astrum/textures/gui/portrait/djeeta_6.png
+
+# 角色立绘：官方 still_unit_*
+/src/main/resources/assets/astrum/textures/gui/still/djeeta_3.png
+/src/main/resources/assets/astrum/textures/gui/still/djeeta_6.png
+
+# 大招切入立绘：官方 6★ 卡面 card/full/105761
+/src/main/resources/assets/astrum/textures/gui/ub_cutin_djeeta.png
+
+# 技能图标：官方 icon_skill_*（attack_buff=3010，stack=3015，九个效果各一张、互不相同）
+/src/main/resources/assets/astrum/textures/gui/skill/apply_effect.png
+/src/main/resources/assets/astrum/textures/gui/skill/area_charge.png
+/src/main/resources/assets/astrum/textures/gui/skill/attack_buff.png
+/src/main/resources/assets/astrum/textures/gui/skill/detonate.png
+/src/main/resources/assets/astrum/textures/gui/skill/extra_damage.png
+/src/main/resources/assets/astrum/textures/gui/skill/gain_charge.png
+/src/main/resources/assets/astrum/textures/gui/skill/lifesteal.png
+/src/main/resources/assets/astrum/textures/gui/skill/splash.png
+/src/main/resources/assets/astrum/textures/gui/skill/stack.png
+
+# 状态图标：官方 icon_skill_3010 缩到 64x64（HUD 仍按 18x18 画，源越大越清晰）
+/src/main/resources/assets/astrum/textures/mob_effect/attack_buff.png
+
+# 角色册边框：官方 fx_ui_gachabutton_frame_tex
+/src/main/resources/assets/astrum/textures/gui/book_panel.png
+
+# UB 充能条：官方 pct_fever_bar
+/src/main/resources/assets/astrum/textures/gui/ub_gauge_fill.png
+/src/main/resources/assets/astrum/textures/gui/ub_gauge_track.png
+
+# 角色卡图标：官方 icon_unit_105731
+/src/main/resources/assets/astrum/textures/item/character_card.png
+
+# 轮盘底板：AI 生成后用 prepare_textures.py 加工（也是经由内容生成流程，一并外置以示一致）
+/src/main/resources/assets/astrum/textures/gui/wheel_plate.png
+/src/main/resources/assets/astrum/textures/gui/ub_frame.png
+
