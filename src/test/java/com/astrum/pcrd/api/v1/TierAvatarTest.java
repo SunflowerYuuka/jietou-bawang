@@ -263,8 +263,7 @@ class TierAvatarTest {
     }
 
     private static UbDef ub() {
-        UbTier tier = new UbTier("base", 1, 20.0, OptionalDouble.empty(), Optional.empty(),
-                OptionalDouble.empty(), Optional.empty());
+        UbTier tier = new UbTier("base", 1, 20.0, OptionalDouble.empty(), List.of());
         return new UbDef(tier, tier);
     }
 

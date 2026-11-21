@@ -1,0 +1,9 @@
+{
+  "type": "jeed:effect_provider",
+  "effect": "astrum:magic_defence_down",
+  "providers": [
+    {
+      "item": "astrum:character_card"
+    }
+  ]
+}

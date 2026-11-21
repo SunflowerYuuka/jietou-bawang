@@ -1,0 +1,283 @@
+{
+  "schemaVersion": 1,
+  "displayName": "栗林胡桃",
+  "skillName": "明星闪亮登场",
+  "avatar": "astrum:textures/gui/portrait/kurumi.png",
+  "icon1st": "astrum:textures/gui/portrait/kurumi_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/kurumi_3.png",
+  "icon6th": "astrum:textures/gui/portrait/kurumi_6.png",
+  "still": "astrum:textures/gui/still/kurumi_3.png",
+  "still6th": "astrum:textures/gui/still/kurumi_6.png",
+  "dimension": "control",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-a.md §3（锚点口径 = docs/balance-derivation.md §14.1）。UB 惊吓挥铃 2.4A+30+30L = 11070 → 10.0，『击晕被伤害到的敌人 5.5 秒』→ panic 1 档（本 mod 的恐慌固定 1.5 秒，时长差异按 §9 记录，不是近似成 5.5 秒）。6★UB 明星闪亮登场 范围半径300内 2.8A+35+35L = 12915 → 11.7（radius 4）+ 击晕 → panic 1 档 + 提升我方全体【1.1+1.1*技能等级】= 229.9 物理·魔法防御力 18 秒 → 229.9/(0.12*2000) = 0.96 → 物防/魔防各 1 档 + 每秒恢复范围半径225内所有友方【0.04*物理攻击力+0.8+0.8*技能等级】= 247.2 持续 18.5 秒。最后这条是『継続HP回復』，18.5 秒总量 4573 → u = 4.13；**它现在是真正的持续回血**（task 63）：`ally_effect` + `vanillaEffect: minecraft:regeneration`、amplifier 0（= 原版 I 级）、seconds 18.5、radius 4 —— 与佩可莉姆的『継続HP回復』同一个机制（balance-derivation §12）。原句说的『UbEffect 装不下 ally_effect 的 duration/amplifier』已经不成立：UbEffect 现在带 vanillaEffect / amplifier 两个字段，时长走 effectParams.seconds。**剩下的近似**：`regeneration` 的强度只有档位（amplifier），没有『每秒 N 点』这一档；原文 247.2 raw/秒 = u 0.223/秒，最低一档 amplifier 0 是每 50 刻回 1 点、即 0.4/秒，18.5 秒合计约 7.4 点，比率比原文高约 1.8 倍，而**时长 18.5 秒是原文的精确值**。技能1 勇敢之铃【0.375+0.375*技能等级】= 78.4 → 物防/魔防各 1 档 12 秒，半径 200 → 4。技能2 战栗之铃 0.8A+10+10L = 3690 → 3.3 + 击晕 1.5 秒 → panic 1 档（1.5 秒精确对应）。好感阶梯：tier2 = 专属（【0.75+0.75*技能等级】= 156.8 → 物防/魔防各 1 档 12 秒 + 半径200内所有友方 50 技能值 → 50 TP / 10 = area_charge 5.0，充能比 1 点 = 10 TP 见 balance-derivation §14.5），tier3 = 6★ 改名 ブレイブリーベル++（bwiki 技能图标目录的 技能1_强化2 标签）；bwiki 没给 6★ 技能1 公式，tier3 沿用 tier2 的数，只换名字。EX 光辉之力【75+75*技能等级】= 15750 最大生命值 → minecraft:health_boost amp 4（超出参考血条，按 §15.4.3 的同一口径夹到 amp 4）；光辉之力+ =【1275+75*技能等级】= 16875 也是 amp 4，另加『提升自身30魔法防御力』→ buff_magic_defence_area 1 档 radius 0（可可萝的先例：不用 minecraft:resistance，那会顺手给出原文没写的全伤害减伤）。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_phys_defence_area",
+      "triggerParams": {
+        "skill": "brave_bell"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0,
+        "radius": 4.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_magic_defence_area",
+      "triggerParams": {
+        "skill": "brave_bell"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0,
+        "radius": 4.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "tremble_bell"
+      },
+      "effectParams": {
+        "amount": 3.3
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "panic",
+      "triggerParams": {
+        "skill": "tremble_bell"
+      },
+      "effectParams": {
+        "tier": 1
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "惊吓挥铃",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 10.0,
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "panic",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 5.5
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "明星闪亮登场",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 11.7,
+      "radius": 4.0,
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "panic",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 5.5
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_phys_defence_area",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_magic_defence_area",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "ally_effect",
+          "vanillaEffect": "minecraft:regeneration",
+          "amplifier": 0,
+          "effectParams": {
+            "seconds": 10.3,
+            "radius": 4.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/kurumi_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "brave_bell",
+        "baseName": "勇敢之铃",
+        "tier2": {
+          "name": "勇敢之铃+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_phys_defence_area",
+              "triggerParams": {
+                "skill": "brave_bell"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0,
+                "radius": 4.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_magic_defence_area",
+              "triggerParams": {
+                "skill": "brave_bell"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0,
+                "radius": 4.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "area_charge",
+              "triggerParams": {
+                "skill": "brave_bell"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "amount": 5.0,
+                "includeSelf": true
+              }
+            }
+          ]
+        },
+        "tier3": {
+          "name": "ブレイブリーベル++",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_phys_defence_area",
+              "triggerParams": {
+                "skill": "brave_bell"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0,
+                "radius": 4.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_magic_defence_area",
+              "triggerParams": {
+                "skill": "brave_bell"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0,
+                "radius": 4.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "area_charge",
+              "triggerParams": {
+                "skill": "brave_bell"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "amount": 5.0,
+                "includeSelf": true
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/kurumi_main1.png"
+      },
+      {
+        "skill": "tremble_bell",
+        "baseName": "战栗之铃",
+        "icon": "astrum:textures/gui/skillicon/kurumi_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "光辉之力",
+        "tier2": {
+          "name": "光辉之力+"
+        },
+        "tier3": {
+          "name": "光辉之力+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "vanillaEffect": "minecraft:health_boost",
+                  "amplifier": 4
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "vanillaEffect": "minecraft:health_boost",
+                  "amplifier": 4
+                },
+                {
+                  "effect": "buff_magic_defence_area",
+                  "effectParams": {
+                    "tier": 1,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 3,
+              "clauses": [
+                {
+                  "vanillaEffect": "minecraft:health_boost",
+                  "amplifier": 4
+                },
+                {
+                  "effect": "buff_magic_defence_area",
+                  "effectParams": {
+                    "tier": 1,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/kurumi_ex.png"
+      }
+    ]
+  }
+}

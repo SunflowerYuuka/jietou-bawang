@@ -1,0 +1,246 @@
+{
+  "schemaVersion": 1,
+  "displayName": "星野静流",
+  "skillName": "神圣彼方",
+  "avatar": "astrum:textures/gui/portrait/shizuru.png",
+  "icon1st": "astrum:textures/gui/portrait/shizuru_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/shizuru_3.png",
+  "icon6th": "astrum:textures/gui/portrait/shizuru_6.png",
+  "still": "astrum:textures/gui/still/shizuru_3.png",
+  "still6th": "astrum:textures/gui/still/shizuru_6.png",
+  "dimension": "survival",
+  "_notes": "数值全部由 bwiki 公式推导，见 docs/derivations-batch-c.md §C1 —— 锚点与 docs/balance-derivation.md §14.1 完全相同（参考等级 208、参考攻击力 2000、锚点 22140 → 20.0），一字未动。UB 神圣惩击 3.6A+45+45L = 16605 → 20.0（16605/22140×20 = 15.0）；6★UB 神圣彼方 7.2A+90+90L = 33210 → 30.0。技能1 圣灵治愈 【物理攻击力+7.5+7.5*技能等级】= 3567.5 → 3.22 单位（3.22/20 = 16.1% 血条）→ heal_area 1 档（§14.3 的换算：档位 = clamp(round(u/4),1,5)）。技能2 守护 屏障【6+6*技能等级】= 1254 → 1.13 单位 → SHIELD 1 档，12 秒（bwiki 的 12 秒原样保留）。6★UB 的三条：物防【2+2*技能等级】= 418 → 防御档位 round(418/(0.12*2000)) = 2 档；屏障【15+15*技能等级】= 3135 → 2.83 单位 → SHIELD 1 档；「每秒恢复【0.15A+2+2L】持续 8.5 秒」合计 6103 → 5.51 单位 = 27.6% → heal_area 1 档（HEAL_AREA 是瞬发，本 mod 没有「逐秒回复」这个机制，所以取 8.5 秒的总量，见报告）。好感阶梯：tier2 = 技能1 的专属「圣灵治愈+」与技能2 的「守护+」（bwiki 记在『二专技能』里，图标文件名是日文 プロテクション+，中文取「守护+」）；她没有 6★ 改名的技能，所以两条阶梯都没有 tier3，UB 的改名走 ub.enhanced。已记录的缺口（不静默丢弃）：(1) 技能1 原作只治疗「生命值比例最低的一名己方」，本 mod 没有这个选择器，heal_area 会覆盖全队（过宽，不是缺失）；(2) 技能2 二专的「提升范围内我方角色100物理暴击」已由 crit_chance_up 承载（100 点 → 5%，12 秒，半径 8，task 60）；(3) 6★UB 的「持续回复生命值」是逐秒而不是瞬发；(4) EX 是战斗开始触发，本 mod 没有这个 trigger，所以强度走 affection.skills 的 passive 块。 【修正】6★UB 的「持续 8.5 秒回血」已合并为一次性 heal_area（同总量，时序不同），机制本身存在，故不再标「尚未实现」；时序差异记录于此。暴击率 0.05：她的『提升范围内我方角色100物理暴击』按 1 点 = 0.05 个百分点换算成 5%（affection.critChance；换算是设计选择，来源只给数值，见 task-58-report.md §1）。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "heal_area",
+      "triggerParams": {
+        "skill": "soul_heal"
+      },
+      "effectParams": {
+        "tier": 1,
+        "radius": 8.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "shield",
+      "triggerParams": {
+        "skill": "protection"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0,
+        "radius": 8.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "神圣惩击",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 15.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "shield",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0,
+            "radius": 0.0
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "神圣彼方",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 30.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "buff_phys_defence_area",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "shield",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "heal_area",
+          "effectParams": {
+            "tier": 1,
+            "radius": 8.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/shizuru_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.25,
+    "skills": [
+      {
+        "skill": "soul_heal",
+        "baseName": "圣灵治愈",
+        "tier2": {
+          "name": "圣灵治愈+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "heal_area",
+              "triggerParams": {
+                "skill": "soul_heal"
+              },
+              "effectParams": {
+                "tier": 1,
+                "radius": 8.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_phys_defence_area",
+              "triggerParams": {
+                "skill": "soul_heal"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0,
+                "radius": 8.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/shizuru_main1.png"
+      },
+      {
+        "skill": "protection",
+        "baseName": "守护",
+        "tier2": {
+          "name": "守护+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "shield",
+              "triggerParams": {
+                "skill": "protection"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0,
+                "radius": 8.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_attack_area",
+              "triggerParams": {
+                "skill": "protection"
+              },
+              "effectParams": {
+                "tier": 5,
+                "seconds": 12.0,
+                "radius": 8.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "heal_self",
+              "triggerParams": {
+                "skill": "protection"
+              },
+              "effectParams": {
+                "tier": 1
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "crit_chance_up",
+              "triggerParams": {
+                "skill": "protection"
+              },
+              "effectParams": {
+                "percent": 5.0,
+                "seconds": 12.0,
+                "radius": 8.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "gain_charge",
+              "triggerParams": {
+                "skill": "protection"
+              },
+              "effectParams": {
+                "amount": 35.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/shizuru_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "姐姐的力量",
+        "tier2": {
+          "name": "姐姐的力量+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "buff_phys_defence_area",
+                  "effectParams": {
+                    "tier": 2,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "buff_phys_defence_area",
+                  "effectParams": {
+                    "tier": 2,
+                    "radius": 0.0
+                  }
+                },
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 225,
+                    "perLevel": 0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/shizuru_ex.png"
+      }
+    ]
+  }
+}

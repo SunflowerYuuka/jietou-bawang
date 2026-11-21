@@ -3,7 +3,6 @@ package com.astrum.pcrd.impl.growth;
 import com.astrum.pcrd.api.v1.AffectionDef;
 import com.astrum.pcrd.api.v1.CharacterProgress;
 import com.astrum.pcrd.api.v1.GrowthDef;
-import com.astrum.pcrd.api.v1.HookModifier;
 import java.util.List;
 import java.util.OptionalInt;
 import org.junit.jupiter.api.Test;
@@ -27,7 +26,7 @@ class GrowthFactsTest {
 
     private static final GrowthDef GROWTH = new GrowthDef(100, 1.15, 30);
 
-    private static final AffectionDef AFFECTION = new AffectionDef(3, 8, List.of(new HookModifier(1, 1.5)));
+    private static final AffectionDef AFFECTION = AffectionDef.thresholds(3, 8);
 
     @Test
     void firstLevelNeedsTheBase() {

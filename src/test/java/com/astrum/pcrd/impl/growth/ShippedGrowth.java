@@ -17,8 +17,9 @@ import net.minecraft.core.registries.Registries;
  * The growth numbers the mod actually ships, read from {@code djeeta.json} instead of retyped.
  *
  * <h2>Why the tests read the datapack file</h2>
- * Spec §6.4 pins 姬塔 at {@code expBase 100}, {@code expPerLevel 1.15}, {@code maxLevel 30},
- * {@code tier2Threshold 3}, {@code tier3Threshold 8} and "tier 2 multiplies hook index 1 by 1.5". If
+ * Spec §6.4 pinned 姬塔 at {@code expBase 100}, {@code expPerLevel 1.15}, {@code maxLevel 30}; task 36 raised the cap
+ * to 100 and re-derived the ratio to 1.04 (see §15.1 of {@code docs/balance-derivation.md} for the arithmetic and
+ * for why 1.04 rather than 1.15), with {@code tier2Threshold 3} and {@code tier3Threshold 8} unchanged. If
  * the tests restated those numbers, a pack edit could move the curve and every test would still pass
  * — the tests would then be checking a copy of the design, not the design. Loading the shipped json
  * through the same {@link CharacterDef#CODEC} the registry loader uses means a change to the pack
@@ -40,7 +41,7 @@ final class ShippedGrowth {
     private ShippedGrowth() {
     }
 
-    /** {@return 姬塔's shipped experience curve: 100 at a growth of 1.15, capped at 30} */
+    /** {@return 姬塔's shipped experience curve: 100 at a growth of 1.04, capped at 100} */
     static GrowthDef growth() {
         return DJEETA.growth();
     }

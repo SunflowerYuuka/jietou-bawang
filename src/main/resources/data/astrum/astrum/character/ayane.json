@@ -1,0 +1,254 @@
+{
+  "schemaVersion": 1,
+  "displayName": "绫音",
+  "skillName": "噗吉旋风全垒打",
+  "avatar": "astrum:textures/gui/portrait/ayane.png",
+  "icon1st": "astrum:textures/gui/portrait/ayane_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/ayane_3.png",
+  "icon6th": "astrum:textures/gui/portrait/ayane_6.png",
+  "still": "astrum:textures/gui/still/ayane_3.png",
+  "still6th": "astrum:textures/gui/still/ayane_6.png",
+  "dimension": "control",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-b.md §5（参考等级 208、参考物理攻击力 2000、锚点 22140 → 20.0）。她是物理角色。UB 噗吉全力挥动（bwiki 原文带{{黑幕|JACKPOT！}}的隐藏文字，落盘取可见部分）3.6*物攻+45+45L = 16605 → 15.0；6★UB 噗吉旋风全垒打 4.8*物攻+60+60L = 22140 → 20.0（恰好等于锚点本身），范围 375 → radius 3.0。技能1 噗吉破碎击 0.8*物攻+10+10L = 3690 → 3.3（范围 325 → splash 3.0 格）；专属（技能1 的 tier2）1.2*物攻+15+15L = 5535 → 5.0，并追加『对最近的敌人【0.8*物攻+12+12L = 4108】』→ 3.7，与『行动速度变为原本的 0.8 倍 10.5 秒』。**那一句是减速不是加速**，所以不用 haste（HASTE 只加、而且是自己阵营的效果）：落 apply_effect minecraft:slowness（amplifier 0 = -15% 移速），方向对了，缺的是『攻速』那一半 —— 与 balance-derivation §10 用 speed 近似『行动速度』时同一个诚实的缺口。技能2 噗吉飓风击 0.54*物攻+6.8+6.8L = 2501.2 → 2.3（范围 325），并降物防 0.2+0.2L = 41.8 → defence_down 1 档。EX 漂亮一击 15+15L 物攻 → flat_attack_up；EX+ 追加 30 魔法防御力 → buff_magic_defence_area 1 档。击退与击飞，两条都落盘（task 63 收尾，无剩余缺口）：(1)『击退距离 2160』= KNOCKBACK 2 档（0.8，按战场 13000→16 格的比例约 2.7 格）；(2)『击飞高度（人类裁定：飞 2 格起步，数据里是 launch=2.0，即顶点高度） 800』= 两档 UB 的 knockback 各写 `launch: 1.0` —— 800 码按同一条 13000→16 格的比例是 800×16/13000 = 0.985 格，取 1.0；Knockbacks 用游戏自己的积分器反解初速（每刻 v←(v−0.08)×0.98，高度取正速度之和；0.985 格 → 0.4524 格/刻）。**为什么高度不是更强的一档**：原版 knockback 的垂直分量是 min(0.4, strength)，strength 再大也封顶 0.4（约 0.75 格），而且会被 KNOCKBACK_RESISTANCE 一起削掉 —— 所以『高度』只能是独立的一路，它只写 y 分量，水平推力仍是原版那一次调用。『击晕』的时长按 bwiki 落盘，不再是缺口：技能1 1.5 秒（不写 seconds = PanicRules 的 1.5 默认，精确对应）、专属 2.5 秒、两档 UB 2.5 / 3 秒；PANIC 的阶梯仍只有 1 档，时长走 effectParams.seconds（task 60）。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "pugi_smash"
+      },
+      "effectParams": {
+        "amount": 3.3
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "splash",
+      "triggerParams": {
+        "skill": "pugi_smash"
+      },
+      "effectParams": {
+        "radius": 3.0,
+        "damage": 3.3
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "panic",
+      "triggerParams": {
+        "skill": "pugi_smash"
+      },
+      "effectParams": {
+        "tier": 1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "pugi_gale"
+      },
+      "effectParams": {
+        "amount": 2.3
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "splash",
+      "triggerParams": {
+        "skill": "pugi_gale"
+      },
+      "effectParams": {
+        "radius": 3.0,
+        "damage": 2.3
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "defence_down",
+      "triggerParams": {
+        "skill": "pugi_gale"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "噗吉全力挥动",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 15.0,
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "panic",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 2.5
+          }
+        },
+        {
+          "scope": "victim",
+          "effect": "knockback",
+          "effectParams": {
+            "tier": 2
+          },
+          "launch": 2.0
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "噗吉旋风全垒打",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 20.0,
+      "radius": 3.0,
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "panic",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 3.0
+          }
+        },
+        {
+          "scope": "victim",
+          "effect": "knockback",
+          "effectParams": {
+            "tier": 2
+          },
+          "launch": 2.0
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/ayane_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "pugi_smash",
+        "baseName": "噗吉破碎击",
+        "tier2": {
+          "name": "噗吉破碎击+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "pugi_smash"
+              },
+              "effectParams": {
+                "amount": 5.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "pugi_smash"
+              },
+              "effectParams": {
+                "radius": 3.0,
+                "damage": 5.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "pugi_smash"
+              },
+              "effectParams": {
+                "amount": 3.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "panic",
+              "triggerParams": {
+                "skill": "pugi_smash"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 2.5
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "apply_effect",
+              "triggerParams": {
+                "skill": "pugi_smash"
+              },
+              "effectParams": {
+                "effect": "minecraft:slowness",
+                "duration": 210,
+                "amplifier": 0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/ayane_main1.png"
+      },
+      {
+        "skill": "pugi_gale",
+        "baseName": "噗吉飓风击",
+        "icon": "astrum:textures/gui/skillicon/ayane_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "漂亮一击",
+        "tier2": {
+          "name": "漂亮一击+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                },
+                {
+                  "effect": "buff_magic_defence_area",
+                  "effectParams": {
+                    "tier": 1,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/ayane_ex.png"
+      }
+    ]
+  }
+}

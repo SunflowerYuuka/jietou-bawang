@@ -473,4 +473,294 @@ class BookLayoutTest {
     private static boolean overlaps(BookLayout.Box a, BookLayout.Box b) {
         return a.x() < b.right() && b.x() < a.right() && a.y() < b.bottom() && b.y() < a.bottom();
     }
+
+    // ---------------------------------------------------------------------------------------
+    // The skill strip, and the page behind it
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * <b>The 「技能详情」 button occupies exactly the strip the skill list used to fill.</b>
+     *
+     * <p>That is the whole geometry of the change: the heading row and its hook rows became one control, so the
+     * button starts where the heading did and ends where the last row did. No other metric moved, which is the
+     * reason the rest of this file is untouched.
+     */
+    @Test
+    void theSkillEntryButtonIsTheOldSkillStrip() {
+        for (BookLayout layout : List.of(small(), large())) {
+            BookLayout.Box button = layout.skillsEntry();
+            BookLayout.Box heading = layout.skillsHeading();
+            BookLayout.Box lastRow = layout.hookRow(layout.hookRows() - 1);
+            assertEquals(heading.x(), button.x());
+            assertEquals(heading.y(), button.y(), layout.tierName() + ": the button starts at the heading");
+            assertEquals(heading.width(), button.width());
+            assertNotNull(lastRow);
+            assertEquals(lastRow.bottom(), button.bottom(),
+                    layout.tierName() + ": the button ends at the last hook row");
+            assertTrue(button.height() > BookLayout.LINE_HEIGHT, "it is taller than one line, or nobody hits it");
+            assertTrue(layout.panel().contains(button.x(), button.y())
+                            && button.right() <= layout.panel().right()
+                            && button.bottom() <= layout.panel().bottom(),
+                    layout.tierName() + ": the button must stay inside the panel");
+            assertFalse(overlaps(button, layout.feedEntry()),
+                    layout.tierName() + ": the button must not cover the feeding entry point");
+        }
+    }
+
+    /**
+     * <b>The detail page gets the whole body</b>, and the footer line below it stays free.
+     *
+     * <p>The page is a mode of this screen, so it may use the rectangles the roster, the slots and the growth
+     * column give up while it is open — but not the footer, which carries the way back ({@code Esc}) and must
+     * stay visible while the grid scrolls under it.
+     */
+    @Test
+    void theDetailPageGetsTheWholeBodyAndNotTheFooter() {
+        for (BookLayout layout : List.of(small(), large())) {
+            BookLayout.Box body = layout.skillDetailBody();
+            assertEquals(layout.rosterGrid().x(), body.x(), layout.tierName() + ": the body starts at the left");
+            assertEquals(layout.rosterGrid().y(), body.y(), "and at the top, under the ornament");
+            assertEquals(layout.bodyWidth(), body.width(), "and spans both columns");
+            assertTrue(body.right() <= layout.panel().right() - layout.metrics().padding(),
+                    "the body must not run under the frame");
+            assertTrue(body.bottom() <= layout.refusalLine().y(),
+                    "the footer line must stay below the scrollable body");
+            assertTrue(body.height() > 0 && body.width() > 0);
+            assertFalse(overlaps(body, layout.refusalLine()), "the page must not cover the footer");
+        }
+    }
+
+    /**
+     * <b>The 「技能详情」 button is a label and a chevron — and it wears no picture.</b>
+     *
+     * <p>「技能详情按钮不要显示技能图标，使用角色册同风格的按钮配色就行。」 So the button's label starts at the
+     * button's own left inset (no reserved picture slot pushing it right), is one font line tall and vertically
+     * inside the button, and stops before the chevron strip at the right end. Both rectangles come from
+     * {@link BookLayout}, which is the point — the render method used to hard-code {@code box.x() + 5}, then a
+     * picture slot, and now goes back to the layout box.
+     */
+    @Test
+    void theSkillEntryButtonIsALabelAndAChevronWithNoPicture() {
+        for (BookLayout layout : List.of(small(), large())) {
+            BookLayout.Box button = layout.skillsEntry();
+            BookLayout.Box label = layout.skillsEntryLabel();
+            String tier = layout.tierName();
+            assertEquals(BookLayout.LINE_HEIGHT, label.height(), tier + ": the label is one font line");
+            assertTrue(label.width() > 0, tier + ": the label must have room to be drawn at all");
+            assertTrue(label.x() >= button.x(), tier + ": the label stays inside the button on the left");
+            assertTrue(label.y() >= button.y() && label.bottom() <= button.bottom(),
+                    tier + ": the label stays inside the button vertically");
+            assertTrue(label.right() < button.right(), tier + ": and clear of the right edge for the chevron");
+            // No picture slot: the label begins at the button's own inset, not after a square reserved for
+            // skill art. A picture box that merely became zero-width would leave the label where it was.
+            assertTrue(label.x() - button.x() <= 8,
+                    tier + ": the label starts at the button's own inset, not after a picture slot: " + label);
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // The front page: five portraits, two buttons, the growth information
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * <b>The five portraits are equal squares in one row, inside the body.</b>
+     *
+     * <p>「一排5个角色横着摆」 is the whole top of the page, and it is arithmetic: five squares of one edge, four
+     * gaps, all of it inside the body. Asserted for both tiers because the body is a different size in each —
+     * a row that fits only when the window is big is a row that is cropped for somebody.
+     */
+    @Test
+    void theFrontPageHasFiveEqualPortraitsInsideTheBody() {
+        for (BookLayout layout : List.of(small(), large())) {
+            String tier = layout.tierName();
+            BookLayout.Box body = new BookLayout.Box(layout.rosterGrid().x(), layout.rosterGrid().y(),
+                    layout.bodyWidth(), layout.metrics().bodyHeight());
+            assertEquals(Party.SLOTS, layout.boardSlots().size(), tier + ": one box per party slot");
+            int edge = layout.boardSlotSize();
+            assertTrue(edge > 0, tier + ": a portrait must have a size");
+            for (int i = 0; i < Party.SLOTS; i++) {
+                BookLayout.Box slot = layout.boardSlot(i);
+                assertNotNull(slot, tier + ": slot " + i + " exists");
+                assertEquals(edge, slot.width(), tier + ": slot " + i + " is the row's edge");
+                assertEquals(edge, slot.height(), tier + ": slot " + i + " is square");
+                assertTrue(slot.x() >= body.x() && slot.right() <= body.right(),
+                        tier + ": slot " + i + " escapes the body horizontally: " + slot);
+                assertTrue(slot.y() >= body.y() && slot.bottom() <= body.bottom(),
+                        tier + ": slot " + i + " escapes the body vertically: " + slot);
+            }
+            assertNull(layout.boardSlot(Party.SLOTS), tier + ": there is no sixth portrait");
+            assertNull(layout.boardSlot(-1));
+            // They tile left to right without overlapping, which is what "one row" means in arithmetic.
+            for (int a = 0; a < Party.SLOTS; a++) {
+                for (int b = a + 1; b < Party.SLOTS; b++) {
+                    assertFalse(overlaps(layout.boardSlot(a), layout.boardSlot(b)),
+                            tier + ": portraits " + a + " and " + b + " overlap");
+                }
+            }
+            // Left to right, in slot order: the wheel convention the party row already keeps.
+            for (int i = 1; i < Party.SLOTS; i++) {
+                assertTrue(layout.boardSlot(i).x() > layout.boardSlot(i - 1).right(),
+                        tier + ": portrait " + i + " is right of portrait " + (i - 1));
+            }
+            assertEquals(layout.boardRow().x(), layout.boardSlot(0).x(),
+                    tier + ": the row starts at the first portrait");
+        }
+    }
+
+    /** A click on a portrait's centre selects that slot — the inverse of {@link BookLayout#boardSlot}. */
+    @Test
+    void clickingAFrontPagePortraitHitsThatSlot() {
+        for (BookLayout layout : List.of(small(), large())) {
+            for (int i = 0; i < Party.SLOTS; i++) {
+                BookLayout.Box slot = layout.boardSlot(i);
+                assertEquals(OptionalInt.of(i), layout.boardSlotAt(slot.centreX(), slot.centreY()),
+                        layout.tierName() + ": the centre of portrait " + i + " must hit slot " + i);
+                assertEquals(OptionalInt.of(i), layout.boardSlotAt(slot.x() + 0.5, slot.y() + 0.5));
+            }
+            BookLayout.Box row = layout.boardRow();
+            assertTrue(layout.boardSlotAt(row.centreX(), row.bottom() + 4).isEmpty(),
+                    layout.tierName() + ": below the row is not a portrait");
+        }
+    }
+
+    /**
+     * <b>The two buttons do not overlap the growth panel</b>, and they sit under the portrait row.
+     *
+     * <p>This is the page's structural claim: left half buttons, right half growth, one band. Asserted for both
+     * tiers, because the width of each half is derived from the tier's own {@code rightWidth}.
+     */
+    @Test
+    void theFrontPageButtonsClearTheGrowthPanel() {
+        for (BookLayout layout : List.of(small(), large())) {
+            String tier = layout.tierName();
+            BookLayout.Box party = layout.boardPartyButton();
+            BookLayout.Box skills = layout.boardSkillsButton();
+            BookLayout.Box growth = layout.boardGrowthPanel();
+            assertFalse(overlaps(party, growth), tier + ": 角色编队 must not reach the growth panel");
+            assertFalse(overlaps(skills, growth), tier + ": 技能详情 must not reach the growth panel");
+            assertFalse(overlaps(party, skills), tier + ": the two buttons must not overlap each other");
+            assertTrue(party.right() <= skills.x(), tier + ": 角色编队 is the leftmost button");
+            assertTrue(skills.right() <= growth.x(), tier + ": both buttons are left of the growth panel");
+            assertTrue(party.width() > 0 && skills.width() > 0,
+                    tier + ": a button with no width cannot be hit: " + party + " " + skills);
+            assertEquals(party.width(), skills.width(), tier + ": the pair is equal width");
+            assertEquals(party.y(), skills.y(), tier + ": the pair shares a baseline");
+            assertEquals(party.y(), growth.y(), tier + ": the band starts on one line");
+            // Under the portrait row, which is what "角色行下面" says.
+            assertTrue(party.y() >= layout.boardRow().bottom(),
+                    tier + ": the buttons are under the portrait row");
+            assertTrue(growth.y() >= layout.boardRow().bottom(),
+                    tier + ": the growth panel is under the portrait row");
+            assertTrue(party.height() >= BookLayout.LINE_HEIGHT,
+                    tier + ": a button shorter than a line has nowhere to write its label");
+        }
+    }
+
+    /**
+     * <b>The growth panel is inside the body</b> and holds a complete seven-box growth view.
+     *
+     * <p>The panel is the front page's half of the band; the seven boxes inside it come from the same
+     * {@code GrowthColumn} record the roster page uses, so this test pins both the panel and the stack:
+     * heading, level, bar, affection, bar, next tier, feeding entry — all inside, in that order.
+     */
+    @Test
+    void theFrontPageGrowthPanelIsInsideTheBodyAndStacked() {
+        for (BookLayout layout : List.of(small(), large())) {
+            String tier = layout.tierName();
+            BookLayout.Box body = new BookLayout.Box(layout.rosterGrid().x(), layout.rosterGrid().y(),
+                    layout.bodyWidth(), layout.metrics().bodyHeight());
+            BookLayout.Box panel = layout.boardGrowthPanel();
+            assertTrue(panel.x() >= body.x() && panel.right() <= body.right(),
+                    tier + ": the growth panel escapes the body horizontally: " + panel);
+            assertTrue(panel.bottom() <= body.bottom(),
+                    tier + ": the growth panel escapes the body vertically: " + panel
+                            + " vs body bottom " + body.bottom());
+            assertEquals(layout.metrics().rightWidth(), panel.width(),
+                    tier + ": it keeps the column width the growth view was designed at");
+
+            BookLayout.GrowthColumn stack = layout.boardGrowthColumn();
+            List<BookLayout.Box> boxes = List.of(stack.heading(), stack.levelLine(), stack.expBar(),
+                    stack.affectionLine(), stack.affectionBar(), stack.nextTierLine(), stack.feedEntry());
+            BookLayout.Box previous = null;
+            for (int i = 0; i < boxes.size(); i++) {
+                BookLayout.Box box = boxes.get(i);
+                assertTrue(box.x() >= panel.x() && box.right() <= panel.right(),
+                        tier + ": growth box " + i + " escapes the panel horizontally: " + box);
+                assertTrue(box.y() >= panel.y() && box.bottom() <= panel.bottom(),
+                        tier + ": growth box " + i + " escapes the panel: " + box + " vs " + panel);
+                assertEquals(panel.x(), box.x(), tier + ": growth box " + i + " starts at the column's left");
+                assertEquals(panel.width(), box.width(), tier + ": growth box " + i + " spans the column");
+                if (previous != null) {
+                    assertTrue(previous.bottom() <= box.y(),
+                            tier + ": growth box " + i + " is not below box " + (i - 1));
+                }
+                previous = box;
+            }
+        }
+    }
+
+    /**
+     * <b>The front page's boxes are sane on their own.</b>
+     *
+     * <p>Deliberately <b>not</b> a claim that the front page's rectangles are disjoint from the roster page's:
+     * the two pages are modes of one panel, and a mode is drawn <em>instead of</em> the other page, so the
+     * front page legitimately occupies the body the roster grid also occupies — the same relationship the
+     * skill-detail page has to the grid (see {@link #theDetailPageGetsTheWholeBodyAndNotTheFooter}). Asserting
+     * across the two pages would be asserting that one of them cannot be drawn at all.
+     *
+     * <p>What <em>is</em> arithmetic, and what this test asserts, is that the front page is coherent: every box
+     * is non-degenerate, every box is inside the panel it is drawn in, and no two front-page boxes overlap. That
+     * last one matters because these boxes are hit-tested — an overlap would make a click ambiguous between a
+     * portrait and a button.
+     */
+    @Test
+    void theFrontPageBoxesAreSaneAndDoNotOverlapEachOther() {
+        for (BookLayout layout : List.of(small(), large())) {
+            String tier = layout.tierName();
+            List<BookLayout.Box> board = new java.util.ArrayList<>(layout.boardSlots());
+            board.add(layout.boardPartyButton());
+            board.add(layout.boardSkillsButton());
+            board.add(layout.boardGrowthPanel());
+            for (BookLayout.Box box : board) {
+                assertTrue(box.width() > 0 && box.height() > 0,
+                        tier + ": a front-page box is degenerate: " + box);
+                assertTrue(box.x() >= layout.panel().x() && box.right() <= layout.panel().right(),
+                        tier + ": a front-page box escapes the panel horizontally: " + box);
+                assertTrue(box.y() >= layout.panel().y() && box.bottom() <= layout.panel().bottom(),
+                        tier + ": a front-page box escapes the panel vertically: " + box);
+                assertFalse(overlaps(box, layout.refusalLine()),
+                        tier + ": a front-page box covers the footer line: " + box);
+            }
+            for (int a = 0; a < board.size(); a++) {
+                for (int b = a + 1; b < board.size(); b++) {
+                    assertFalse(overlaps(board.get(a), board.get(b)),
+                            tier + ": front-page boxes " + a + " and " + b + " overlap: "
+                                    + board.get(a) + " / " + board.get(b));
+                }
+            }
+        }
+    }
+
+    /**
+     * The two front-page buttons carry a label box that fits inside them, one font line tall.
+     *
+     * <p>The label is centred by the renderer inside this box, so the box is what has to be sane: inside the
+     * button on both axes and narrower than it, or a centred long word would start outside the button.
+     */
+    @Test
+    void theFrontPageButtonLabelsFitTheirButtons() {
+        for (BookLayout layout : List.of(small(), large())) {
+            String tier = layout.tierName();
+            for (BookLayout.Box button : List.of(layout.boardPartyButton(), layout.boardSkillsButton())) {
+                BookLayout.Box label = layout.boardButtonLabel(button);
+                assertEquals(BookLayout.LINE_HEIGHT, label.height(), tier + ": one font line");
+                assertTrue(label.width() > 0, tier + ": the label must have room to be drawn");
+                assertTrue(label.x() >= button.x() && label.right() <= button.right(),
+                        tier + ": the label escapes the button horizontally: " + label);
+                assertTrue(label.y() >= button.y() && label.bottom() <= button.bottom(),
+                        tier + ": the label escapes the button vertically: " + label);
+                assertTrue(label.right() < button.right(), tier + ": the label is inset from both ends");
+            }
+        }
+    }
 }

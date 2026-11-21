@@ -98,7 +98,7 @@ public final class EffectsOnlySink implements ShowcaseSink {
             CharacterDef def, UbTier tier, boolean enhanced) {
         UbBurstVictims.Ledger landed = new UbBurstVictims.Ledger();
         settleWith(
-                UbDamageSettlement.once(level, caster, characterId, def, tier, landed),
+                UbDamageSettlement.once(level, caster, characterId, def, tier, enhanced, landed),
                 () -> emitParticles(level, caster, characterId, enhanced, def, landed));
     }
 

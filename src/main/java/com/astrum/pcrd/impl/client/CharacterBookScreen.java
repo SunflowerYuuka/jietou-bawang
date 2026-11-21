@@ -3,7 +3,7 @@ package com.astrum.pcrd.impl.client;
 import com.astrum.pcrd.Astrum;
 import com.astrum.pcrd.api.v1.AstrumApi;
 import com.astrum.pcrd.api.v1.CharacterDef;
-import com.astrum.pcrd.api.v1.EffectHook;
+import com.astrum.pcrd.api.v1.EffectType;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.growth.DishFeedHook;
 import com.astrum.pcrd.impl.growth.GrowthFacts;
@@ -11,6 +11,7 @@ import com.astrum.pcrd.impl.network.PartyEditPayload;
 import com.astrum.pcrd.impl.network.RosterSyncPayload;
 import com.astrum.pcrd.impl.party.BookText;
 import com.astrum.pcrd.impl.party.PartyRules;
+import com.astrum.pcrd.impl.party.SkillRows;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
@@ -28,7 +29,8 @@ import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.Nullable;
 
 /**
- * The 角色册 screen: roster grid, party editor and growth view in one panel (spec §6.3.1).
+ * The 角色册 screen: five portraits, two doors and her growth on a front page; the roster grid, party editor
+ * and growth view behind it (spec §6.3.1).
  *
  * <h2>Three parts, one screen, one authority</h2>
  * <ul>
@@ -41,6 +43,37 @@ import org.jetbrains.annotations.Nullable;
  *   <li><b>③ 养成</b> — the selected character's level, experience bar, affection progress and the
  *       feeding entry point ({@link DishFeedHook} until Task 15 installs a handler).</li>
  * </ul>
+ *
+ * <p>The front page shows the same five slots and the same ③ as a <b>summary</b> — one row of portraits, the
+ * two doors, and her growth — so a player sees where she stands before opening the editor. It writes nothing:
+ * a click there selects, and every party edit still goes through the roster page's gestures.
+ *
+ * <h2>Three pages, one screen</h2>
+ * The book draws one of three pages, chosen by {@link #mode}:
+ *
+ * <ol>
+ *   <li>{@link Mode#BOARD} — the <b>front page</b>, and what the book opens on: five party portraits in one
+ *       horizontal row, two buttons under them on the left (「角色编队」 and 「技能详情」), and the selected
+ *       character's growth information under them on the right. 「进入现在这个界面之前的界面，一排5个角色横着摆，角色行下面
+ *       左侧两个按钮，一个是角色编队，一个是技能详情，角色行下面右侧显示养成选中角色的养成信息。」 It is a new page
+ *       <b>in front of</b> the roster, not a replacement: 「点击才进入现在这个界面」.</li>
+ *   <li>{@link Mode#ROSTER} — the roster grid, the party column and the growth view, i.e. exactly what this book
+ *       was before the front page existed. It is now reached through the front page's 「角色编队」 button, and
+ *       nothing on it changed.</li>
+ *   <li>{@link Mode#SKILL_DETAIL} — the selected character's skills as a grid of columns, one column per skill
+ *       version, each with a row per effect, and a click that opens that column's numbers. Reached from
+ *       <b>both</b> pages' 「技能详情」 buttons: the front page got a second door to it, not a second copy.</li>
+ * </ol>
+ *
+ * Each page is a mode rather than a second {@code Screen} because they are the same panel, the same palette and
+ * the same nine-slice: a second screen would be a second {@code init}, a second panel draw and a second
+ * background, i.e. two things to keep in step. The back chain is one step at a time — {@code SKILL_DETAIL} →
+ * {@code ROSTER} → {@code BOARD} → closed — and {@link Mode#back()} is the only place it is written; every input
+ * branch reads the mode <b>before</b> any geometry, which is what makes "the detail page's wheel cannot fight the
+ * roster's" true by construction rather than by two rectangles happening not to overlap.
+ *
+ * <p>The detail page's geometry is {@link SkillDetailLayout}'s and its content {@link SkillDetailModel}'s; the
+ * front page's geometry is {@link BookLayout}'s (its {@code board*} boxes). This class decides neither.
  *
  * <h2>The client decides nothing</h2>
  * This class reads three things: the roster push ({@link ClientRosterCache}), the party push
@@ -113,6 +146,31 @@ public final class CharacterBookScreen extends Screen {
     private static final int COLOR_DIM = 0xFF9AA4B8;
     private static final int COLOR_REFUSED = 0xFFFF7070;
 
+    /**
+     * The ink a column whose rung she has <b>not reached</b> is drawn in.
+     *
+     * <p>Darker and flatter than {@link #COLOR_DIM}: a locked column must be legible enough to be read and not
+     * read as an available choice — that is exactly what 「未解锁的更高档 灰色显示（让玩家知道后面还有）」 asks for. The
+     * value is one step below the body's mid grey so that, on the panel's dark body, it recedes without
+     * disappearing.
+     */
+    private static final int COLOR_LOCKED = 0xFF6E7686;
+
+    /**
+     * The veil drawn over a locked column's skill picture.
+     *
+     * <p>Drawn <em>over</em> the official art rather than tinting it: the skill icons are the game's own
+     * pictures, and multiplying them into a grey would be this mod claiming to redraw them. A flat 55% body
+     * colour is the same "present but not yours yet" the locked ink says in words, and it keeps the picture
+     * recognisable enough to be something to look forward to — 「未解锁的更高档 灰色显示（让玩家知道后面还有）」.
+     */
+    private static final int COLOR_LOCK_VEIL = 0x8C14161C;
+
+    /** Opaque body of the numbers popup: it must hide the columns it is describing. */
+    private static final int POPUP_BODY = 0xFF14161C;
+    /** The one-pixel accent rule around the numbers popup — the book's gold, thin. */
+    private static final int POPUP_RULE = 0xFFC8A24A;
+
     /** {@return the accent, for the thin rules drawn on the panel (hover frames, feed entry)} */
     private int colorAccent() {
         return BookPalette.accent();
@@ -163,6 +221,105 @@ public final class CharacterBookScreen extends Screen {
     private int dragFrom = -1;
 
     /**
+     * Which of this screen's pages is open.
+     *
+     * <h2>Why a mode and not a second Screen</h2>
+     * The skill-detail page is the same panel, the same palette and the same nine-slice, showing different
+     * content — a second {@code Screen} class would mean a second {@code init}, a second panel draw, a second
+     * background and a second place for the two to drift apart. So it is a field, {@code Esc} goes back to
+     * {@link Mode#ROSTER}, and every input branch reads the mode <b>before</b> any geometry: that ordering is
+     * what makes "the detail page's wheel cannot fight the roster's" true by construction rather than by two
+     * rectangles happening not to overlap.
+     *
+     * <h2>Three pages now, and which one is the front door</h2>
+     * {@link Mode#BOARD} is what the book <b>opens on</b>: five large portraits in one row, the two buttons and
+     * the selected character's growth information. It is a new page <em>in front of</em> the roster rather than
+     * a rearrangement of it, because the roster page is exactly what the human wanted kept — 「点击才进入现在这个
+     * 界面」 — so the roster page, its grid, its party column, its growth panel and its skills entry are
+     * untouched and {@code BOARD}'s 「角色编队」 button is simply its door now.
+     *
+     * <p>The <b>back</b> chain is one step at a time: {@code SKILL_DETAIL} → {@code ROSTER} → {@code BOARD}, and
+     * {@code BOARD} → out of the book. That is why {@code Esc} is handled per mode rather than globally: on the
+     * front page it closes the book (nothing is behind the front page), and on the other two it goes back one.
+     */
+    private Mode mode = Mode.BOARD;
+
+    /**
+     * The page the skill-detail page was opened <b>from</b>, so {@code Esc} goes back to that door.
+     *
+     * <h2>Why the detail page needs its own memory and the roster page does not</h2>
+     * The same detail page now has two doors — the roster's skills entry and the front page's 「技能详情」 button —
+     * and a back gesture that ignored which one it came through would drop a player who opened it from the front
+     * page into the roster page she never asked for. The other two pages have exactly one page in front of them,
+     * so for them {@link Mode#back()} is enough; this field is the one place the detail page's second door is
+     * remembered, and {@code openSkillDetail} is the only thing that writes it.
+     */
+    private Mode detailReturn = Mode.ROSTER;
+
+    /**
+     * The three pages of the character book, in the order a player reaches them.
+     *
+     * <p>The declaration order is the <b>depth</b> order: {@link #BOARD} is the front, {@link #ROSTER} is one
+     * step in, {@link #SKILL_DETAIL} is two. {@link #back()} walks it, so a new page is inserted here and the
+     * back chain follows without a second {@code switch} to keep in step.
+     */
+    private enum Mode {
+        /** The front page: five party portraits, two buttons, the selected character's growth. */
+        BOARD,
+        /** The roster, the party slots and the growth view — everything this book was before the front page. */
+        ROSTER,
+        /** The selected character's skills, one column per skill version. */
+        SKILL_DETAIL;
+
+        /** {@return the page one step towards the front, or {@code null} from the front page itself} */
+        private @Nullable Mode back() {
+            return switch (this) {
+                case SKILL_DETAIL -> ROSTER;
+                case ROSTER -> BOARD;
+                case BOARD -> null;
+            };
+        }
+    }
+
+    /**
+     * The detail page's content: one entry per skill version, each with its effects and their numbers.
+     *
+     * <p>Built when the page opens and rebuilt when the thing it describes changes (another selection, another
+     * affection tier, another level) — see {@link #refreshSkillDetail}. It is <b>not</b> rebuilt per frame: it
+     * formats every number of every effect, and this screen renders at the player's frame rate.
+     */
+    private SkillDetailModel detailModel = SkillDetailModel.EMPTY;
+
+    /** The page's column geometry at scroll {@code 0}; shifted by {@link #detailScroll} where it is used. */
+    private SkillDetailLayout.Grid detailGrid =
+            SkillDetailLayout.grid(new BookLayout.Box(0, 0, 0, 0), SkillDetailLayout.Metrics.COMPACT,
+                    List.of());
+
+    /** How far the detail page is scrolled, in pixels; {@link SkillDetailLayout#clampScroll} bounds it. */
+    private int detailScroll;
+
+    /** Which column's numbers panel is open, or {@code -1} for none. */
+    private int detailSelected = -1;
+
+    /**
+     * Which page of the open skill's numbers is shown, 0-based.
+     *
+     * <p>Paged rather than scrolled because the human asked for 翻页 (「数值界面做个翻页，佩可莉姆的效果太长了」):
+     * a page boundary is a stable thing to point at, and 「3/7」 tells her how much is left in a way a pixel
+     * offset cannot. Only the numbers page uses it; the grid keeps its own {@link #detailScroll}.
+     */
+    private int numbersPage;
+
+    /** What {@link #detailModel} was built from, so a re-sync or a level-up rebuilds it. */
+    private @Nullable ResourceLocation detailKeyCharacter;
+
+    /** The affection tier {@link #detailModel} was built at; {@code -1} until it is built once. */
+    private int detailKeyTier = -1;
+
+    /** The level {@link #detailModel}'s level bands and EX formulas were evaluated at. */
+    private int detailKeyLevel = -1;
+
+    /**
      * The character <b>and texture</b> the panel drew last, so the swap is logged once per change rather than
      * per frame.
      *
@@ -208,6 +365,23 @@ public final class CharacterBookScreen extends Screen {
         minecraft.setScreen(new CharacterBookScreen());
     }
 
+    /**
+     * <b>Pick mode was deleted with the 选择券.</b>
+     *
+     * <p>There used to be an {@code openForPick()} here and a {@code picking} flag on the screen: the voucher
+     * opened this book, a click meant "claim this character", and the click sent a
+     * {@code VoucherClaimPayload} to the server. The human removed the whole flow —
+     * 「角色选择券打开后，弹出的是角色册，但是角色册没有角色给我选。直接随机获取一个没有的角色。」 — and he was
+     * right about why it could not work: this panel draws the characters the player <b>owns</b>, so a
+     * voucher-opened picker was always going to be empty for the player who needed it. A hundred 记忆结晶 now
+     * roll a character directly, preferring one the player does not have
+     * ({@code MemoryTokenItem} + {@code CardRoll.Mode#GUARANTEED_PREFER_UNOWNED}), and no screen is involved.
+     *
+     * <p>Nothing else used the flag, so the field, the entry point, the payload, its handler and the whole
+     * {@code VoucherService} are deleted rather than left dormant — a second click meaning is exactly the
+     * kind of state that rots into a bug.
+     */
+
     @Override
     protected void init() {
         layout = BookLayout.at(width, height);
@@ -226,6 +400,11 @@ public final class CharacterBookScreen extends Screen {
             // 「默认使用角色1当背景」: party slot 1, then the roster's head, then nobody. Resolved through
             // TierAvatar so the rule has one implementation and one test, not a second copy here.
             selected = TierAvatar.defaultSelection().orElse(null);
+        }
+        if (mode == Mode.SKILL_DETAIL) {
+            // A resize re-runs init: the panel changed size, so the page's columns have to be measured again.
+            // The scroll position and the open numbers panel survive, clamped to the new grid.
+            refreshSkillDetail();
         }
         // What this open resolved to, and the geometry it will draw with. This line is the only evidence
         // available for "the nine rectangles for the size this window actually has are non-degenerate",
@@ -250,6 +429,18 @@ public final class CharacterBookScreen extends Screen {
                         + "{}x{} panel; the world is visible on all four sides",
                 Integer.toHexString(COLOR_DIM_TOP), Integer.toHexString(COLOR_DIM_BOTTOM),
                 layout.panel().width(), layout.panel().height());
+        // The front page's geometry, in the terms the human's sketch uses: five portraits of one edge in one
+        // row, two buttons of one width, one growth panel — and whether each fits the body it was measured
+        // against. `BookLayoutTest` asserts the same relations offline; this line reports the numbers for the
+        // window the player actually has, which no unit test can produce.
+        Astrum.LOGGER.debug("astrum: character book front page on {} — {}x{} portraits in a {}x{} row (body "
+                        + "{}px wide), buttons {}x{} + {}x{} with {} between them, growth {}x{} at {},{}, page {}",
+                mode, layout.boardSlotSize(), layout.boardSlotSize(), layout.boardRow().width(),
+                layout.boardRow().height(), layout.bodyWidth(), layout.boardPartyButton().width(),
+                layout.boardPartyButton().height(), layout.boardSkillsButton().width(),
+                layout.boardSkillsButton().height(), layout.boardButtonGap(),
+                layout.boardGrowthPanel().width(), layout.boardGrowthPanel().height(),
+                layout.boardGrowthPanel().x(), layout.boardGrowthPanel().y(), mode);
     }
 
     /**
@@ -294,19 +485,34 @@ public final class CharacterBookScreen extends Screen {
         // so "the panel we drew has no seam" and "the picture is not stretched" are assertions rather than
         // claims about a screenshot.
         ResourceLocation stillCharacter = stillCharacter();
-        ResourceLocation still = stillOf(stillCharacter).orElse(null);
+        // The still is official art, so a player without astrum-assets.zip gets the 「请安装资源包」
+        // placeholder in the panel instead of a checkerboard. `null` stays `null`: a character whose
+        // definition ships no still keeps the panel's plain dark body, which is the documented degradation
+        // and a different fact from "this build cannot find the art".
+        ResourceLocation still = stillOf(stillCharacter).map(ArtFallback::resolve).orElse(null);
         logStillOnce(stillCharacter, still);
         OfficialPanel.draw(graphics, layout.panel(), StillCover.bodyOf(layout.panel()), still,
                 layout.divider(), layout.slice());
 
-        drawCentred(graphics, title, layout.title(), COLOR_TITLE);
+        // The heading says which page is open. The book's own title would be a lie on the detail page:
+        // 「角色册」 is what you press Esc to get back to. The front page keeps the book's title — it is the
+        // book, opened — so only the detail page overrides it.
+        drawCentred(graphics, Component.translatable(mode == Mode.SKILL_DETAIL
+                ? BookText.KEY_SKILL_DETAIL_TITLE
+                : BookText.KEY_TITLE), layout.title(), COLOR_TITLE);
 
         if (ClientRosterCache.quarantined()) {
+            // The unreadable-save state wins over the mode: an unreadable book has no skills to describe, and
+            // drawing a detail page from a half-read roster is exactly the invention this screen refuses.
             drawQuarantined(graphics);
+        } else if (mode == Mode.SKILL_DETAIL) {
+            drawSkillDetail(graphics, mouseX, mouseY);
+        } else if (mode == Mode.BOARD) {
+            drawBoard(graphics, mouseX, mouseY);
         } else {
             drawRoster(graphics, mouseX, mouseY);
             drawParty(graphics, mouseX, mouseY);
-            drawGrowth(graphics);
+            drawGrowth(graphics, mouseX, mouseY);
         }
         drawFooter(graphics);
         super.render(graphics, mouseX, mouseY, partialTick);
@@ -487,16 +693,45 @@ public final class CharacterBookScreen extends Screen {
     // ③ The growth view
     // -----------------------------------------------------------------------------------------
 
-    private void drawGrowth(GuiGraphics graphics) {
-        drawClipped(graphics, Component.translatable(BookText.KEY_SECTION_GROWTH), layout.growthHeading(),
-                COLOR_TITLE);
+    private void drawGrowth(GuiGraphics graphics, int mouseX, int mouseY) {
+        drawGrowthInto(graphics, layout.growthColumn(), Component.translatable(BookText.KEY_SECTION_GROWTH),
+                mouseX, mouseY, true);
+    }
+
+    /**
+     * Draws one growth view — heading, level, experience bar, affection line, bar, next tier, feed entry.
+     *
+     * <h2>Why the column is a parameter</h2>
+     * The front page shows the selected character's growth information too (「角色行下面右侧显示养成选中角色的养成
+     * 信息」), in a different rectangle ({@link BookLayout#boardGrowthColumn()}). The task's constraint is explicit:
+     * reuse this rendering, do not re-implement it. So the seven boxes come in as a {@link BookLayout.GrowthColumn}
+     * and the method does not know which page is drawing it — a second copy of "level, experience, affection,
+     * next tier" would be the copy that keeps saying 3★ after the first one learned about 6★.
+     *
+     * <p>The one thing that <b>does</b> differ is the skills entry: the roster page puts 「技能详情」 in the strip
+     * under the feeding entry, while the front page has its own 「技能详情」 button in the band's left half. Passing
+     * {@code withSkillsEntry} keeps that difference a parameter rather than a fork of the whole method.
+     *
+     * @param graphics        the GUI buffer
+     * @param column          which seven boxes to draw into
+     * @param heading         the section heading's text (the two pages word it in their own key)
+     * @param mouseX          pointer x, for the skills entry's hover frame
+     * @param mouseY          pointer y, for the skills entry's hover frame
+     * @param withSkillsEntry whether to draw the roster page's skills entry under the feeding entry
+     */
+    private void drawGrowthInto(GuiGraphics graphics, BookLayout.GrowthColumn column, Component heading,
+            int mouseX, int mouseY, boolean withSkillsEntry) {
+        drawClipped(graphics, heading, column.heading(), COLOR_TITLE);
 
         RosterSyncPayload.Entry entry = selectedEntry();
         if (entry == null) {
-            drawClipped(graphics, Component.translatable(BookText.KEY_GROWTH_NONE), layout.levelLine(),
+            drawClipped(graphics, Component.translatable(BookText.KEY_GROWTH_NONE), column.levelLine(),
                     COLOR_DIM);
-            drawClipped(graphics, Component.translatable(BookText.KEY_FEED_ROUTE), layout.feedEntry(),
+            drawClipped(graphics, Component.translatable(BookText.KEY_FEED_ROUTE), column.feedEntry(),
                     COLOR_DIM);
+            if (withSkillsEntry) {
+                drawSkillsEntry(graphics, null, mouseX, mouseY);
+            }
             return;
         }
         CharacterDef definition = definitionOf(entry.id());
@@ -509,7 +744,7 @@ public final class CharacterBookScreen extends Screen {
         // never draw over them.
         String expText = Component.translatable(BookText.KEY_GROWTH_EXP, entry.exp(),
                 entry.expToNext()).getString();
-        BookLayout.Box levelBox = layout.levelLine();
+        BookLayout.Box levelBox = column.levelLine();
         int expWidth = font.width(expText);
         if (expWidth < levelBox.width()) {
             graphics.drawString(font, expText, levelBox.right() - expWidth, levelBox.y(), COLOR_DIM,
@@ -524,31 +759,31 @@ public final class CharacterBookScreen extends Screen {
             // an absurd expToNext cannot draw text past the panel.
             graphics.drawString(font, expText, levelBox.x(), levelBox.y(), COLOR_DIM, true);
         }
-        drawBar(graphics, layout.expBar(),
+        drawBar(graphics, column.expBar(),
                 GrowthFacts.expFraction(entry.exp(), entry.expToNext()), COLOR_EXP_BAR);
 
         drawClipped(graphics, Component.translatable(BookText.KEY_GROWTH_AFFECTION, entry.affection(),
-                entry.tier()), layout.affectionLine(), COLOR_TEXT);
-        drawBar(graphics, layout.affectionBar(),
+                entry.tier()), column.affectionLine(), COLOR_TEXT);
+        drawBar(graphics, column.affectionBar(),
                 definition == null ? GrowthFacts.NO_PROGRESS
                         : GrowthFacts.affectionFraction(entry.affection(), definition.affection()),
                 COLOR_AFFECTION_BAR);
 
         if (definition == null) {
             drawClipped(graphics, Component.translatable(BookText.KEY_UNKNOWN_CHARACTER, name),
-                    layout.nextTierLine(), COLOR_DIM);
+                    column.nextTierLine(), COLOR_DIM);
         } else {
             OptionalInt next = GrowthFacts.nextTierThreshold(entry.affection(), definition.affection());
             drawClipped(graphics, next.isPresent()
                             ? Component.translatable(BookText.KEY_GROWTH_NEXT, next.getAsInt())
                             : Component.translatable(BookText.KEY_GROWTH_MAX),
-                    layout.nextTierLine(), COLOR_DIM);
+                    column.nextTierLine(), COLOR_DIM);
         }
 
         // The feeding entry point: a working action once a dish handler is installed, otherwise the route
         // the spec itself gives (§6.2: hold a dish, right-click). Never a dead button.
         boolean feedable = DishFeedHook.available();
-        BookLayout.Box feed = layout.feedEntry();
+        BookLayout.Box feed = column.feedEntry();
         if (feedable) {
             graphics.fill(feed.x(), feed.y(), feed.right(), feed.bottom(), BookPalette.slotFilled());
             graphics.fill(feed.x(), feed.y(), feed.right(), feed.y() + 1, colorAccent());
@@ -557,62 +792,661 @@ public final class CharacterBookScreen extends Screen {
             drawClipped(graphics, Component.translatable(BookText.KEY_FEED_ROUTE), feed, COLOR_DIM);
         }
 
-        drawSkills(graphics, definition);
+        if (withSkillsEntry) {
+            drawSkillsEntry(graphics, definition, mouseX, mouseY);
+        }
     }
 
     // -----------------------------------------------------------------------------------------
-    // ③b The selected character's skills: one official skill icon + "trigger · effect" per hook
+    // ⓪ The front page: five portraits, two buttons, her growth information
     // -----------------------------------------------------------------------------------------
 
     /**
-     * Draws the hook list: the character's effect hooks, each as an official skill icon plus one
-     * clipped line.
+     * Draws the page the book opens on — the one 「点击才进入现在这个界面」 is about.
      *
-     * <h2>What a row says</h2>
-     * {@code trigger · effect} — e.g. "melee · gain charge". The parameters (amounts, radii) are
-     * deliberately not in the row: at 112 pixels wide the line only fits ~11 CJK characters, and a
-     * truncated "splash 3.0/" is worse than no number at all. The numbers stay where they are
-     * authoritative, in the datapack JSON and on the hook records.
+     * <h2>The picture, in one block</h2>
+     * <pre>
+     *   [角色1] [角色2] [角色3] [角色4] [角色5]     <- BookLayout.boardRow(), five equal squares
+     *   [角色编队] [技能详情]        养成信息…      <- the band under it: buttons left, growth right
+     * </pre>
+     * Every rectangle comes from {@link BookLayout} ({@code boardRow}, {@code boardSlot}, {@code boardPartyButton},
+     * {@code boardSkillsButton}, {@code boardGrowthColumn}), so "the five slots are equal and inside the body" and
+     * "the buttons do not overlap the growth panel" are assertions in {@code BookLayoutTest} rather than claims
+     * about a window this project cannot screenshot.
      *
-     * <h2>Why the icon can be drawn from a 64x64 file into a 9x9 row</h2>
-     * The blit passes {@code uWidth == textureWidth}, which normalises the source to 0..1 and so
-     * samples the whole texture whatever its resolution. The alternative, vanilla's 7-argument blit,
-     * assumes a 256x256 sheet and would show the top-left ninth of each icon.
+     * <h2>What it reuses instead of rebuilding</h2>
+     * <ul>
+     *   <li>the portraits are {@link TierAvatar#forPartySlot} through {@link WheelIconDraw#drawSquare} — the same
+     *       join and the same drawing the party slots use, so a character cannot wear one face on the front page
+     *       and another one click in, and the affection tier is read from the roster row, never re-derived;</li>
+     *   <li>the party itself is {@link ClientPartyCache#slot(int)} — the one answer to "who is in slot N";</li>
+     *   <li>the growth information is {@link #drawGrowthInto} with {@link BookLayout#boardGrowthColumn()}, i.e. the
+     *       very method the roster page draws, in a different rectangle;</li>
+     *   <li>the two buttons are the same surface/hover/frame vocabulary as the skills entry, so the page's
+     *       controls are not a second design.</li>
+     * </ul>
      *
-     * <p>Hooks beyond this layout's row budget ({@link BookLayout#hookRows()}: three in the compact tier,
-     * four in the comfortable one) are summarised by {@code astrum.book.skills.more} rather than dropped:
-     * {@code SkillIcons.rows} decides the split and is unit-tested.
+     * <h2>An empty slot is drawn as an empty slot</h2>
+     * Five boxes are always painted, occupied or not, with the slot's number in an empty one — the roster page
+     * learned this the hard way (an unpainted area read as a hole in the panel). Nothing here is ever blank.
+     *
+     * @param graphics the GUI buffer
+     * @param mouseX   pointer x, for hover frames
+     * @param mouseY   pointer y, for hover frames
      */
-    private void drawSkills(GuiGraphics graphics, @Nullable CharacterDef definition) {
-        drawClipped(graphics, Component.translatable(BookText.KEY_SECTION_SKILLS),
-                layout.skillsHeading(), COLOR_TITLE);
-        if (definition == null) {
+    private void drawBoard(GuiGraphics graphics, int mouseX, int mouseY) {
+        for (int slot = 0; slot < Party.SLOTS; slot++) {
+            BookLayout.Box box = layout.boardSlot(slot);
+            if (box == null) {
+                continue;
+            }
+            Optional<ResourceLocation> occupant = ClientPartyCache.slot(slot);
+            boolean isSelected = occupant.isPresent() && occupant.get().equals(selected);
+            boolean hovered = box.contains(mouseX, mouseY);
+            int background = occupant.isPresent() ? BookPalette.slotFilled() : colorSurface();
+            graphics.fill(box.x(), box.y(), box.right(), box.bottom(), background);
+            if (isSelected || hovered) {
+                // The selected portrait wears the accent frame: it is the one the growth panel is describing,
+                // and on a page of five faces that is the only thing telling the player which one it is.
+                frame(graphics, box, colorAccent());
+            }
+            if (occupant.isEmpty()) {
+                // The slot number, as the party row does: it doubles as the wheel position the character would
+                // occupy, so an empty slot still says which key would cast her.
+                drawCentred(graphics, Component.literal(String.valueOf(slot + 1)), box, COLOR_DIM);
+                continue;
+            }
+            ResourceLocation id = occupant.get();
+            CharacterDef definition = definitionOf(id);
+            // The same join as the party slot, at a bigger edge — the front page scales the party up, it does
+            // not frame faces differently. The tier comes from the roster row through TierAvatar.
+            WheelIcon icon = WheelIcon.of(TierAvatar.forPartySlot(definition, id),
+                    ClientPartyCache.enhanced(slot));
+            logTierOnce(definition, ClientRosterCache.entry(id).orElse(null));
+            int edge = layout.boardSlotIconDiameter();
+            WheelIconDraw.drawSquare(graphics, box.centreX() - edge / 2, box.centreY() - edge / 2, edge, icon,
+                    Optional.ofNullable(definition));
+        }
+
+        // The two buttons. 「角色编队」 opens the page this book used to open on; 「技能详情」 opens the detail page
+        // that already exists — a second door to it, not a second copy.
+        boolean skillsUsable = selected != null && definitionOf(selected) != null;
+        drawBoardButton(graphics, layout.boardPartyButton(), Component.translatable(BookText.KEY_BOARD_PARTY),
+                true, mouseX, mouseY);
+        drawBoardButton(graphics, layout.boardSkillsButton(), Component.translatable(BookText.KEY_BOARD_SKILLS),
+                skillsUsable, mouseX, mouseY);
+
+        // The growth information, drawn by the roster page's own method into this page's column.
+        drawGrowthInto(graphics, layout.boardGrowthColumn(),
+                Component.translatable(BookText.KEY_BOARD_GROWTH), mouseX, mouseY, false);
+    }
+
+    /**
+     * Draws one front-page button: a filled surface, a hover frame, and a centred label.
+     *
+     * <p>The same vocabulary as {@link #drawSkillsEntry} — surface, hover, accent frame — so the front page's
+     * controls and the roster page's controls are recognisably the same kind of thing. A disabled button (no
+     * character selected, so nothing to describe) is drawn in the dim ink and takes no hover, exactly as the
+     * skills entry does when it has no character.
+     *
+     * @param graphics the GUI buffer
+     * @param box      the button
+     * @param label    its text
+     * @param enabled  whether it acts at all
+     * @param mouseX   pointer x
+     * @param mouseY   pointer y
+     */
+    private void drawBoardButton(GuiGraphics graphics, BookLayout.Box box, Component label, boolean enabled,
+            int mouseX, int mouseY) {
+        boolean hovered = enabled && box.contains(mouseX, mouseY);
+        graphics.fill(box.x(), box.y(), box.right(), box.bottom(),
+                hovered ? BookPalette.surfaceHover() : colorSurface());
+        if (hovered) {
+            frame(graphics, box, colorAccent());
+        }
+        // Centred rather than left-aligned: these two are a pair of equal width, and a centred label is what
+        // makes a pair read as one control group. drawClipped still truncates, so a longer translation cannot
+        // escape the button.
+        BookLayout.Box labelBox = layout.boardButtonLabel(box);
+        String plain = label.getString();
+        int x = labelBox.x() + Math.max(0, (labelBox.width() - font.width(plain)) / 2);
+        drawClipped(graphics, label, new BookLayout.Box(x, labelBox.y(),
+                Math.max(0, labelBox.right() - x), labelBox.height()),
+                !enabled ? COLOR_DIM : hovered ? COLOR_TITLE : COLOR_TEXT);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // ③b 技能详情: one button in the growth column, one page of columns behind it
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * Draws the 「技能详情」 button, in exactly the strip the skill list used to occupy.
+     *
+     * <h2>Why the list became a button</h2>
+     * The strip is one column of the growth view: on the compact tier its whole skill area is a heading plus
+     * two rows, so ペコリーヌ's skills arrived as <b>one</b> row and a 「+N」 (「角色册界面的4技能，满了不显示」). Paging
+     * the strip was the previous answer and it treated the symptom: two 9-pixel rows cannot show six skills,
+     * cannot show a skill's effects, and cannot show any numbers even one per page. So the strip is now a
+     * control that opens {@link Mode#SKILL_DETAIL}, where the whole panel body is available.
+     *
+     * <h2>What it shows: a themed button, and <b>no picture</b></h2>
+     * 「技能详情按钮不要显示技能图标，使用角色册同风格的按钮配色就行。」 The button is a control, and a control is
+     * drawn in the panel's own palette — a filled surface, a hover frame, the label and a chevron. It is not a
+     * place where a skill is identified, so it wears no skill picture: the skill pictures belong to the detail
+     * page's columns, which <b>are</b> a place where a skill is identified, and they keep theirs.
+     *
+     * <p>That reverses the previous version of this method, which put the selected character's first skill's
+     * picture inside the button. {@code BookLayout.skillsEntryIcon()} and the reserved slot beside the label are
+     * gone with it, so the label starts at the button's own left inset and there is no empty square left over
+     * from a removed picture.
+     *
+     * @param graphics   the GUI buffer
+     * @param definition the selected character's definition, or {@code null}
+     * @param mouseX     pointer x, for the hover frame
+     * @param mouseY     pointer y, for the hover frame
+     */
+    private void drawSkillsEntry(GuiGraphics graphics, @Nullable CharacterDef definition, int mouseX,
+            int mouseY) {
+        BookLayout.Box box = layout.skillsEntry();
+        boolean usable = definition != null && selected != null;
+        boolean hovered = usable && box.contains(mouseX, mouseY);
+        graphics.fill(box.x(), box.y(), box.right(), box.bottom(),
+                hovered ? BookPalette.surfaceHover() : colorSurface());
+        if (hovered) {
+            frame(graphics, box, colorAccent());
+        }
+        // A chevron, because the button opens something: a glyph, not a sentence, so it needs no translation.
+        int chevronWidth = font.width(CHEVRON);
+        int textTop = box.centreY() - font.lineHeight / 2;
+        graphics.drawString(font, CHEVRON, box.right() - 5 - chevronWidth, textTop,
+                usable ? COLOR_TITLE : COLOR_DIM, true);
+        // The label's box comes from the layout and stops before the chevron: a long 「技能详情」 in another
+        // language is truncated by drawClipped instead of running under the glyph.
+        drawClipped(graphics, Component.translatable(BookText.KEY_SKILLS_OPEN), layout.skillsEntryLabel(),
+                !usable ? COLOR_DIM : hovered ? COLOR_TITLE : COLOR_TEXT);
+    }
+
+    /** The chevron an entry button wears: it opens something rather than acting in place. */
+    private static final String CHEVRON = ">";
+
+    /**
+     * Opens the detail page for the current selection and writes the line that proves it happened.
+     *
+     * <p>The log line is INFO and carries the facts only the running client knows: which character, which
+     * affection tier, <b>how many columns including her ultimate</b>, how wide a column is and how much content
+     * there is against how much body. That is the evidence for "six skills on the compact tier fit a sane grid"
+     * on a real window, which no unit test can produce — and the column names say the ultimate is among them.
+     */
+    private void openSkillDetail() {
+        CharacterDef definition = selected == null ? null : definitionOf(selected);
+        if (definition == null || selected == null) {
             return;
         }
-        List<EffectHook> hooks = definition.effects();
-        SkillIcons.Rows rows = SkillIcons.rows(hooks.size(), layout.hookRows());
-        for (int i = 0; i < rows.shownHooks(); i++) {
-            drawHookRow(graphics, layout.hookRow(i), hooks.get(i));
+        // Remember which door this page came through, before the mode changes: the front page's 「技能详情」 and
+        // the roster's skills entry both open it, and Esc has to go back to the one the player used.
+        detailReturn = mode;
+        mode = Mode.SKILL_DETAIL;
+        detailScroll = 0;
+        detailSelected = -1;
+        detailKeyCharacter = null;   // force a build
+        refreshSkillDetail();
+        int ultimates = (int) detailModel.entries().stream().filter(SkillDetailModel.Entry::ultimate)
+                .count();
+        Astrum.LOGGER.info("astrum: character book skill detail opened for {} (tier {}, level {}): {} "
+                        + "columns ({} of them the ultimate) of {}px in a {}x{} body, {}px of content, {} "
+                        + "row(s) in all — {}",
+                selected, TierAvatar.tierOf(selected), levelOf(selected), detailModel.size(), ultimates,
+                detailGrid.columnWidth(), detailGrid.area().width(), detailGrid.area().height(),
+                detailGrid.contentHeight(),
+                detailModel.entries().stream().mapToInt(entry -> entry.rows().size()).sum(),
+                detailGrid.titles());
+        // The pictures. Two facts only this line can carry, because they depend on what the loaded packs
+        // actually hold: which column is drawn with the skill's OWN art and which fell back to her portrait,
+        // and whether the art is present on disk at all (a player without astrum-assets.zip gets the
+        // 「请安装资源包」 placeholder from ArtFallback, and this names each one). The human has to confirm the
+        // result looks right; this says what was asked for, per column.
+        StringBuilder pictures = new StringBuilder();
+        for (int index = 0; index < detailModel.size(); index++) {
+            SkillDetailModel.Entry entry = detailModel.entry(index);
+            Optional<ResourceLocation> own = entry == null ? Optional.empty() : entry.icon();
+            Optional<ResourceLocation> shown = SkillArt.pictureFor(entry, portraitOf(selected));
+            boolean installed = shown.isPresent() && ArtFallback.isInstalled(shown.get());
+            if (pictures.length() > 0) {
+                pictures.append(", ");
+            }
+            pictures.append(entry == null ? "(none)" : entry.name())
+                    .append('=').append(shown.map(ResourceLocation::getPath).orElse("(placeholder)"));
+            if (!own.isPresent()) {
+                pictures.append("[portrait]");
+            }
+            if (!installed) {
+                pictures.append("[not installed]");
+            }
         }
-        if (rows.overflowRow()) {
-            drawClipped(graphics, Component.translatable(BookText.KEY_SKILLS_MORE, rows.overflow()),
-                    layout.hookRow(rows.shownHooks()), COLOR_DIM);
+        Astrum.LOGGER.info("astrum: character book skill detail pictures at {}x{} each — {}",
+                detailGrid.metrics().nameIcon(), detailGrid.metrics().nameIcon(), pictures);
+    }
+
+    /**
+     * Leaves the skill-detail page for the page that opened it.
+     *
+     * <p>The name is the old one — the detail page used to have exactly one door — but the destination is now
+     * {@link #detailReturn}, so the front page's 「技能详情」 button and the roster's skills entry each get their own
+     * page back. Both pages are one step from the detail page, so the walk is still one step at a time; what the
+     * field adds is <em>which</em> of the two steps.
+     */
+    private void returnToRoster() {
+        goBackTo(detailReturn);
+    }
+
+    /**
+     * Moves to {@code target}, one step towards the front, and writes the line that proves it.
+     *
+     * <p>The single place page state is cleared for a move, so the three pages cannot each remember a different
+     * subset: the detail page's scroll, its open numbers panel and its numbers page are dropped whenever the
+     * detail page is left, because they describe a grid that is no longer on screen.
+     *
+     * @param target the page to open; the caller has already checked it is one step back
+     */
+    private void goBackTo(Mode target) {
+        Mode from = mode;
+        if (target == Mode.SKILL_DETAIL) {
+            // Nothing goes *in* through here: the detail page is only ever entered through its buttons, which
+            // build the model for the character it will describe.
+            throw new IllegalArgumentException("the detail page is entered through its buttons, not Esc");
+        }
+        mode = target;
+        detailSelected = -1;
+        detailScroll = 0;
+        numbersPage = 0;
+        Astrum.LOGGER.info("astrum: character book {} -> {} ({})", from, target,
+                selected == null ? "(nothing selected)" : selected);
+    }
+
+    /**
+     * Rebuilds the page's model and geometry for the current selection, affection tier and level.
+     *
+     * <p>Called when the page opens, when the window is resized ({@link #init()}) and when the numbers it was
+     * built from change — see {@link #drawSkillDetail}. Everything expensive (level bands, EX formulas, the
+     * formatting of every parameter) happens here, once, rather than per frame.
+     */
+    private void refreshSkillDetail() {
+        CharacterDef definition = selected == null ? null : definitionOf(selected);
+        if (definition == null || selected == null) {
+            // Her definition or her row went away under the page: drop one step back rather than leave a
+            // detail page describing a character the client can no longer name. Through Mode.back() and not
+            // a literal, so "where a page goes when it cannot be drawn" is the same chain Esc walks.
+            mode = Mode.SKILL_DETAIL.back();
+            return;
+        }
+        int tier = TierAvatar.tierOf(selected);
+        int level = levelOf(selected);
+        detailModel = SkillDetailModel.of(definition, tier, level);
+        detailGrid = SkillDetailLayout.grid(layout.skillDetailBody(),
+                SkillDetailLayout.metricsFor(layout), detailModel.columns());
+        detailScroll = detailGrid.clamp(detailScroll);
+        if (detailSelected >= detailModel.size()) {
+            detailSelected = -1;
+        }
+        detailKeyCharacter = selected;
+        detailKeyTier = tier;
+        detailKeyLevel = level;
+    }
+
+    /**
+     * {@return the character's level, or {@code 1} when the roster holds no row for her}
+     *
+     * <p>{@code 1} rather than {@code 0}: the level feeds {@code LevelBands} (which reads anything below the
+     * first band as the first band) and the EX point formulas, and a character the roster cannot describe
+     * should be drawn as a level-1 one rather than as one with no numbers at all.
+     *
+     * @param characterId the character
+     */
+    private int levelOf(ResourceLocation characterId) {
+        return ClientRosterCache.entry(characterId).map(RosterSyncPayload.Entry::level).orElse(1);
+    }
+
+    /** Draws the whole detail page: the grid of columns, then the open numbers panel over it. */
+    private void drawSkillDetail(GuiGraphics graphics, int mouseX, int mouseY) {
+        // The page describes the selection's current tier and level, and both move under a re-sync: rebuild
+        // when either changed, which is the only way this page can stay truthful while it is open.
+        int tier = selected == null ? -1 : TierAvatar.tierOf(selected);
+        int level = selected == null ? -1 : levelOf(selected);
+        if (!java.util.Objects.equals(detailKeyCharacter, selected) || detailKeyTier != tier
+                || detailKeyLevel != level) {
+            refreshSkillDetail();
+            if (mode != Mode.SKILL_DETAIL) {
+                // The selection or her definition went away under the page (a re-sync, a pack swap): the
+                // refresh dropped us back to the roster, and drawing a page nobody can select from would be
+                // the second half of the same lie.
+                return;
+            }
+        }
+        BookLayout.Box area = layout.skillDetailBody();
+        if (detailModel.isEmpty()) {
+            drawClipped(graphics, Component.translatable(BookText.KEY_SKILLS_EMPTY), area, COLOR_DIM);
+            return;
+        }
+        SkillDetailLayout.Metrics metrics = SkillDetailLayout.metricsFor(layout);
+        SkillDetailLayout.Grid view = detailGrid.scrolled(detailScroll);
+        // A chosen skill REPLACES the grid; it is not drawn over it.
+        //
+        // Two attempts at an overlay both failed, and the human put his finger on why: 「是文字的层级问题」
+        // — the columns' text kept appearing inside the numbers box whatever the box's fill was, because an
+        // overlay in a GUI is only ever as opaque as the draw order allows. Removing the under-layer removes
+        // the whole class of bug: while a skill is chosen there are no columns on screen to bleed through.
+        if (detailSelected >= 0) {
+            drawSkillNumbers(graphics, metrics, view);
+            return;
+        }
+        // Scissored to the body: the columns scrolled past the top would otherwise be drawn over the title
+        // and the ornament, which are painted before this method runs.
+        graphics.enableScissor(area.x(), area.y(), area.right(), area.bottom());
+        for (int index = 0; index < view.size(); index++) {
+            BookLayout.Box cell = view.cell(index);
+            if (cell == null || cell.bottom() <= area.y() || cell.y() >= area.bottom()) {
+                continue;   // entirely outside the body: nothing of it could be seen
+            }
+            drawSkillColumn(graphics, view, metrics, index, mouseX, mouseY);
+        }
+        graphics.disableScissor();
+    }
+
+    /**
+     * Draws one column: the skill version's name, then one row per effect.
+     *
+     * <h2>Locked columns</h2>
+     * A rung above the character's is drawn in {@link #COLOR_LOCKED} and wears 「未解锁」, and the rung she is on
+     * wears 「当前」. Both the fact and its word come from the model ({@link SkillDetailModel.Entry#locked()} and
+     * {@link SkillDetailModel.Entry#markerKey()}), so this method decides pixels and nothing else — which is what
+     * lets "a locked rung renders in the locked style" be a test about the model rather than a claim about a
+     * window.
+     *
+     * @param graphics the GUI buffer
+     * @param view     the grid at the current scroll
+     * @param metrics  the tier's measurements
+     * @param index    which entry
+     * @param mouseX   pointer x, for the hover frame
+     * @param mouseY   pointer y, for the hover frame
+     */
+    private void drawSkillColumn(GuiGraphics graphics, SkillDetailLayout.Grid view,
+            SkillDetailLayout.Metrics metrics, int index, int mouseX, int mouseY) {
+        BookLayout.Box cell = view.cell(index);
+        SkillDetailModel.Entry entry = detailModel.entry(index);
+        if (cell == null || entry == null) {
+            return;
+        }
+        boolean chosen = index == detailSelected;
+        boolean hovered = !chosen && view.area().contains(mouseX, mouseY) && cell.contains(mouseX, mouseY);
+        graphics.fill(cell.x(), cell.y(), cell.right(), cell.bottom(),
+                chosen ? BookPalette.surfaceSelected()
+                        : hovered ? BookPalette.surfaceHover() : colorSurface());
+        if (chosen || hovered) {
+            frame(graphics, cell, colorAccent());
+        }
+        int ink = entry.locked() ? COLOR_LOCKED
+                : entry.ultimate() ? COLOR_PIP : entry.current() ? COLOR_TITLE : COLOR_TEXT;
+        // One picture per COLUMN, because a column is one skill version (「一个技能可以引用多个通用效果的代码，但是
+        // 图标只使用一个」). It is this skill's own art, else her portrait, else the placeholder — never nothing, and
+        // never a per-effect picture: the rows under it stay text-only.
+        BookLayout.Box iconBox = view.nameIcon(index);
+        if (iconBox.width() > 0) {
+            drawSquarePicture(graphics, iconBox, SkillArt.drawable(SkillArt.pictureFor(entry,
+                    portraitOf(selected))));
+            if (entry.locked()) {
+                // A rung above hers: the picture is drawn through a dark veil rather than in another colour,
+                // because the art is official and recolouring it is a bigger claim than dimming it. This is the
+                // same "greyed but visible" rule the locked ink keeps for the words.
+                graphics.fill(iconBox.x(), iconBox.y(), iconBox.right(), iconBox.bottom(), COLOR_LOCK_VEIL);
+            }
+        }
+        BookLayout.Box nameBox = view.nameBox(index);
+        String markerKey = entry.markerKey();
+        String marker = markerKey.isEmpty() ? "" : Component.translatable(markerKey).getString();
+        int markerWidth = marker.isEmpty() ? 0 : font.width(marker);
+        boolean markerFits = markerWidth > 0 && markerWidth + 2 < nameBox.width();
+        drawClipped(graphics, Component.literal(entry.name()),
+                markerFits ? new BookLayout.Box(nameBox.x(), nameBox.y(),
+                        nameBox.width() - markerWidth - 2, nameBox.height()) : nameBox, ink);
+        if (markerFits) {
+            graphics.drawString(font, marker, nameBox.right() - markerWidth, nameBox.y() + 1,
+                    entry.locked() ? COLOR_LOCKED : COLOR_PIP, true);
+        }
+        for (int row = 0; row < entry.rows().size(); row++) {
+            SkillDetailModel.Row content = entry.rows().get(row);
+            BookLayout.Box label = view.effectLabel(index, row);
+            BookLayout.Box tier = view.effectTier(index, row);
+            if (label == null || tier == null) {
+                break;   // past the column's own rows: nothing left to draw for this entry
+            }
+            // Text only: 「角色册里的数值显示……纯文字」. The icon box is reclaimed for the label by
+            // SkillDetailLayout, so nothing is drawn into it here — an EFFECT has no picture, which is a
+            // different rule from "a SKILL has one", and the column's picture is on its name row.
+            drawClipped(graphics, Component.translatable(content.labelKey()), label,
+                    entry.locked() ? COLOR_LOCKED : COLOR_TEXT);
+            String tierText = content.tierText();
+            if (!tierText.isEmpty()) {
+                int width = font.width(tierText);
+                if (width < tier.width()) {
+                    graphics.drawString(font, tierText, tier.right() - width, tier.y(),
+                            entry.locked() ? COLOR_LOCKED : COLOR_DIM, true);
+                }
+            }
         }
     }
 
-    /** One hook: its effect type's icon on the left, the trigger and effect names to its right. */
-    private void drawHookRow(GuiGraphics graphics, @Nullable BookLayout.Box row, EffectHook hook) {
-        if (row == null) {
+    /**
+     * Draws the numbers panel for the chosen column.
+     *
+     * <p>The panel is the book's own frame at the book's own slice ({@link OfficialPanel#draw}), not a second
+     * panel implementation: 「不要另写一套九宫格」. Its box comes from
+     * {@link SkillDetailLayout#popup} — below the column when it fits, above it otherwise, always inside the
+     * panel — and its content from {@link SkillDetailModel.Entry#numberPanel()}, one line per parameter.
+     *
+     * @param graphics the GUI buffer
+     * @param metrics  the tier's measurements
+     * @param view     the grid at the current scroll, so the panel anchors to where the column really is
+     */
+    /** {@return the language key of the one line of guidance under the panel, for the page on screen} */
+    private String footerHintKey() {
+        if (mode == Mode.BOARD) {
+            // The front page's own line: it has no grid to scroll and no slot to click, so the roster's party
+            // hint would describe two gestures that do not exist here.
+            return BookText.KEY_BOARD_HINT;
+        }
+        if (mode != Mode.SKILL_DETAIL) {
+            return BookText.KEY_PARTY_HINT;
+        }
+        // The numbers page has its own way out — a click goes back, not deeper — so it must not advertise
+        // 「点击技能看数值」, which is the page it is already on.
+        return detailSelected >= 0
+                ? BookText.KEY_SKILL_DETAIL_NUMBERS_HINT
+                : BookText.KEY_SKILL_DETAIL_HINT;
+    }
+
+    private void drawSkillNumbers(GuiGraphics graphics, SkillDetailLayout.Metrics metrics,
+            SkillDetailLayout.Grid view) {
+        SkillDetailModel.Entry entry = detailModel.entry(detailSelected);
+        BookLayout.Box popup = numbersBox(metrics, view);
+        if (entry == null || popup.width() <= 0 || popup.height() <= 0) {
+            detailSelected = -1;
             return;
         }
-        graphics.blit(SkillIcons.iconFor(hook), row.x(), row.y(), SkillIcons.ROW_ICON,
-                SkillIcons.ROW_ICON, 0.0F, 0.0F, SkillIcons.ROW_ICON, SkillIcons.ROW_ICON,
-                SkillIcons.ROW_ICON, SkillIcons.ROW_ICON);
-        Component text = Component.translatable(BookText.triggerKey(hook.trigger()))
-                .append(Component.literal(" · "))
-                .append(Component.translatable(BookText.effectKey(hook.type())));
-        drawClipped(graphics, text, new BookLayout.Box(row.x() + SkillIcons.ROW_ICON + 2, row.y(),
-                row.width() - SkillIcons.ROW_ICON - 2, row.height()), COLOR_TEXT);
+        // A thin frame, not the book's nine-slice.
+        //
+        // The nine-slice was tried twice and failed twice. Its frame is 18 px (compact) / 30 px
+        // (comfortable) wide, while the numbers' own padding was 4-5 px, so every line of text started
+        // *inside* the gold border — 「文字会出现在UI边框上」. And because the nine-slice silhouette is
+        // rounded, its corners are cut away, so the skill columns underneath showed through them —
+        // 「技能详情的文字会浮现在数值界面」. A tooltip-sized box simply has no room for a frame that
+        // thick, so it gets an opaque body, a one-pixel accent rule, and a scissor: nothing under it can
+        // show through, and nothing inside it can escape onto the border.
+        graphics.fill(popup.x(), popup.y(), popup.right(), popup.bottom(), POPUP_BODY);
+        graphics.renderOutline(popup.x(), popup.y(), popup.width(), popup.height(), POPUP_RULE);
+        graphics.enableScissor(popup.x() + 1, popup.y() + 1, popup.right() - 1, popup.bottom() - 1);
+        // Wrapped, not truncated. The human's correction: 「文字行不够显示的情况下，现在是用...做省略，改成换行显示完全。」
+        // So the list this draws is the WIDE-AWARE one, and the page total comes from the same call — which is
+        // what makes a long line add a page instead of losing its tail to an ellipsis.
+        int textWidth = numbersTextWidth(popup, metrics);
+        List<SkillDetailModel.Line> lines = entry.wrappedPanel(textWidth, font::width, this::translated);
+        // Paged, not truncated. 佩可莉姆's ultimate has fifteen lines of parameters and the body holds
+        // sixteen — one more parameter anywhere and the tail would simply vanish. A page holds everything
+        // that fits except the last row, which is reserved for the 「3/7」 counter so the counter can never
+        // cover a line of real content.
+        int capacity = Math.max(1, SkillDetailLayout.visibleLines(popup, metrics));
+        int rowsPerPage = Math.max(1, capacity - 1);
+        int pages = Math.max(1, (lines.size() + rowsPerPage - 1) / rowsPerPage);
+        boolean paged = pages > 1;
+        int rows = paged ? rowsPerPage : capacity;
+        numbersPage = Math.max(0, Math.min(numbersPage, pages - 1));
+        int from = numbersPage * rows;
+        for (int line = 0; line < rows && from + line < lines.size(); line++) {
+            SkillDetailModel.Line content = lines.get(from + line);
+            BookLayout.Box box = SkillDetailLayout.popupLine(popup, metrics, line);
+            // drawClipped is still the right call: a WRAPPED line is guaranteed to fit, and the clip is what
+            // guarantees it cannot spill if a future wrap were ever wrong. The ellipsis it falls back to can no
+            // longer trigger for a wrapped line, so the 「…」 the human complained about is gone from this page
+            // without removing the guard that keeps text inside the frame.
+            drawClipped(graphics, Component.literal(content.displayText(this::translated)), box, switch (content.kind()) {
+                case NAME -> COLOR_TITLE;
+                case EFFECT -> COLOR_PIP;
+                case NUMBER -> COLOR_TEXT;
+            });
+        }
+        if (paged) {
+            drawClipped(graphics, Component.literal((numbersPage + 1) + "/" + pages),
+                    SkillDetailLayout.popupLine(popup, metrics, rows), COLOR_DIM);
+        }
+        graphics.disableScissor();
+    }
+
+    /**
+     * {@return the box the numbers panel would occupy for the chosen column at the current scroll}
+     *
+     * <p>One function, asked by both the drawing code and the click handler, so the panel a player clicks into
+     * is the panel that was drawn. Nothing about it depends on the frame — only on geometry and the entry's line
+     * count — which is why this can be recomputed at input time instead of being remembered from the last
+     * {@code render}.
+     *
+     * @param metrics the tier's measurements
+     * @param view    the grid at the current scroll
+     */
+    private BookLayout.Box numbersBox(SkillDetailLayout.Metrics metrics, SkillDetailLayout.Grid view) {
+        SkillDetailModel.Entry entry = detailModel.entry(detailSelected);
+        if (entry == null) {
+            return new BookLayout.Box(0, 0, 0, 0);
+        }
+        // The whole body, because the numbers are a page now, not a popup anchored to a column. It stays a
+        // single function so the click handler and the renderer still cannot disagree about the rectangle.
+        return layout.skillDetailBody();
+    }
+
+    /**
+     * {@return the numbers panel's text width for the body box — the same number the drawing code uses}
+     *
+     * <p>One function for the renderer and the pager. Before the wrap change both counted <em>logical</em> lines,
+     * so the two agreed by construction; now the count depends on the width, and two call sites computing it
+     * separately is exactly how a page counter ends up disagreeing with the text beside it.
+     */
+    private static int numbersTextWidth(BookLayout.Box popup, SkillDetailLayout.Metrics metrics) {
+        return Math.max(0, popup.width() - 2 * metrics.popupPadding());
+    }
+
+    /** {@return {@code key} as the player reads it, or {@code key} itself outside a client} */
+    private String translated(String key) {
+        return key == null || key.isEmpty() ? "" : Component.translatable(key).getString();
+    }
+
+    /** {@return one numbers-panel line as the text the font draws} */
+    private String lineText(SkillDetailModel.Line line) {
+        return line.displayText(this::translated);
+    }
+
+    /**
+     * Draws a one-pixel frame around a box — the same four fills the party slots use for their hover state.
+     *
+     * @param graphics the GUI buffer
+     * @param box      the box to frame
+     * @param colour   the frame's ink
+     */
+    private void frame(GuiGraphics graphics, BookLayout.Box box, int colour) {
+        graphics.fill(box.x(), box.y(), box.right(), box.y() + 1, colour);
+        graphics.fill(box.x(), box.bottom() - 1, box.right(), box.bottom(), colour);
+        graphics.fill(box.x(), box.y(), box.x() + 1, box.bottom(), colour);
+        graphics.fill(box.right() - 1, box.y(), box.right(), box.bottom(), colour);
+    }
+
+    /**
+     * Scrolls the detail page by {@code direction} rows, and answers whether it moved.
+     *
+     * <p>Answers {@code false} at either end, which is what lets the wheel fall through instead of swallowing
+     * an event that changed nothing — the same contract the roster grid's paging has.
+     *
+     * @param direction negative is up
+     */
+    private boolean scrollSkillDetail(int direction) {
+        int step = SkillDetailLayout.metricsFor(layout).effectRowHeight() * 3;
+        int next = detailGrid.clamp(detailScroll + direction * step);
+        if (next == detailScroll) {
+            return false;
+        }
+        detailScroll = next;
+        return true;
+    }
+
+    /**
+     * Turns one page of the open skill's numbers.
+     *
+     * <p>Answers {@code false} at either end so the wheel falls through rather than swallowing an event that
+     * changed nothing — the same contract {@link #scrollSkillDetail} keeps. The page size matches the one
+     * {@link #drawSkillNumbers} draws with, and both read it from the same layout, so the counter and the
+     * content cannot disagree.
+     *
+     * @param direction negative is previous
+     */
+    private boolean pageNumbers(int direction) {
+        SkillDetailModel.Entry entry = detailModel.entry(detailSelected);
+        if (entry == null) {
+            return false;
+        }
+        SkillDetailLayout.Metrics metrics = SkillDetailLayout.metricsFor(layout);
+        BookLayout.Box body = layout.skillDetailBody();
+        int capacity = Math.max(1, SkillDetailLayout.visibleLines(body, metrics));
+        int rowsPerPage = Math.max(1, capacity - 1);
+        // The total is the WRAPPED count, through the same width and the same resolver the renderer uses —
+        // otherwise a page could show a line that the counter had not counted, or the wheel would refuse to turn
+        // to a page that exists.
+        int total = entry.wrappedLineCount(numbersTextWidth(body, metrics), font::width, this::translated);
+        int pages = Math.max(1, (total + rowsPerPage - 1) / rowsPerPage);
+        int next = Math.max(0, Math.min(numbersPage + direction, pages - 1));
+        if (next == numbersPage) {
+            return false;
+        }
+        numbersPage = next;
+        return true;
+    }
+
+    /**
+     * Chooses the column whose numbers are open, or closes the panel when it is already that column.
+     *
+     * @param index the entry index, from {@link SkillDetailLayout.Grid#entryAt}
+     */
+    private void selectSkillColumn(int index) {
+        if (index == detailSelected) {
+            detailSelected = -1;
+            return;
+        }
+        SkillDetailModel.Entry entry = detailModel.entry(index);
+        if (entry == null) {
+            detailSelected = -1;
+            return;
+        }
+        detailSelected = index;
+        numbersPage = 0;
+        Astrum.LOGGER.info("astrum: character book skill detail clicked {} (rung {}{}, {} row(s), {} "
+                        + "line(s) of numbers)",
+                entry.name(), entry.rung(), entry.locked() ? ", locked" : "", entry.rows().size(),
+                entry.numberLineCount());
     }
 
     // -----------------------------------------------------------------------------------------
@@ -628,9 +1462,13 @@ public final class CharacterBookScreen extends Screen {
                     COLOR_REFUSED);
             return;
         }
-        if (!ClientRosterCache.quarantined()) {
-            drawClipped(graphics, Component.translatable(BookText.KEY_PARTY_HINT), footer, COLOR_DIM);
+        if (ClientRosterCache.quarantined()) {
+            return;
         }
+        // One line, and which line depends on the page: the roster's own hint names the party gestures, and
+        // while the detail page is open those gestures do not exist, so it is the page's own hint that says
+        // 「Esc 返回」, how the wheel behaves and that a column opens its numbers.
+        drawClipped(graphics, Component.translatable(footerHintKey()), footer, COLOR_DIM);
     }
 
     // -----------------------------------------------------------------------------------------
@@ -643,6 +1481,12 @@ public final class CharacterBookScreen extends Screen {
             // Nothing may be edited on an unreadable save; the server would refuse anyway, and asking
             // would only produce a refusal message about a save we already told the player about.
             return super.mouseClicked(mouseX, mouseY, button);
+        }
+        if (mode == Mode.SKILL_DETAIL) {
+            return onSkillDetailClicked(mouseX, mouseY, button);
+        }
+        if (mode == Mode.BOARD) {
+            return onBoardClicked(mouseX, mouseY, button);
         }
         OptionalInt cell = layout.rosterIndexAt(mouseX, mouseY, ClientRosterCache.size(), firstCell);
         if (cell.isPresent()) {
@@ -665,7 +1509,115 @@ public final class CharacterBookScreen extends Screen {
             DishFeedHook.sink().ifPresent(sink -> sink.feed(selected));
             return true;
         }
+        if (button == 0 && selected != null && layout.skillsEntry().contains(mouseX, mouseY)) {
+            // The skill strip is one control now: it opens the page rather than listing two rows of hooks.
+            openSkillDetail();
+            return true;
+        }
         return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /**
+     * A click on the front page: a portrait selects, and the two buttons go where they say.
+     *
+     * <h2>Why a portrait click only selects</h2>
+     * The front page's five boxes are the <b>party</b>, and the party is written by the roster page's
+     * click-and-place gestures. Letting a click here also place a character would give the party a second write
+     * path whose meaning depends on which page the player is on — the exact kind of state this screen has kept
+     * out of itself from the beginning. So a click on an occupied portrait selects her (which swaps the growth
+     * panel and the panel's background), and placing stays one page in, behind 「角色编队」.
+     *
+     * <p>An <b>empty</b> slot is inert for the same reason, and a click on it falls through to the screen's
+     * default handling rather than sending an edit that could only be a mistake.
+     *
+     * @param mouseX pointer x
+     * @param mouseY pointer y
+     * @param button the mouse button; only the left one does anything on this page
+     */
+    private boolean onBoardClicked(double mouseX, double mouseY, int button) {
+        if (button != 0) {
+            return super.mouseClicked(mouseX, mouseY, button);
+        }
+        // The buttons first: they are drawn on top of the band and a long label must never be under a slot.
+        if (layout.boardPartyButton().contains(mouseX, mouseY)) {
+            openRosterPage();
+            return true;
+        }
+        if (layout.boardSkillsButton().contains(mouseX, mouseY)) {
+            if (selected != null && definitionOf(selected) != null) {
+                openSkillDetail();
+            }
+            return true;
+        }
+        OptionalInt slot = layout.boardSlotAt(mouseX, mouseY);
+        if (slot.isPresent()) {
+            Optional<ResourceLocation> occupant = ClientPartyCache.slot(slot.getAsInt());
+            if (occupant.isPresent()) {
+                // The same toggle the roster grid uses (BookSelection), so clicking the selected portrait
+                // again deselects her here exactly as it does one page in.
+                selected = BookSelection.select(selected, occupant.get());
+                ClientBookFeedback.clear();
+                Astrum.LOGGER.info("astrum: character book front page selected {} from slot {}", selected,
+                        slot.getAsInt());
+            }
+            return true;
+        }
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    /**
+     * Opens the roster page — the page this book opened on before the front page existed.
+     *
+     * <p>Reached from the front page's 「角色编队」 button. The page itself is unchanged; see {@link Mode}. The log
+     * line is the only evidence a real client can give that the door was the door.
+     */
+    private void openRosterPage() {
+        mode = Mode.ROSTER;
+        // The grid's paging window is absolute; an entry point in from the front page starts on the first page,
+        // where the character the front page was describing is most likely to be.
+        firstCell = 0;
+        Astrum.LOGGER.info("astrum: character book front page -> roster page ({} owned, {} in party, selected "
+                        + "{})", ClientRosterCache.size(),
+                ClientPartyCache.latest().slots().stream().filter(Optional::isPresent).count(),
+                selected == null ? "(none)" : selected);
+    }
+
+    /**
+     * A click while the detail page is open: the open numbers panel first, then a column, then a dismissal.
+     *
+     * <h2>Why the panel is tested before the columns</h2>
+     * The numbers panel is <b>drawn over</b> the grid, so it is what the pointer is visually on when it sits
+     * on the panel. Without this branch, clicking a number would select the column underneath and close the
+     * panel the player was reading. The panel's rectangle comes from the same pure function the drawing code
+     * used ({@link #numbersBox}), so "what I clicked" and "what I saw" cannot disagree.
+     *
+     * @param mouseX pointer x
+     * @param mouseY pointer y
+     * @param button the mouse button
+     */
+    private boolean onSkillDetailClicked(double mouseX, double mouseY, int button) {
+        if (button != 0) {
+            return true;   // the detail page has no right-click gesture; consume rather than fall through
+        }
+        SkillDetailLayout.Metrics metrics = SkillDetailLayout.metricsFor(layout);
+        SkillDetailLayout.Grid view = detailGrid.scrolled(detailScroll);
+        if (detailSelected >= 0) {
+            // The numbers page owns the whole body: any left click goes back to the grid. Clicking the
+            // numbers themselves must not re-open the same skill, which is what the old "consumed but kept
+            // open" branch did.
+            detailSelected = -1;
+            return true;
+        }
+        OptionalInt entry = view.entryAt(mouseX, mouseY);
+        if (entry.isPresent()) {
+            selectSkillColumn(entry.getAsInt());
+            return true;
+        }
+        if (detailSelected >= 0) {
+            detailSelected = -1;   // a click on the page's empty space closes the panel
+            return true;
+        }
+        return true;
     }
 
     /**
@@ -697,7 +1649,9 @@ public final class CharacterBookScreen extends Screen {
     /** Drag-to-place: the same single request a click sends, so drag cannot create a state click cannot. */
     @Override
     public boolean mouseReleased(double mouseX, double mouseY, int button) {
-        if (button == 0 && dragFrom >= 0) {
+        // Only the page that draws the slots can complete a drag onto one. A drag started on the roster and
+        // finished after the page changed must not land on a party row that is no longer on screen.
+        if (button == 0 && dragFrom >= 0 && mode == Mode.ROSTER) {
             int index = dragFrom;
             dragFrom = -1;
             OptionalInt slot = layout.slotAt(mouseX, mouseY);
@@ -711,12 +1665,55 @@ public final class CharacterBookScreen extends Screen {
         return super.mouseReleased(mouseX, mouseY, button);
     }
 
-    /** Scrolling the roster a page at a time, so a long book stays reachable with the same grid. */
+    /**
+     * The mouse wheel: <b>one consumer per page</b>, decided by the mode before any geometry is consulted.
+     *
+     * <h2>The conflict the task asked to resolve explicitly</h2>
+     * Before this page existed the wheel had two claimants <em>inside this screen</em>: the roster grid, which
+     * pages the grid over its own rectangle, and the skill strip, which paged the hook list over its strip
+     * (「角色册界面的4技能，满了不显示……是滚轮上下翻页还是怎么做？」). The detail page is a third list with the same
+     * gesture. Three claims and one wheel is how a wheel ends up paging two lists at once.
+     *
+     * <p>The resolution, in two steps, both structural rather than a priority order:
+     * <ol>
+     *   <li><b>The strip's claim is gone.</b> The strip is a button now, not a list, so there is nothing there
+     *       to page and its branch — and {@code SkillIcons.Pages} with it — is deleted rather than left
+     *       dormant.</li>
+     *   <li><b>The mode decides first.</b> A wheel event while {@link Mode#SKILL_DETAIL} is open is answered by
+     *       the detail page or by nobody: the roster branches are below an early return, so a wheel over the
+     *       detail page can never also page the grid behind it. In {@link Mode#ROSTER} the detail branch is
+     *       unreachable for the mirror-image reason. There is no overlap to arbitrate, so there is no order to
+     *       get wrong.</li>
+     * </ol>
+     * Both branches answer {@code true} only when something actually moved, so the end of a list lets the
+     * event fall through to vanilla's own handling instead of swallowing it.
+     *
+     * <p>The preset wheel (the {@code B} key's overlay) is not a claimant at all: it is a HUD layer, and
+     * {@code setScreen} routes input to this screen while it is open.
+     *
+     * <h2>Direction</h2>
+     * Vanilla's {@code scrollY} is positive when the wheel is rolled <em>up</em> (away from the player), and
+     * that means "go back" here — up the page, up a row — matching every list the player has ever scrolled.
+     */
     @Override
     public boolean mouseScrolled(double mouseX, double mouseY, double scrollX, double scrollY) {
+        int direction = scrollY > 0 ? -1 : 1;
+        if (mode == Mode.SKILL_DETAIL) {
+            if (detailSelected >= 0 && layout.skillDetailBody().contains(mouseX, mouseY)) {
+                // The numbers page owns the wheel while it is open: its own pager, not the grid's scroll,
+                // because the grid is not on screen.
+                return pageNumbers(direction);
+            }
+            if (layout.skillDetailBody().contains(mouseX, mouseY) && scrollSkillDetail(direction)) {
+                return true;
+            }
+            return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+        }
         int count = ClientRosterCache.size();
-        if (count > layout.page() && layout.rosterGrid().contains(mouseX, mouseY)) {
-            int direction = scrollY > 0 ? -1 : 1;
+        // Gated on the mode, not just on the rectangle: the grid's rectangle still exists on the front page
+        // (every page is the same panel), so a rectangle test alone would let the wheel page a grid nobody can
+        // see — and the player would find the roster page scrolled by an invisible gesture.
+        if (mode == Mode.ROSTER && count > layout.page() && layout.rosterGrid().contains(mouseX, mouseY)) {
             int next = layout.clampFirstIndex(count, firstCell + direction * layout.columns());
             if (next != firstCell) {
                 firstCell = next;
@@ -725,6 +1722,52 @@ public final class CharacterBookScreen extends Screen {
             return false;
         }
         return super.mouseScrolled(mouseX, mouseY, scrollX, scrollY);
+    }
+
+    /**
+     * The arrow keys, on both pages.
+     *
+     * <p>Present because a wheel is not always the thing under the player's hand. On the roster they move the
+     * grid by one row — the same clamp the wheel uses, so the two inputs cannot land on different pages. On the
+     * detail page they scroll it. {@code Esc} is the third key: it is the way <b>back</b> to the roster, and it
+     * is consumed here rather than reaching vanilla, which would close the whole book instead of the page.
+     * {@code Left}/{@code Right} are left alone, so a future binding there is not pre-empted.
+     */
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        boolean up = keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_UP;
+        boolean down = keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_DOWN;
+        if (mode == Mode.SKILL_DETAIL) {
+            if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+                returnToRoster();
+                return true;
+            }
+            if ((up || down) && scrollSkillDetail(up ? -1 : 1)) {
+                return true;
+            }
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
+        if (keyCode == org.lwjgl.glfw.GLFW.GLFW_KEY_ESCAPE) {
+            // One step towards the front, from whichever page is open — and from the front page itself,
+            // {@link Mode#back()} is null, so Esc falls through to vanilla and closes the book. That is the
+            // whole back chain: 技能详情 -> 角色册 -> 角色一览 -> closed.
+            Mode back = mode.back();
+            if (back != null) {
+                goBackTo(back);
+                return true;
+            }
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        }
+        // Same gate as the wheel: the grid's paging keys belong to the page that draws the grid.
+        if (mode == Mode.ROSTER && (up || down)) {
+            int count = ClientRosterCache.size();
+            int next = layout.clampFirstIndex(count, firstCell + (up ? -1 : 1) * layout.columns());
+            if (next != firstCell) {
+                firstCell = next;
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     /** The book does not pause the world: the roster and party pushes keep arriving while it is open. */
@@ -816,6 +1859,42 @@ public final class CharacterBookScreen extends Screen {
     private Optional<ResourceLocation> stillOf(@Nullable ResourceLocation characterId) {
         return characterId == null ? Optional.empty()
                 : TierAvatar.stillOf(definitionOf(characterId), characterId);
+    }
+
+    /**
+     * {@return the portrait to fall back to for {@code characterId}, at her <b>current</b> affection tier}
+     *
+     * <p>The middle link of {@link SkillArt}'s chain: a skill the pack ships no picture for is drawn with her
+     * face — the same picture the roster cell and the party slot draw, through the same
+     * {@link TierAvatar#forPartySlot} join, so the book cannot show two different faces for one character.
+     *
+     * @param characterId the character, or {@code null}
+     */
+    private Optional<ResourceLocation> portraitOf(@Nullable ResourceLocation characterId) {
+        if (characterId == null) {
+            return Optional.empty();
+        }
+        return TierAvatar.forPartySlot(definitionOf(characterId), characterId);
+    }
+
+    /**
+     * Blits one square picture into {@code box}: the skill icon, a portrait, or the placeholder.
+     *
+     * <p>One call site for every square skill picture this screen draws, so the button's picture and the detail
+     * page's columns cannot end up with different sampling. The texture is always the whole image scaled into
+     * the box ({@code uWidth == textureWidth}), which is the form the 64x64 skill icons and the 128x128
+     * placeholder both need; {@code ArtFallback} has already answered which file to read.
+     *
+     * @param graphics  the GUI buffer
+     * @param box       the square to fill
+     * @param texture   the texture to blit, already resolved by {@link SkillArt#drawable}
+     */
+    private void drawSquarePicture(GuiGraphics graphics, BookLayout.Box box, ResourceLocation texture) {
+        if (box.width() <= 0 || box.height() <= 0) {
+            return;
+        }
+        graphics.blit(texture, box.x(), box.y(), box.width(), box.height(), 0.0F, 0.0F, box.width(),
+                box.height(), box.width(), box.height());
     }
 
     /**

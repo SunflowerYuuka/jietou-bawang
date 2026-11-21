@@ -15,7 +15,11 @@ description = '''公主连结主题的角色卡驱动战斗模组。'''
 [[dependencies.${mod_id}]]
 modId = "neoforge"
 type = "required"
-versionRange = "[21.1.265,)"
+# 21.1.49 is the measured floor: this tree compiles with neo_version=21.1.49 and
+# fails to compile on 21.1.48 (DeferredRegister#createDataComponents only takes
+# (modId) before 21.1.49). Found by bisecting the 21.1 series, not assumed.
+# Re-bisect before raising or lowering this number.
+versionRange = "[21.1.49,)"
 ordering = "NONE"
 side = "BOTH"
 

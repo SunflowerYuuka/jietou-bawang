@@ -6,6 +6,7 @@ import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
+import com.astrum.pcrd.impl.effect.ExPassives;
 import com.astrum.pcrd.impl.effect.PartyBuffs;
 import java.util.Optional;
 import net.minecraft.core.Registry;
@@ -113,10 +114,16 @@ public final class PartyService {
         // and not only on a change — a party written by an older build is then repaired by the next
         // edit instead of waiting for the next login.
         PartyBuffs.apply(player);
+        // The mechanical half: her EX skill is a passive that is on exactly while she holds a slot, so it is
+        // granted here and removed here — this method is the one membership-change point in the build, and
+        // an EX that needed a second watcher would be a second place for "is she in the party" to be answered.
+        // Idempotent for the same reason PartyBuffs is: an instance already at the right rung is left alone,
+        // so an edit that changes nothing visible costs no write and the HUD does not blink.
+        int exChanges = ExPassives.apply(player);
         Astrum.LOGGER.info("astrum: party edit accepted for {} slot {} -> {} (previous slot {}, "
-                        + "changed {}, {} characters equipped)", who, slot, characterId,
+                        + "changed {}, {} characters equipped, {} EX passive change(s))", who, slot, characterId,
                 edit.previousSlot().isPresent() ? edit.previousSlot().getAsInt() : -1,
-                edit.changed(), edit.after().equipped().size());
+                edit.changed(), edit.after().equipped().size(), exChanges);
         return new Result(null, definition, edit);
     }
 }

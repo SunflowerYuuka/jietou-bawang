@@ -30,7 +30,11 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <pre>levelMultiplier(level) = 1 + LEVEL_GROWTH_PER_LEVEL × (level − 1)</pre>
  *
- * <p>At {@code maxLevel} 30 that is {@code 1.58}. The number is small on purpose. {@code UB} damage is
+ * <p>At the old {@code maxLevel} 30 that is {@code 1.58}; the cap is now 100 (task 36), where it is
+ * {@code 2.98}. The number is small on purpose, and the constant is <b>unchanged</b> by the level-cap raise: this
+ * factor multiplies <b>quantities</b> (damage, healing, charge), while the level's other contribution — the effect
+ * <b>tiers</b> a level grants — is a different mechanism entirely, in {@code LevelBands}. Making one factor serve
+ * both would double-count the level. {@code UB} damage is
  * not scaled by level yet (the showcase settles it from the datapack alone), and spec §5.3 requires a
  * UB to be worth roughly 15–25 seconds of attachment output; a steeper curve would silently break that
  * ratio from the other side. {@code LEVEL_GROWTH_PER_LEVEL} is a constant rather than a config option

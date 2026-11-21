@@ -1,0 +1,211 @@
+{
+  "schemaVersion": 1,
+  "displayName": "三角千歌",
+  "skillName": "风灵交响乐",
+  "avatar": "astrum:textures/gui/portrait/chika.png",
+  "icon1st": "astrum:textures/gui/portrait/chika_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/chika_3.png",
+  "icon6th": "astrum:textures/gui/portrait/chika_6.png",
+  "still": "astrum:textures/gui/still/chika_3.png",
+  "still6th": "astrum:textures/gui/still/chika_6.png",
+  "dimension": "resource",
+  "_notes": "数值全部由 bwiki 公式推导，见 docs/derivations-batch-c.md §C4（锚点与 docs/balance-derivation.md §14.1 相同：Lv208 / A2000 / 22140 → 20.0）。她的两档 UB 都**没有伤害项**（召唤 + 回复 + 增益），所以 damage 是 0.0，与可可萝的 极光 同理。技能1 激励之歌 【8+8*技能等级】物理攻击力 = 1672 → 攻击档位 round(1672/(0.20*2000)) = 4 档，12 秒，半径 8.0（「范围半径200内所有友方」，本 mod 的队友默认半径）。技能2 精灵摇篮曲「降低最近的敌人【7.5+7.5L】物理攻击力 12 秒」= 1567.5，用 `apply_effect` 的 minecraft:weakness 表达：原版 weakness 是每级 -4 伤害的固定值，bwiki 的 1567.5 点无法换算成等级，所以等级取 1 并在报告里写明这是**只有方向、没有量级**的那一条。UB 风灵气息：回复【0.4*魔法攻击力+5.25+5.25L】= 1897.25 → 1.71 单位 = 8.6% → heal_area 1 档；「在最前方的友方位置召唤一只只能普攻的精灵」= SUMMON_SPIRIT 1 档（一只精灵 = 一圈粒子，本 mod 没有实体）。6★UB 风灵交响乐：回复【0.5A+6.5+6.5L】= 2358.5（2.13 单位 = 10.7%）+ 「每秒恢复【0.025A+0.25+0.25L】持续 18.5 秒」合计 1891.6（1.71 单位 = 8.5%），两条加起来 19.2% ≈ 一档，所以**折成一条 heal_area 1 档**（HEAL_AREA 是瞬发，本 mod 没有逐秒回复）；物攻【24+24L】= 5016 → 封顶 5 档；召唤一只精灵。技能1 的专属「激励之歌+」：物攻【18+18L】= 3762 → 5 档 + 领域「每秒恢复【0.05*魔法攻击力+0.5+0.5L】持续 8 秒」合计 1636 → 1.48 单位 = 7.4% → heal_area 1 档。EX 天籁之音【15+15L】魔法攻击力 → flat_magic_attack_up base 15 / perLevel 15（固定值公式，不是档位），EX+ 再加【30 魔法防御力】→ 魔防 1 档。暴击率：原作给的是数值，不是百分比 —— rwiki 的暂定式『クリティカル率 = クリティカル × 0.05 × (角色等级/对手等级)』（百分比）去掉本 build 没有的等级比项后，1 点 = 0.05 个百分点，50 → 2.5%，所以 affection.critChance = 0.025（换算是我方选的：来源只给数值、不给百分比，见 task-58-report.md §1）。已记录的缺口：(1) 专属的「提升范围半径200内所有友方 50 物理暴击」已由 crit_chance_up 承载（task 60）：50 点按本 build 的 1 点 = 0.05 个百分点换算成 2.5%，限时 12 秒、我方全体——与「角色自带的暴击率」是两种机制，两者相加（Crit 的规则）；(2) 6★UB 与专属的「持续回复生命值」是逐秒而不是瞬发，已按总量折算成一条 heal_area；(3) 技能图标文件名把 6★UB 写成「风灵交响曲」，而 角色数据.json 的『6星UB』字段是「风灵交响乐」——以字段为准；(4) 技能1 还有一档「チアーソング++」（bwiki 的二专），三档阶梯装不下第二档强化，所以只在报告与 §C4 里记录；(5) 「将视角切换到最前方的友方」只影响原作的镜头，没有机制也不需要。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_attack_area",
+      "triggerParams": {
+        "skill": "cheer_song"
+      },
+      "effectParams": {
+        "tier": 4,
+        "seconds": 12.0,
+        "radius": 8.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "apply_effect",
+      "triggerParams": {
+        "skill": "spirit_lullaby"
+      },
+      "effectParams": {
+        "effect": "minecraft:weakness",
+        "duration": 240,
+        "amplifier": 1
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "风灵气息",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 0.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "heal_area",
+          "effectParams": {
+            "tier": 1,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "summon_spirit",
+          "effectParams": {
+            "tier": 1
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "风灵交响乐",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 0.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "heal_area",
+          "effectParams": {
+            "tier": 1,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_attack_area",
+          "effectParams": {
+            "tier": 5,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "crit_damage_up",
+          "percent": 28.0,
+          "effectParams": {
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "summon_spirit",
+          "effectParams": {
+            "tier": 1
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/chika_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.225,
+    "skills": [
+      {
+        "skill": "cheer_song",
+        "baseName": "激励之歌",
+        "tier2": {
+          "name": "激励之歌+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_attack_area",
+              "triggerParams": {
+                "skill": "cheer_song"
+              },
+              "effectParams": {
+                "tier": 5,
+                "seconds": 12.0,
+                "radius": 8.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "heal_area",
+              "triggerParams": {
+                "skill": "cheer_song"
+              },
+              "effectParams": {
+                "tier": 1,
+                "radius": 8.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "crit_chance_up",
+              "triggerParams": {
+                "skill": "cheer_song"
+              },
+              "effectParams": {
+                "percent": 2.5,
+                "seconds": 12.0,
+                "radius": 8.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/chika_main1.png"
+      },
+      {
+        "skill": "spirit_lullaby",
+        "baseName": "精灵摇篮曲",
+        "icon": "astrum:textures/gui/skillicon/chika_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "天籁之音",
+        "tier2": {
+          "name": "天籁之音+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                },
+                {
+                  "effect": "buff_magic_defence_area",
+                  "effectParams": {
+                    "tier": 1,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/chika_ex.png"
+      }
+    ]
+  }
+}

@@ -474,8 +474,9 @@ public final class AstrumCommand {
                 return 0;
             }
             UbState state = player.getData(Attachments.UB_STATE);
-            player.setData(Attachments.UB_STATE,
-                    new UbState((float) value, state.selectedSlot(), state.cdEndTick()));
+            // withCharge, not a new record: the per-character cooldowns are not this command's business
+            // and a full construction here would need a map argument the command has no opinion about.
+            player.setData(Attachments.UB_STATE, state.withCharge((float) value, state.selectedSlot()));
             src.sendSuccess(() -> Component.translatable(KEY_CHARGE_SET, value), true);
             return 1;
         });
@@ -487,9 +488,13 @@ public final class AstrumCommand {
             double before = state.charge();
             // ChargeKernel.add clamps, so "add 500" lands on 100 rather than making a gauge that can
             // never be full again.
-            double after = ChargeKernel.add(before, delta);
-            player.setData(Attachments.UB_STATE,
-                    new UbState((float) after, state.selectedSlot(), state.cdEndTick()));
+            //
+            // NEUTRAL_RATE, deliberately: `CHARGE_RATE_UP` multiplies what a *fight* pays, and an
+            // operator typing `/astrum charge add 10` is setting up a test, not earning charge. Scaling
+            // this by the player's current buff would make the command's own number unpredictable
+            // ("add 10" landing at 22.5), which is the opposite of what a debug command is for.
+            double after = ChargeKernel.add(before, delta, ChargeKernel.NEUTRAL_RATE);
+            player.setData(Attachments.UB_STATE, state.withCharge((float) after, state.selectedSlot()));
             src.sendSuccess(() -> Component.translatable(KEY_CHARGE_ADDED, oneDecimal(before),
                     oneDecimal(after)), true);
             return 1;

@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 1,
+  "displayName": "镜华",
+  "skillName": "宇宙蓝色行星",
+  "avatar": "astrum:textures/gui/portrait/kyoka.png",
+  "icon1st": "astrum:textures/gui/portrait/kyoka_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/kyoka_3.png",
+  "icon6th": "astrum:textures/gui/portrait/kyoka_6.png",
+  "still": "astrum:textures/gui/still/kyoka_3.png",
+  "still6th": "astrum:textures/gui/still/kyoka_6.png",
+  "dimension": "output",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-b.md §3（参考等级 208、参考魔法攻击力 2000、锚点 22140 → 20.0）。她是魔法角色，所有伤害带 damageType astrum:magic。UB 宇宙蓝色闪光 5*魔攻+60+60L = 22540 → 20.4（单体），6★UB 宇宙蓝色行星 8*魔攻+100+100L = 36900 → 33.3。技能1 冰枪突刺 1.6*魔攻+20+20L = 7380 → 6.7；专属（技能1 的 tier2）2.4*魔攻+20+20L = 8980 → 8.1。技能2 魔力迸发 提升自身【28+28L=5852】魔法攻击力 9 秒 —— 她自己的伤害全是 astrum:magic，所以落 buff_magic_attack_area（不是 buff_attack_area）并且 radius 0.0（自分）。『本技能出现暴击时，造成的伤害值从 2 倍提升至 4 倍』（6★UB 与专属都有）由 task 55 的单技能暴击倍率通道承载：6★UB 写 `ub.enhanced.critMultiplier: 4.0`，专属写 `extra_damage.effectParams.critMultiplier: 4.0`。这个倍率**替换**玩家全局的 astrum:crit_damage（默认 1.5）—— 4 倍就是 4 倍，不是 1.5+4 也不是 1.5×4；5★UB 没有这句，所以不写字段、继续用全局。见 balance-derivation §18.1 与 task-55-report.md。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "ice_lance"
+      },
+      "effectParams": {
+        "amount": 6.7,
+        "damageType": "astrum:magic"
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_magic_attack_area",
+      "triggerParams": {
+        "skill": "mana_burst"
+      },
+      "effectParams": {
+        "tier": 5,
+        "seconds": 9.0,
+        "radius": 0.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "宇宙蓝色闪光",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 20.4,
+      "damageType": "astrum:magic"
+    },
+    "enhanced": {
+      "name": "宇宙蓝色行星",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 33.3,
+      "damageType": "astrum:magic",
+      "critMultiplier": 4.0
+    },
+    "icon": "astrum:textures/gui/skillicon/kyoka_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.25,
+    "skills": [
+      {
+        "skill": "ice_lance",
+        "baseName": "冰枪突刺",
+        "tier2": {
+          "name": "冰枪突刺+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "ice_lance"
+              },
+              "effectParams": {
+                "amount": 8.1,
+                "damageType": "astrum:magic",
+                "critMultiplier": 4.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/kyoka_main1.png"
+      },
+      {
+        "skill": "mana_burst",
+        "baseName": "魔力迸发",
+        "icon": "astrum:textures/gui/skillicon/kyoka_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "小小的勇气",
+        "tier2": {
+          "name": "小小的勇气+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/kyoka_ex.png"
+      }
+    ]
+  }
+}

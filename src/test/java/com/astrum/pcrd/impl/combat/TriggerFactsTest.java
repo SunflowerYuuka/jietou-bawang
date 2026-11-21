@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * All eight {@link Trigger} values, as pure yes/no answers.
+ * All nine {@link Trigger} values, as pure yes/no answers.
  *
  * <p>Before this existed, six of the eight answered {@code false} unconditionally: a data author could
  * write {@code kill} or {@code combo_n} and get silence with no diagnostic. The switch in

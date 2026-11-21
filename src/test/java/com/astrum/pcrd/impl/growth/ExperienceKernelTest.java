@@ -36,12 +36,15 @@ class ExperienceKernelTest {
 
     private static final GrowthDef GROWTH = ShippedGrowth.growth();
 
-    /** 姬塔's curve is the spec's: the fixture is only useful if it says so. */
+    /** 姬塔's curve is the shipped one: the fixture is only useful if it says so. */
     @Test
     void theShippedCurveIsTheOneTheSpecNames() {
         assertEquals(100, GROWTH.expBase());
-        assertEquals(1.15, GROWTH.expPerLevel(), 1e-9);
-        assertEquals(30, GROWTH.maxLevel());
+        assertEquals(1.04, GROWTH.expPerLevel(), 1e-9,
+                "1.04 is the 100-level curve: §15.1 of docs/balance-derivation.md derives it, and it is "
+                        + "deliberately shallower than the old 30-level 1.15 so the journey is comparable "
+                        + "rather than 300× longer");
+        assertEquals(100, GROWTH.maxLevel(), "maxLevel is 100: the level bands stop at exactly this level");
     }
 
     // -----------------------------------------------------------------------------------------
@@ -55,8 +58,8 @@ class ExperienceKernelTest {
 
     @Test
     void theRequirementGrowsGeometrically() {
-        assertEquals(115, ExperienceKernel.expToNext(2, GROWTH));
-        assertEquals(132, ExperienceKernel.expToNext(3, GROWTH));
+        assertEquals(104, ExperienceKernel.expToNext(2, GROWTH));
+        assertEquals(108, ExperienceKernel.expToNext(3, GROWTH));
     }
 
     /**
@@ -82,9 +85,9 @@ class ExperienceKernelTest {
     @Test
     void aGainCarriesItsRemainderAcrossSeveralLevelUps() {
         var p = ExperienceKernel.add(new CharacterProgress(1, 0, 1), 250, GROWTH);
-        // 250 - 100 (level 2) = 150; 150 - 115 (level 3) = 35; 35 < 132 (level 4) stops.
+        // 250 - 100 (level 2) = 150; 150 - 104 (level 3) = 46; 46 < 108 (level 4) stops.
         assertEquals(3, p.level());
-        assertEquals(35, p.exp());
+        assertEquals(46, p.exp());
     }
 
     @Test
@@ -116,8 +119,8 @@ class ExperienceKernelTest {
 
     @Test
     void aCharacterAtTheCapDoesNotGainAndDoesNotKeepASwellingNumber() {
-        var p = ExperienceKernel.add(new CharacterProgress(30, 0, 4), 99_999, GROWTH);
-        assertEquals(30, p.level());
+        var p = ExperienceKernel.add(new CharacterProgress(100, 0, 4), 99_999, GROWTH);
+        assertEquals(100, p.level());
         assertEquals(0, p.exp(), "at maxLevel there is no next level, so the bar must stay empty");
         assertEquals(4, p.affection());
     }
@@ -125,7 +128,7 @@ class ExperienceKernelTest {
     @Test
     void anOvershootingGainStopsAtTheCapRatherThanClimbingPastIt() {
         var p = ExperienceKernel.add(new CharacterProgress(1, 0, 1), 1_000_000, GROWTH);
-        assertEquals(30, p.level(), "the loop is bounded by maxLevel, not by the amount");
+        assertEquals(100, p.level(), "the loop is bounded by maxLevel, not by the amount");
         assertEquals(0, p.exp());
     }
 
@@ -255,11 +258,14 @@ class ExperienceKernelTest {
     void aLevelAddsASmallLinearMultiplier() {
         assertEquals(1.0, ExperienceKernel.levelMultiplier(1, GROWTH), 1e-9);
         assertEquals(1.0, ExperienceKernel.levelMultiplier(0, GROWTH), 1e-9, "no level 0: read as 1");
-        assertEquals(1.0 + ExperienceKernel.LEVEL_GROWTH_PER_LEVEL * 14,
-                ExperienceKernel.levelMultiplier(15, GROWTH), 1e-9);
+        assertEquals(1.28, ExperienceKernel.levelMultiplier(15, GROWTH), 1e-9);
         assertEquals(1.58, ExperienceKernel.levelMultiplier(30, GROWTH), 1e-9,
-                "spec §6.4's cap of 30 makes the multiplier 1.58");
-        assertEquals(1.58, ExperienceKernel.levelMultiplier(999, GROWTH), 1e-9,
+                "level 30 used to be the cap and its factor is unchanged, so a save that was maxed before "
+                        + "this task keeps exactly the strength it had");
+        assertEquals(2.98, ExperienceKernel.levelMultiplier(100, GROWTH), 1e-9,
+                "the new cap of 100 makes the factor 2.98 — the level bands, not this factor, are what the "
+                        + "task adds to a high-level character's strength");
+        assertEquals(2.98, ExperienceKernel.levelMultiplier(999, GROWTH), 1e-9,
                 "a hand-edited level above maxLevel is clamped, not multiplied");
     }
 

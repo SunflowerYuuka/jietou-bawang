@@ -10,8 +10,10 @@ import com.astrum.pcrd.impl.ub.WheelInputMachine.Purpose;
 import com.astrum.pcrd.impl.ub.WheelInputMachine.State;
 import com.astrum.pcrd.impl.ub.WheelSlots;
 import com.mojang.blaze3d.platform.InputConstants;
+import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.PauseScreen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.resources.ResourceLocation;
@@ -118,6 +120,15 @@ public final class ClientEvents {
     /** The HUD layer's id, and the fact that it draws just above vanilla's hotbar layer. */
     private static final ResourceLocation HUD_LAYER = InternalIds.id("ub_hud");
 
+    /**
+     * The party status row's layer, directly above the gauge and below the wheel and cast pad.
+     *
+     * <p>Below the overlays on purpose: a wheel that a player is holding open must cover the row, because the
+     * wheel is what she is interacting with. Above the gauge, because the row is positioned from the gauge's
+     * rectangle and that rectangle has to exist first.
+     */
+    private static final ResourceLocation PARTY_ROW_LAYER = InternalIds.id("party_row");
+
     /** The wheel overlay's id: above the HUD layer, so the wheel is never painted under the gauge. */
     private static final ResourceLocation WHEEL_LAYER = WheelOverlay.LAYER_ID;
 
@@ -150,6 +161,21 @@ public final class ClientEvents {
     }
 
     /**
+     * Registers the art-fallback cache invalidation, so a resource reload re-asks which textures exist.
+     *
+     * <p>A {@code PreparableReloadListener} and not a tick check: "the player installed the pack" is exactly
+     * a resource reload, and the event exists for it. See {@link ArtFallback}.
+     *
+     * @param event the mod-bus event that collects client reload listeners
+     */
+    static void onRegisterReloadListeners(
+            net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener(ArtFallbackReloadListener.INSTANCE);
+        Astrum.LOGGER.info("astrum: recorded the art-fallback reload listener — a missing official-art "
+                + "texture will draw the 「请安装资源包」 placeholder instead of the missing-texture checkerboard");
+    }
+
+    /**
      * Wires the client half: key bindings, HUD and both overlays on the mod bus, input and tick on the
      * game bus.
      *
@@ -161,14 +187,38 @@ public final class ClientEvents {
     public static void register(IEventBus modBus) {
         modBus.addListener(RegisterKeyMappingsEvent.class, ClientKeyBindings::onRegisterKeyMappings);
         modBus.addListener(RegisterGuiLayersEvent.class, ClientEvents::onRegisterGuiLayers);
+        // A missing art texture must draw the 「请安装资源包」 placeholder rather than vanilla's magenta
+        // checkerboard, and the verdict has to be re-asked after a resource reload — otherwise a player who
+        // installs the art pack and presses F3+T keeps seeing placeholders until they restart the game.
+        modBus.addListener(net.neoforged.neoforge.client.event.RegisterClientReloadListenersEvent.class,
+                ClientEvents::onRegisterReloadListeners);
         ShowcaseRenderer.register(modBus);
         UbParticleProviders.register(modBus);
         // The party effects' visible half: avatar icons in vanilla's effect HUD/inventory and the
         // skill name in the inventory list and its tooltip. Client-only, so registered here.
         modBus.addListener(RegisterClientExtensionsEvent.class, PartyEffectClient::registerExtensions);
+        // 在药水栏上显示的图标也只有一个技能图标: one row per fired skill, carrying that skill's own picture and
+        // name. A separate family from the party effects above — those are hidden from vanilla's lists, this
+        // one is the reason the lists exist.
+        modBus.addListener(RegisterClientExtensionsEvent.class, SkillEntryClient::registerExtensions);
+        // 「药水栏不是把每个通用效果都显示出来，是仅显示角色的技能图标」: every generic effect is a mechanic the
+        // damage maths reads, not a status a player reads off a column, so it is filtered out of both of
+        // vanilla's lists. One table for all thirteen, from PartyEffects' own declaration.
+        modBus.addListener(RegisterClientExtensionsEvent.class, HiddenEffectClient::registerExtensions);
         NeoForge.EVENT_BUS.addListener(GatherEffectScreenTooltipsEvent.class,
                 PartyEffectClient::onEffectTooltip);
+        // <b>No listener for the skill rows.</b> One was wired in task 59 (the method had existed unwired since
+        // task 49) and the human removed it again immediately: 「撤掉」. The reason is his earlier ruling that
+        // still stands — 「我要的不是技能行彻底消失，我要的是效果的数值描述消失」 — so a hover that listed
+        // 「全体物攻 持续 12 秒」 would restore exactly the text he asked to be gone. Vanilla's own name-and-clock
+        // tooltip is what a skill row shows.
+        //
+        // {@code SkillEntryClient.onEffectTooltip} is deleted rather than left unregistered, for the reason the
+        // display code was deleted in task 47: an unwired method is a feature waiting to be re-enabled by
+        // accident, and this one has now been both wired and unwired once.
         NeoForge.EVENT_BUS.addListener(InputEvent.Key.class, ClientEvents::onKey);
+        // Mouse buttons: a key binding may be one, and InputEvent.Key never fires for them — 「鼠标侧键不能绑定吗？」
+        NeoForge.EVENT_BUS.addListener(InputEvent.MouseButton.Pre.class, ClientEvents::onMouseButton);
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Pre.class, ClientEvents::onClientTickPre);
         NeoForge.EVENT_BUS.addListener(ClientTickEvent.Post.class, ClientEvents::onClientTick);
         NeoForge.EVENT_BUS.addListener(ScreenEvent.Opening.class, ClientEvents::onScreenOpening);
@@ -178,13 +228,52 @@ public final class ClientEvents {
                 WheelInputMachine.HOLD_THRESHOLD_MILLIS, ClientKeyBindings.CONFIG_KEY);
     }
 
-    private static void onRegisterGuiLayers(RegisterGuiLayersEvent event) {
+    /**
+     * Registers the four HUD layers, in bottom-to-top order.
+     *
+     * <p><b>Package-private and named, not a lambda chain inside {@link #register}</b>, because this is the
+     * one method in the client half that has to be <em>executed</em> to be believed: {@code runClient}
+     * cannot start on this machine (arm64 natives, see the task notes), so "the party row is really
+     * registered" would otherwise be a claim about code nobody ran. {@code PartyRowLayerRegistrationTest}
+     * builds a real {@link RegisterGuiLayersEvent} over a mutable layer list and calls this, so the
+     * assertions are about what the event actually received.
+     */
+    static void onRegisterGuiLayers(RegisterGuiLayersEvent event) {
         event.registerAbove(VanillaGuiLayers.HOTBAR, HUD_LAYER, UbHud::render);
-        event.registerAbove(HUD_LAYER, WHEEL_LAYER, WheelOverlay::render);
+        // The party row goes above the gauge: the gauge publishes where it was drawn, the row reads that and
+        // sits TO_GAUGE pixels above it. One widget, two layers, no second anchor in the config.
+        event.registerAbove(HUD_LAYER, PARTY_ROW_LAYER, ClientEvents::renderPartyRow);
+        event.registerAbove(PARTY_ROW_LAYER, WHEEL_LAYER, WheelOverlay::render);
         event.registerAbove(WHEEL_LAYER, CAST_PAD_LAYER, CastPadOverlay::render);
-        Astrum.LOGGER.info("astrum: UB layers registered above the hotbar ({}, {}, {}) — no UB visual "
+        Astrum.LOGGER.info("astrum: UB layers registered above the hotbar ({}, {}, {}, {}) — no UB visual "
                 + "layer: the cast effect is real world particles, not a GUI blit",
-                HUD_LAYER, WHEEL_LAYER, CAST_PAD_LAYER);
+                HUD_LAYER, PARTY_ROW_LAYER, WHEEL_LAYER, CAST_PAD_LAYER);
+    }
+
+    /** {@return the layer id of the party status row, for the registration test} */
+    static ResourceLocation partyRowLayer() {
+        return PARTY_ROW_LAYER;
+    }
+
+    /** {@return the layer id of the UB gauge, for the registration test} */
+    static ResourceLocation gaugeLayer() {
+        return HUD_LAYER;
+    }
+
+    /**
+     * Draws the party status row, using the gauge rectangle the frame below it just published.
+     *
+     * <p>Guarded on {@code null} because layer order is a declaration rather than a guarantee: on the very
+     * first frame, or if a future change moved this layer below the gauge's, the rectangle would not exist and
+     * a bare dereference would throw inside the GUI pass — a crash on the title screen. Skipping one frame is
+     * invisible; a crash is not.
+     */
+    private static void renderPartyRow(GuiGraphics graphics, DeltaTracker delta) {
+        HudLayout.Rect gauge = UbHud.lastGauge();
+        if (gauge == null) {
+            return;
+        }
+        PartyStatusHud.render(graphics, gauge);
     }
 
     /**
@@ -239,6 +328,56 @@ public final class ClientEvents {
             return;
         }
         if (ClientKeyBindings.matchesPreset(event.getKey(), event.getScanCode())) {
+            if (action == InputConstants.PRESS) {
+                onPress(PRESET_MACHINE);
+            } else if (action == InputConstants.RELEASE) {
+                act(PRESET_MACHINE, PRESET_MACHINE.onRelease(nowMillis()));
+            }
+        }
+    }
+
+    /**
+     * The same two gestures, for a key that is a <b>mouse button</b>.
+     *
+     * <h2>Why a second listener rather than a wider keyboard one</h2>
+     * The human asked 「鼠标侧键不能绑定吗？我试了一下鼠标侧键不能释放UB。」 — and he was right, for a mechanical
+     * reason rather than a rule: vanilla's key-binding screen happily accepts {@code GLFW_MOUSE_BUTTON_4} and
+     * {@code -5} (the side buttons), but {@code InputEvent.Key} is only ever fired for <b>keyboard</b> keys, so
+     * a binding set to a mouse button produced no event at all and the wheel never opened.
+     *
+     * <p>{@link KeyMapping#matches(int, int)} takes the same {@code GLFW} button code, so the two existing
+     * predicates ({@code matchesCast} / {@code matchesPreset}) work unchanged — this listener only supplies the
+     * events they were missing. Nothing about the machines, the digits or the overlays differs, which is why
+     * this method is a near-copy of the keyboard one rather than a second gesture implementation.
+     *
+     * @param event the raw mouse-button event
+     */
+    static void onMouseButton(InputEvent.MouseButton.Pre event) {
+        int button = event.getButton();
+        int action = event.getAction();
+        boolean down = action != InputConstants.RELEASE;
+
+        WheelInputMachine active = activeMachine();
+        if (down && active != null) {
+            if (ClientKeyBindings.matchesCast(button, 0)) {
+                onPress(CAST_MACHINE);
+                return;
+            }
+            if (ClientKeyBindings.matchesPreset(button, 0)) {
+                onPress(PRESET_MACHINE);
+                return;
+            }
+        }
+
+        if (ClientKeyBindings.matchesCast(button, 0)) {
+            if (action == InputConstants.PRESS) {
+                onPress(CAST_MACHINE);
+            } else if (action == InputConstants.RELEASE) {
+                act(CAST_MACHINE, CAST_MACHINE.onRelease(nowMillis()));
+            }
+            return;
+        }
+        if (ClientKeyBindings.matchesPreset(button, 0)) {
             if (action == InputConstants.PRESS) {
                 onPress(PRESET_MACHINE);
             } else if (action == InputConstants.RELEASE) {

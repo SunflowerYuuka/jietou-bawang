@@ -44,7 +44,7 @@ public final class ServerConfig {
     /** {@code [balance]} — diminishing returns. */
     public static final BalanceOptions BALANCE;
 
-    /** {@code [ub]} — charge gain and the shared cooldown. */
+    /** {@code [ub]} — charge gain and the per-character cooldown length. */
     public static final UbOptions UB;
 
     /** {@code [multiplayer]} — ally selection and the area-charge guards. */
@@ -139,11 +139,23 @@ public final class ServerConfig {
     }
 
     /**
-     * {@code [ub]} section: how fast the gauge fills and how long the shared cooldown lasts.
+     * {@code [ub]} section: how fast the gauge fills and how long <b>each character's own</b> cooldown
+     * lasts.
      */
     public static final class UbOptions {
 
-        /** Cooldown shared by all five slots (spec §5.4: one bar, still charges during cooldown). */
+        /**
+         * Cooldown length, per character (「每个角色UB的CD不共享」).
+         *
+         * <p>Still one number, and still the same config key: the human asked for the <em>timers</em> to
+         * be independent, not for a length per character. Each cast arms the casting character's own
+         * deadline at {@code now + this}, so two characters cool independently but for the same length.
+         * The key keeps its old name because renaming a config key would silently reset every server's
+         * tuned value back to the default.
+         *
+         * <p>The gauge is still one shared bar (spec §5.4: one bar, still charges during cooldown), which
+         * is why casting A still drains it for B — see {@code UbCharge}.
+         */
         public final ModConfigSpec.IntValue ubGlobalCooldownTicks;
 
         /** Charge per point of damage dealt. */
@@ -168,7 +180,8 @@ public final class ServerConfig {
         private UbOptions(ModConfigSpec.Builder builder) {
             builder.push("ub");
             ubGlobalCooldownTicks = builder
-                    .comment(" 全局共享冷却（tick）；CD 期间照常充能。0 = 无冷却")
+                    .comment(" UB 冷却长度（tick），每个角色各自计时、互不共享；CD 期间照常充能。0 = 无冷却",
+                            " 同一个数字对所有角色生效：想改某个角色的长度，用数据包而不是这里")
                     .defineInRange("ubGlobalCooldownTicks", 100, 0, 72_000);
             ubChargePerDamage = builder
                     .comment(" 每点造成伤害的充能")

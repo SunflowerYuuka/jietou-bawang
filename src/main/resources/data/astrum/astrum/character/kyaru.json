@@ -1,0 +1,163 @@
+{
+  "schemaVersion": 1,
+  "displayName": "凯露",
+  "skillName": "深渊炸裂",
+  "avatar": "astrum:textures/gui/portrait/kyaru.png",
+  "icon1st": "astrum:textures/gui/portrait/kyaru_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/kyaru_3.png",
+  "icon6th": "astrum:textures/gui/portrait/kyaru_6.png",
+  "still": "astrum:textures/gui/still/kyaru_3.png",
+  "still6th": "astrum:textures/gui/still/kyaru_6.png",
+  "dimension": "control",
+  "_notes": "数值推导见 docs/balance-derivation.md §14（bwiki 公式 + Lv208/参考魔法攻击力 2000 + 锚点 20.0）。她是魔法角色，所有伤害都带 damageType: astrum:magic —— 那是 BUFF_MAGIC_DEFENCE_AREA 与 MAGIC_DEFENCE_DOWN 认的标记，也是 MagicAttack.attackFor 决定『这一击用哪个攻击属性』的依据（魔攻用 astrum:magic_damage，物攻用 ATTACK_DAMAGE，见 §16）。技能1 闪电球 1.6A+20+20L = 7380 -> 6.7。技能2 护甲削弱 原作「降低最近的敌人【0.4+0.4*等级】物理·魔法防御力 12s」，所以 defence_down 1 档；『魔法』那一半由 专属技能（tier2）表达：伤害 + 范围魔法伤害【0.36*魔法攻击力+4.5+4.5*等级】+ 范围魔防降低【0.1425+0.1425*等级】12s，后者是 MAGIC_DEFENCE_DOWN 1 档。UB 格林炸裂 1.08A+12+12L = 4668 -> 4.2（全体，radius 6）；6★ 深渊炸裂 2.16A+24+24L = 9336 -> 8.4 + 恐慌 8 秒（PANIC 1 档）。好感阶梯：tier2 = EX+ 与 技能1 专属，tier3 = UB 深渊炸裂。EX 黑暗之蚀 用 buff_magic_attack_area（不是 buff_attack_area）：bwiki 写的是『提升自身【15+15*技能等级】魔法攻击力』，所以在 magic_damage 上而不是 ATTACK_DAMAGE 上，见 §16。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "lightning_orb"
+      },
+      "effectParams": {
+        "amount": 6.7,
+        "damageType": "astrum:magic"
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "defence_down",
+      "triggerParams": {
+        "skill": "armour_break"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "格林炸裂",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 4.2,
+      "radius": 6.0,
+      "damageType": "astrum:magic"
+    },
+    "enhanced": {
+      "name": "深渊炸裂",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 8.4,
+      "radius": 6.0,
+      "damageType": "astrum:magic",
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "panic",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 8.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/kyaru_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "lightning_orb",
+        "baseName": "闪电球",
+        "tier2": {
+          "name": "闪电球+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "lightning_orb"
+              },
+              "effectParams": {
+                "amount": 6.7,
+                "damageType": "astrum:magic"
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "lightning_orb"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "damage": 1.5,
+                "damageType": "astrum:magic"
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "magic_defence_down",
+              "triggerParams": {
+                "skill": "lightning_orb"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/kyaru_main1.png"
+      },
+      {
+        "skill": "armour_break",
+        "baseName": "护甲削弱",
+        "icon": "astrum:textures/gui/skillicon/kyaru_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "黑暗之蚀",
+        "tier2": {
+          "name": "黑暗之蚀+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/kyaru_ex.png"
+      }
+    ]
+  }
+}

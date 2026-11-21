@@ -7,6 +7,7 @@ import com.astrum.pcrd.api.v1.CharacterProgress;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
+import com.astrum.pcrd.impl.attach.UbCooldown;
 import com.astrum.pcrd.impl.attach.UbState;
 import com.astrum.pcrd.impl.client.ClientBookFeedback;
 import com.astrum.pcrd.impl.client.ClientCastFeedback;
@@ -84,8 +85,16 @@ import org.jetbrains.annotations.Nullable;
 @ApiStatus.Internal
 public final class AstrumNetwork {
 
-    /** Negotiated payload version; bump when any payload registered here changes shape. */
-    public static final String PROTOCOL_VERSION = "3";
+    /**
+     * Negotiated payload version; bump when any payload registered here changes shape.
+     *
+     * <p>Bumped 3 -> 4 for the per-character cooldowns: {@code charge_sync} now carries a map of
+     * deadlines (each with its own total) instead of one shared {@code cdEndTick}, so a 3.x client and a
+     * 4.x server would misread each other's frames. The version string is handed to
+     * {@code PayloadRegistrar}, which is what makes the mismatch a connect-time refusal rather than a
+     * misparsed packet.
+     */
+    public static final String PROTOCOL_VERSION = "5";
 
     /**
      * How often the party's tier-3 mask is re-resolved when the party itself has not changed.
@@ -293,13 +302,20 @@ public final class AstrumNetwork {
         // the first window after login push the real state — otherwise a client whose cache still
         // holds the previous world's charge (the same JVM switches worlds) would never be corrected.
         UbState state = player.getData(Attachments.UB_STATE);
+        // Only the cooldowns still running are sent: an expired deadline is a fact the client can also
+        // derive, but sending it would leave a stale entry on a client that reconnects, and the map's
+        // size is what bounds the frame. The same filtered map is what SyncGate compares, so "an entry
+        // expired" is itself a change and produces the push that tells the client she is castable.
+        Map<ResourceLocation, UbCooldown> running =
+                state.activeCooldowns(player.level().getGameTime());
         Sent last = LAST_SENT.getOrDefault(player.getUUID(), Sent.NEVER);
-        if (!SyncGate.shouldSync(player.tickCount, last.tick(), state.charge(), state.cdEndTick(),
-                last.charge(), last.cdEndTick())) {
+        if (!SyncGate.shouldSync(player.tickCount, last.tick(), state.charge(), running,
+                last.charge(), last.deadlines())) {
             return;
         }
-        PacketDistributor.sendToPlayer(player, new ChargeSyncPayload(state.charge(), state.cdEndTick()));
-        LAST_SENT.put(player.getUUID(), new Sent(player.tickCount, state.charge(), state.cdEndTick()));
+        PacketDistributor.sendToPlayer(player, new ChargeSyncPayload(state.charge(), running));
+        LAST_SENT.put(player.getUUID(),
+                new Sent(player.tickCount, state.charge(), running));
     }
 
     /**
@@ -396,12 +412,14 @@ public final class AstrumNetwork {
         if (last != null && last.quarantined() == quarantined && last.entries() == entries) {
             return;
         }
-        RosterSyncPayload payload = buildRosterPayload(roster);
-        PacketDistributor.sendToPlayer(player, payload);
+        List<RosterSyncPayload> payloads = buildRosterPayloads(roster);
+        for (RosterSyncPayload payload : payloads) {
+            PacketDistributor.sendToPlayer(player, payload);
+        }
         LAST_ROSTER.put(player.getUUID(), new SentRoster(entries, quarantined));
-        Astrum.LOGGER.debug("astrum: character book synced to {} ({} characters{})",
-                player.getGameProfile().getName(), payload.size(),
-                quarantined ? ", quarantined save" : "");
+        Astrum.LOGGER.debug("astrum: character book synced to {} ({} characters, {} packet(s){})",
+                player.getGameProfile().getName(), roster.isQuarantined() ? 0 : entries.size(),
+                payloads.size(), quarantined ? ", quarantined save" : "");
     }
 
     /**
@@ -411,9 +429,9 @@ public final class AstrumNetwork {
      * here through {@link GrowthFacts}, the single implementation of the curve and the tier ladder, so
      * the client never holds a second copy of either rule.
      */
-    private static RosterSyncPayload buildRosterPayload(Roster roster) {
+    private static List<RosterSyncPayload> buildRosterPayloads(Roster roster) {
         if (roster.isQuarantined()) {
-            return RosterSyncPayload.QUARANTINED;
+            return List.of(RosterSyncPayload.QUARANTINED);
         }
         Optional<Registry<CharacterDef>> registry = AstrumApi.characters();
         List<RosterSyncPayload.Entry> entries = new ArrayList<>(roster.entries().size());
@@ -430,7 +448,35 @@ public final class AstrumNetwork {
             entries.add(new RosterSyncPayload.Entry(id, progress.level(), progress.exp(), expToNext,
                     progress.affection(), tier));
         }
-        return new RosterSyncPayload(entries, false);
+        return split(entries);
+    }
+
+    /**
+     * {@return {@code entries} cut into packets that each fit the receiver's ceiling, in order}
+     *
+     * <h2>The defect this closes</h2>
+     * The server used to put <b>every owned row</b> into one frame while the client refuses more than
+     * {@link RosterSyncPayload#MAX_ENTRIES}. The two limits were only ever consistent by luck: a large character
+     * pack, or a save that kept rows for characters the current pack no longer defines — those are deliberately
+     * <em>kept</em> and still shown — could cross 256, and then the client threw on decode and <b>reconnecting did
+     * not help</b>, because the next sync sent the same oversized frame.
+     *
+     * <p>Batching keeps the whole book instead of the alternatives this build rejected: trimming would delete a
+     * player's progress from her screen to fit a buffer, and raising the cap would move the same cliff without a
+     * bound. Each part carries at most {@code MAX_ENTRIES} rows, and the receiver reassembles them in order.
+     */
+    private static List<RosterSyncPayload> split(List<RosterSyncPayload.Entry> entries) {
+        if (entries.isEmpty()) {
+            return List.of(RosterSyncPayload.EMPTY);
+        }
+        int parts = (entries.size() + RosterSyncPayload.MAX_ENTRIES - 1) / RosterSyncPayload.MAX_ENTRIES;
+        List<RosterSyncPayload> payloads = new ArrayList<>(parts);
+        for (int part = 0; part < parts; part++) {
+            int from = part * RosterSyncPayload.MAX_ENTRIES;
+            int to = Math.min(entries.size(), from + RosterSyncPayload.MAX_ENTRIES);
+            payloads.add(new RosterSyncPayload(entries.subList(from, to), false, part, parts));
+        }
+        return payloads;
     }
 
     /**
@@ -438,11 +484,14 @@ public final class AstrumNetwork {
      *
      * @param tick      the player's tick counter at the moment of the push
      * @param charge    the charge that was pushed
-     * @param cdEndTick the cooldown end that was pushed
+     * @param deadlines the per-character cooldowns that were pushed, or {@code null} for "never
+     *                  pushed" — see {@link SyncGate#shouldSync} for why null is the sentinel rather
+     *                  than an empty map
      */
-    private record Sent(int tick, float charge, long cdEndTick) {
-        /** The "never pushed" value: tick {@code -1} and a {@code NaN} charge, so the first window always sends. */
-        static final Sent NEVER = new Sent(-1, Float.NaN, Long.MIN_VALUE);
+    private record Sent(int tick, float charge,
+            @Nullable Map<ResourceLocation, UbCooldown> deadlines) {
+        /** The "never pushed" value: tick {@code -1}, a {@code NaN} charge and no map, so the first window always sends. */
+        static final Sent NEVER = new Sent(-1, Float.NaN, null);
     }
 
     /**

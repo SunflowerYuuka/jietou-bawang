@@ -1,0 +1,335 @@
+{
+  "schemaVersion": 1,
+  "displayName": "铃莓",
+  "skillName": "清扫旋风",
+  "avatar": "astrum:textures/gui/portrait/suzume.png",
+  "icon1st": "astrum:textures/gui/portrait/suzume_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/suzume_3.png",
+  "icon6th": "astrum:textures/gui/portrait/suzume_6.png",
+  "still": "astrum:textures/gui/still/suzume_3.png",
+  "still6th": "astrum:textures/gui/still/suzume_6.png",
+  "dimension": "survival",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-b.md §1（锚点与 docs/balance-derivation.md §14.1 完全一致：参考等级 208、参考魔法攻击力 2000、锚点 22140 → 20.0，公式 value = 20.0 × raw / 22140）。她是魔法角色，全部伤害带 damageType astrum:magic —— 那是 BUFF_MAGIC_DEFENCE_AREA / MAGIC_DEFENCE_DOWN 与 MagicAttack 认的标记。UB 旋风气流 1.08*魔攻+13.5+13.5L = 4981.5 → 4.5；6★UB 清扫旋风 2.24*魔攻+28+28L = 10332 → 9.3。技能1 旋风爆破 0.72*魔攻+9+9L = 3321 → 3.0（范围 900 用 splash 4.0 格）；专属（技能1 的 tier2）1.2*魔攻+15+15L = 5535 → 5.0，其物理/魔法防御力下降 0.35+0.35L = 73.15 → 1 档。技能2 女仆声援 回复 0.18*魔攻+2.5+2.5L = 882.5 → 3.99% 参考血条 → heal_area 1 档；物理攻击力 4+4L = 836 → buff_attack_area 2 档。二专（技能2 的 tier2，bwiki 标『日』＝日服）：物攻 48+48L = 10032 → 5 档、自身魔攻 48+48L → buff_magic_attack_area 5 档、自身 300 技能值 → gain_charge 30.0。EX 女仆精神 用 flat_magic_attack_up（15+15L / 240+15L 的系数照抄，见 balance-derivation §17.2）。已记录的缺口（不静默丢弃）：(1) 【西式小茶壶】现在是真实的状态 marker（astrum:tea_pot，最大一层），由二专（技能2 的 tier2）的 ally_effect 授予 18 秒；『获得茶壶之后』的两个分支用 triggerParams.requiresState 表达为增量 —— 6★UB 的 extra_damage +4.0（9.3 + 4.0 = 13.3，ub.landHooks 上）与专属的 extra_damage +1.7（5.0 + 1.7 = 6.7）；(2) 二专的『提升范围内友方 200 物理暴击率』已由 crit_chance_up 承载（200 点 → 10%，18 秒，半径 4，task 60）；(3) UB 的物理防御力下降在 bwiki 拆成 33%/67% 两个分支（0.855+0.855L = 178.7 / 0.4275+0.4275L = 89.3），现在两条都写进 effects，各带 chance 0.33 / 0.67 —— 两个量级都在 defence_down 阶梯的 1 档（178.7/(0.20*2000) = 0.45、89.3/400 = 0.22，都 clamp 到 1 档），所以机制上是「1 档，概率 33%」与「1 档，概率 67%」，与原作的两个分支一一对应；(4) UB / 专属的『对范围内敌人』用 splash 表达，被主目标之外的身体吃到的伤害是同一档；UB 的『范围1100内』按 §0(a) 的 ÷100 换算成 radius 6.0。暴击率 0.1：她的『提升范围内友方 200 物理暴击率』按 1 点 = 0.05 个百分点换算成 10%（affection.critChance；换算是设计选择，来源只给数值，见 task-58-report.md §1）。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "whirlwind_burst"
+      },
+      "effectParams": {
+        "amount": 3.0,
+        "damageType": "astrum:magic"
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "splash",
+      "triggerParams": {
+        "skill": "whirlwind_burst"
+      },
+      "effectParams": {
+        "radius": 4.0,
+        "damage": 3.0,
+        "damageType": "astrum:magic"
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "heal_area",
+      "triggerParams": {
+        "skill": "maid_yell"
+      },
+      "effectParams": {
+        "tier": 1,
+        "radius": 4.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_attack_area",
+      "triggerParams": {
+        "skill": "maid_yell"
+      },
+      "effectParams": {
+        "tier": 2,
+        "seconds": 12.0,
+        "radius": 4.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "旋风气流",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 4.5,
+      "radius": 6.0,
+      "damageType": "astrum:magic",
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "defence_down",
+          "chance": 0.33,
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0
+          }
+        },
+        {
+          "scope": "victim",
+          "effect": "defence_down",
+          "chance": 0.67,
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "清扫旋风",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 9.3,
+      "radius": 6.0,
+      "damageType": "astrum:magic",
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "defence_down",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0
+          }
+        },
+        {
+          "scope": "victim",
+          "effect": "magic_defence_down",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/suzume_ub.png",
+    "landHooks": {
+      "enhanced": [
+        {
+          "trigger": "ub_land",
+          "effect": "extra_damage",
+          "triggerParams": {
+            "requiresState": "astrum:tea_pot"
+          },
+          "effectParams": {
+            "amount": 4.0,
+            "damageType": "astrum:magic"
+          }
+        }
+      ]
+    }
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.3,
+    "skills": [
+      {
+        "skill": "whirlwind_burst",
+        "baseName": "旋风爆破",
+        "tier2": {
+          "name": "旋风爆破+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "whirlwind_burst"
+              },
+              "effectParams": {
+                "amount": 5.0,
+                "damageType": "astrum:magic"
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "whirlwind_burst"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "damage": 5.0,
+                "damageType": "astrum:magic"
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "defence_down",
+              "triggerParams": {
+                "skill": "whirlwind_burst"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "magic_defence_down",
+              "triggerParams": {
+                "skill": "whirlwind_burst"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "whirlwind_burst",
+                "requiresState": "astrum:tea_pot"
+              },
+              "effectParams": {
+                "amount": 1.7,
+                "damageType": "astrum:magic"
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/suzume_main1.png"
+      },
+      {
+        "skill": "maid_yell",
+        "baseName": "女仆声援",
+        "tier2": {
+          "name": "女仆声援+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "heal_area",
+              "triggerParams": {
+                "skill": "maid_yell"
+              },
+              "effectParams": {
+                "tier": 1,
+                "radius": 4.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_attack_area",
+              "triggerParams": {
+                "skill": "maid_yell"
+              },
+              "effectParams": {
+                "tier": 5,
+                "seconds": 18.0,
+                "radius": 4.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_magic_attack_area",
+              "triggerParams": {
+                "skill": "maid_yell"
+              },
+              "effectParams": {
+                "tier": 5,
+                "seconds": 18.0,
+                "radius": 0.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "gain_charge",
+              "triggerParams": {
+                "skill": "maid_yell"
+              },
+              "effectParams": {
+                "amount": 30.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "ally_effect",
+              "triggerParams": {
+                "skill": "maid_yell"
+              },
+              "effectParams": {
+                "effect": "astrum:tea_pot",
+                "duration": 360,
+                "amplifier": 0,
+                "radius": 0.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "crit_chance_up",
+              "triggerParams": {
+                "skill": "maid_yell"
+              },
+              "effectParams": {
+                "percent": 10.0,
+                "seconds": 18.0,
+                "radius": 4.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/suzume_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "女仆精神",
+        "tier2": {
+          "name": "女仆精神+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                },
+                {
+                  "effect": "buff_magic_defence_area",
+                  "effectParams": {
+                    "tier": 1,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/suzume_ex.png"
+      }
+    ]
+  }
+}

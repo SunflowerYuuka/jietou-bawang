@@ -2,5 +2,139 @@
   "parent": "minecraft:item/generated",
   "textures": {
     "layer0": "astrum:item/character_card"
-  }
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "custom_model_data": 1
+      },
+      "model": "astrum:item/card_djeeta"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 2
+      },
+      "model": "astrum:item/card_kokkoro"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 3
+      },
+      "model": "astrum:item/card_pecorine"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 4
+      },
+      "model": "astrum:item/card_kyaru"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 5
+      },
+      "model": "astrum:item/card_sheffy"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 6
+      },
+      "model": "astrum:item/card_hiyori"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 7
+      },
+      "model": "astrum:item/card_rei"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 8
+      },
+      "model": "astrum:item/card_kurumi"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 9
+      },
+      "model": "astrum:item/card_saren"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 10
+      },
+      "model": "astrum:item/card_mimi"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 11
+      },
+      "model": "astrum:item/card_muimi"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 12
+      },
+      "model": "astrum:item/card_suzume"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 13
+      },
+      "model": "astrum:item/card_misogi"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 14
+      },
+      "model": "astrum:item/card_kyoka"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 15
+      },
+      "model": "astrum:item/card_rino"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 16
+      },
+      "model": "astrum:item/card_ayane"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 17
+      },
+      "model": "astrum:item/card_yui"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 18
+      },
+      "model": "astrum:item/card_shizuru"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 19
+      },
+      "model": "astrum:item/card_nozomi"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 20
+      },
+      "model": "astrum:item/card_tsumugi"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 21
+      },
+      "model": "astrum:item/card_chika"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 22
+      },
+      "model": "astrum:item/card_christina"
+    }
+  ]
 }

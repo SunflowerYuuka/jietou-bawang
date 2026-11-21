@@ -1,0 +1,9 @@
+{
+  "type": "jeed:effect_provider",
+  "effect": "astrum:phys_defence",
+  "providers": [
+    {
+      "item": "astrum:character_card"
+    }
+  ]
+}

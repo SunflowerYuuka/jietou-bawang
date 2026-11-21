@@ -1,0 +1,271 @@
+{
+  "schemaVersion": 1,
+  "displayName": "士条怜",
+  "skillName": "暴风斩击",
+  "avatar": "astrum:textures/gui/portrait/rei.png",
+  "icon1st": "astrum:textures/gui/portrait/rei_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/rei_3.png",
+  "icon6th": "astrum:textures/gui/portrait/rei_6.png",
+  "still": "astrum:textures/gui/still/rei_3.png",
+  "still6th": "astrum:textures/gui/still/rei_6.png",
+  "dimension": "charge",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-a.md §2（锚点口径 = docs/balance-derivation.md §14.1，参考等级 208 / 参考攻击力 2000 / 锚点 22140 → 20.0）。UB 斩刃风暴 4.8A+60+60L = 22140 → 20.0（与锚点同式）。6★UB 暴风斩击 9.6A+120+120L = 44280 → 40.0。技能1 狂风突刺 1.6A+20+20L = 7380 → 6.7。技能2 反击斩 原作是两个分支：风之刃状态时 3.2A+40+40L = 14760 → 13.3 + 【所受伤害】；否则 1.6A+20+20L = 7380 → 6.7 + 【0.5*所受伤害】。『风之刃』现在是真实的状态 marker（astrum:wind_blade），由 6★UB 的 ally_effect 授予 18 秒；反击斩的风之刃分支用 triggerParams.requiresState 表达为增量：基础 extra_damage 6.7 + 门槛分支 6.6 = 13.3，专属的 24 秒减防另有一条 requiresState 的 defence_down，状态不在时两条都不触发；【所受伤害】按受到的伤害加成的项也没有机制，两处都记录在 ub.enhanced.extra 与 §2。好感阶梯：tier2 = 专属。她的专属升级的是技能2（bwiki 专属技能效果写的就是反击斩：否则分支 1.6A+20+20L = 6.7 + 降低【0.6+0.6*技能等级】= 125.4 物理防御力 12 秒 → defence_down 1 档；风之刃分支的 13.3 + 【1.2+1.2*技能等级】= 250.8 → 1 档 24 秒由 requiresState 承载），所以 tier2 的名字用 bwiki 技能图标目录的 技能2_强化1 标签 カウンタースラッシュ+；技能1 的 技能1_强化1_狂风突刺+ 标签 bwiki 没有给对应公式，tier2 沿用本体数 6.7，只换名字（记录在案）。她的 6★ 没有技能改名标签，tier3 与 tier2 同名。EX 迅捷剑姬 15+15L 是固定值 → flat_attack_up 15/15；迅捷剑姬+ 在 15+15L 之外再加『提升自身1125最大生命值』，生命值本 mod 没有 EffectType，按佩可莉姆的先例走原版 minecraft:health_boost：1125 点远超一条 20 点参考血条，按同一口径夹到 amp 4（balance-derivation §15.4.3 的算式：amp a = 4×(a+1) 点生命）。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "wind_thrust"
+      },
+      "effectParams": {
+        "amount": 6.7
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "counter_slash"
+      },
+      "effectParams": {
+        "amount": 6.7
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "斩刃风暴",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 20.0
+    },
+    "enhanced": {
+      "name": "暴风斩击",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 40.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "ally_effect",
+          "effectParams": {
+            "seconds": 18.0,
+            "radius": 0.0
+          },
+          "vanillaEffect": "astrum:wind_blade",
+          "amplifier": 0
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/rei_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "wind_thrust",
+        "baseName": "狂风突刺",
+        "tier2": {
+          "name": "狂风突刺+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "wind_thrust"
+              },
+              "effectParams": {
+                "amount": 6.7
+              }
+            }
+          ]
+        },
+        "tier3": {
+          "name": "狂风突刺+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "wind_thrust"
+              },
+              "effectParams": {
+                "amount": 6.7
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/rei_main1.png"
+      },
+      {
+        "skill": "counter_slash",
+        "baseName": "反击斩",
+        "tier2": {
+          "name": "カウンタースラッシュ+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "counter_slash"
+              },
+              "effectParams": {
+                "amount": 6.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "defence_down",
+              "triggerParams": {
+                "skill": "counter_slash"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "counter_slash",
+                "requiresState": "astrum:wind_blade"
+              },
+              "effectParams": {
+                "amount": 6.6
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "defence_down",
+              "triggerParams": {
+                "skill": "counter_slash",
+                "requiresState": "astrum:wind_blade"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 24.0
+              }
+            }
+          ]
+        },
+        "tier3": {
+          "name": "カウンタースラッシュ+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "counter_slash"
+              },
+              "effectParams": {
+                "amount": 6.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "defence_down",
+              "triggerParams": {
+                "skill": "counter_slash"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "counter_slash",
+                "requiresState": "astrum:wind_blade"
+              },
+              "effectParams": {
+                "amount": 6.6
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "defence_down",
+              "triggerParams": {
+                "skill": "counter_slash",
+                "requiresState": "astrum:wind_blade"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 24.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/rei_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "迅捷剑姬",
+        "tier2": {
+          "name": "迅捷剑姬+"
+        },
+        "tier3": {
+          "name": "迅捷剑姬+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                },
+                {
+                  "vanillaEffect": "minecraft:health_boost",
+                  "amplifier": 4
+                }
+              ]
+            },
+            {
+              "tier": 3,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                },
+                {
+                  "vanillaEffect": "minecraft:health_boost",
+                  "amplifier": 4
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/rei_ex.png"
+      }
+    ]
+  }
+}

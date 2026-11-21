@@ -198,6 +198,53 @@ python gen_book_panel_texture.py # 角色册边框
 
 3. 重新 `gradlew build`，产出的 jar 就带完整美术。
 
+### 玩家装法：`astrum-assets.zip`（推荐，不用自己跑脚本）
+
+上面第 1–3 步是**给开发者**的。普通玩家不需要解包，只需要一份**资源包**：
+
+1. 从本项目的 **Releases** 页面下载 **`astrum-assets.zip`**；
+2. 把 zip **原样**（不要解压）放进 `.minecraft/resourcepacks/`；
+3. 游戏里「选项 → 资源包」启用它，然后 `F3+T` 重载资源。
+
+> **这个 zip 是 Release 附件，不在仓库的源码树里。** 它装的是从游戏里提取并加工的美术，和
+> `src/main/resources/assets/astrum/textures/` 下被 `.gitignore` 排除的那些文件是同一批东西——
+> 把它们提交进仓库和提交原始 PNG 是同一种违规。`build/` 也已在 `.gitignore` 里。
+
+**它从哪来。** 仓库里的 `tools/build_asset_pack.py` 生成它：
+
+```powershell
+python tools/build_asset_pack.py                 # 跑全部 gen_*.py，再打包到 build/astrum-assets.zip
+python tools/build_asset_pack.py --check         # 只校验，不写文件
+python tools/build_asset_pack.py --skip-generators --out dist/astrum-assets.zip
+```
+
+脚本做的事：(1) 依次跑 `tools/gen_*.py`；(2) 只把 **`.gitignore` 声明为派生美术的那些贴图** + `pack.mcmeta`
+（`pack_format` 34）打进 zip —— 贴图清单从 `.gitignore` 读，不另抄一份，所以新增一张图不会让包悄悄变
+不完整；(3) 写到指定路径（默认 `build/`）。`--check` 校验：文件都在、每张 PNG 都能解码、总体积在预算内、
+`pack.mcmeta` 与 mod 自己的一致。
+
+### 没装资源包会看到什么：「请安装资源包」占位图
+
+**不会**看到 Minecraft 的紫黑格子（那是「贴图损坏」的样子，人类已经拍到过两次）。客户端在画任何
+来自官方美术的贴图之前先问 `impl/client/ArtFallback`，缺图就改画
+`textures/gui/placeholder.png`——一张由 `tools/gen_placeholder.py` 生成的 128×128 占位图，
+上面写着**「请安装 / 资源包」**和文件名 `astrum-assets.zip`。
+
+它覆盖的地方：角色册的头像格、编队槽、立绘背景、技能图标、状态栏里的队伍头像、HUD 的充能圈头像、
+轮盘/提示条的脸。
+
+**拦截不到的地方（3 处，各有原因）：**
+
+| 表面 | 为什么拦不到 |
+|---|---|
+| 原版效果栏图标（`textures/mob_effect/*.png`） | 由原版 `MobEffectTextureManager` 从 `mob_effects` **atlas** 按注册名取样，本 mod 从不主动 blit；atlas 没有「按 id 回退」的机制，替换全局缺失图会连别人的 mod 一起改。**这些文件由本 mod 自己生成并随 jar 发布**，所以实际不会缺 |
+| 物品贴图（`textures/item/character_card.png` 等） | 由物品模型 JSON 管线解析，不是本 mod 的调用；**这些图是自绘的、已提交**，也不会缺 |
+| 演出实体的 GeckoLib 皮肤（`textures/entity/djeeta.png`） | 由 GeckoLib 的渲染器绑定，不在本 mod 的任何类里；缺图时它显示自己的纯白模型而不是紫黑格子 |
+
+**占位图本身是自绘的，所以它被提交进仓库**，同时也打进 `astrum-assets.zip`——这样装了包和没装包看到的
+是同一张图。`tools/gen_placeholder.py --check` 会重新渲染并逐像素比对（需要系统里有一个 CJK 字体，
+候选列表在脚本的 `FONT_CANDIDATES` 里；找不到就**明确报错**，不会悄悄换字体渲染）。
+
 > ⚠️ **素材版权归 Cygames, Inc.**，本仓库不分发它们，也不为你的使用方式背书。
 > 详见 [NOTICE.md](NOTICE.md)。
 

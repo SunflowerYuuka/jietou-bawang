@@ -11,6 +11,10 @@ import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.config.Balance;
 import com.astrum.pcrd.impl.config.ServerConfig;
+import com.astrum.pcrd.impl.effect.Crit;
+import com.astrum.pcrd.impl.effect.DamageReduction;
+import com.astrum.pcrd.impl.effect.MagicAttack;
+import com.astrum.pcrd.impl.effect.PanicControl;
 import com.astrum.pcrd.impl.growth.ContributionTracker;
 import com.astrum.pcrd.impl.growth.GrowthMultiplier;
 import com.astrum.pcrd.impl.growth.KillExperience;
@@ -91,7 +95,9 @@ import org.jetbrains.annotations.ApiStatus;
  * {@code LivingDamageEvent.Post} makes the outer sequence resume on an already-dead entity and
  * fired {@code LivingDeathEvent} <b>twice</b> for one kill (measured: deaths=2, loot=1). Queueing
  * until the tick ends also makes "same tick" literal — several hits on one target in one tick
- * merge into a single {@code hurt()} per damage type.
+ * merge into a single {@code hurt()} per damage type (and per skill crit multiplier, in the one case
+ * where two different skills file that type with two different multipliers — see {@code DamageBatch};
+ * every hook of one skill shares its multiplier, so the usual case really is one per type).
  *
  * <p>Everything this class does is server-side: {@code hurt()} returns early on the client, so
  * these events are only posted on the logical server (no {@code isDedicatedServer()} branch
@@ -152,6 +158,43 @@ public final class CombatEvents {
     public static void register() {
         NeoForge.EVENT_BUS.register(new CombatEvents());
         PassiveCharge.register();
+        registerPanic();
+        // The card lottery's craft-time roll. Registered here rather than from Astrum for the same reason the
+        // three above are: Astrum stays wiring-only, and every NeoForge.EVENT_BUS.register call in this mod is
+        // in one place so a missing one is visible. The class is in impl.gacha because the roll is its own
+        // subject; only the subscription lives here.
+        NeoForge.EVENT_BUS.register(com.astrum.pcrd.impl.gacha.CardRollOnCraft.class);
+    }
+
+    /**
+     * Wires 「恐慌」's three event-shaped halves: the attack refusal, the interaction refusal, and the two
+     * effect-ending hooks that put a mob's AI back.
+     *
+     * <h2>Why these live beside the other combat listeners</h2>
+     * All five are <b>server-side refusals or restorations on one entity</b>, which is this class's subject,
+     * and {@code Astrum.java} is wiring-only and must stay short (plan R1). Registering them here rather than
+     * from a listener class of their own also keeps the count of {@code NeoForge.EVENT_BUS.register} calls in
+     * one place, so a build that forgot one is visible.
+     *
+     * <p>{@link com.astrum.pcrd.impl.effect.PanicControl} holds the rules; this method only says which events
+     * they answer. Two of those events are the effect-ending pair, because {@code MobEffect} has no
+     * {@code onEffectRemoved} in 21.1.265 — see that class's javadoc.
+     */
+    private static void registerPanic() {
+        NeoForge.EVENT_BUS.addListener(PanicControl::onAttack);
+        // One registration per concrete, cancellable PlayerInteractEvent subclass. The bus REFUSES a listener
+        // whose parameter is the abstract base ("Cannot register listeners for abstract class
+        // PlayerInteractEvent. Register a listener to one of its subclasses instead!") — and it throws at mod
+        // load, so a single generic registration was a startup crash rather than a style choice. The two
+        // client-only "clicked empty space" forms are not cancellable and carry no server-side action, so they
+        // are deliberately absent.
+        NeoForge.EVENT_BUS.addListener(PanicControl::onRightClickBlock);
+        NeoForge.EVENT_BUS.addListener(PanicControl::onLeftClickBlock);
+        NeoForge.EVENT_BUS.addListener(PanicControl::onRightClickItem);
+        NeoForge.EVENT_BUS.addListener(PanicControl::onEntityInteract);
+        NeoForge.EVENT_BUS.addListener(PanicControl::onEntityInteractSpecific);
+        NeoForge.EVENT_BUS.addListener(PanicControl::onEffectEnded);
+        NeoForge.EVENT_BUS.addListener(PanicControl::onEffectRemoved);
     }
 
     // ------------------------------------------------------------------ damage landing
@@ -159,10 +202,66 @@ public final class CombatEvents {
     /**
      * Remembers the health a target had before its damage sequence, so the hit can be charged for
      * the health it actually removed rather than for the number the container carries.
+     *
+     * <h2>The two defence buffs are applied here, and why this stage</h2>
+     * 「物理防御力アップ」 and 「魔法防御力アップ」 reduce incoming damage by a percentage, and 1.21.265 has no
+     * "damage taken" attribute — armour and resistance are applied inside
+     * {@code LivingEntity.getDamageAfterMagicAbsorb}, reading fields and effects, not an attribute this mod can
+     * modify. So the reduction has to happen where the damage is decided, which is
+     * {@link LivingDamageEvent.Pre}: post-armour, pre-absorption, and writable through {@code setNewDamage}.
+     * {@code Post} is too late and is not writable (see this class's table).
+     *
+     * <p>{@code Pre} is also the right stage for a <em>second</em> reason: it is where this class already
+     * records {@link #preHitHealth}, so "what the victim had" and "what the victim takes" are read at one
+     * point, and the charge credited at {@code Post} is the health actually lost after the buff. Applying the
+     * reduction at {@code Post} would charge the party for damage the buff had prevented.
+     *
+     * <p>The split between the two buffs is {@link DamageReduction#isMagic}'s alone — this method asks for
+     * "the reduction against this source" and never decides which half applies. That is deliberate: the
+     * classification and its documented limitation live in one place.
      */
     @SubscribeEvent
     public void onDamagePre(LivingDamageEvent.Pre event) {
         preHitHealth.put(event.getEntity().getUUID(), event.getEntity().getHealth());
+
+        float incoming = event.getNewDamage();
+        if (!(incoming > 0.0F)) {
+            return;
+        }
+        // 「两个单独的通道」 first, and before every multiplier: a typed barrier has to be taken out of the
+        // absorption float <b>before</b> vanilla spends it (the spend happens after this event returns), or a
+        // magic bolt would eat a physical-only barrier's points. The classifier is DamageReduction's, one call
+        // in, so the shield, the two defence buffs and the physical immunity all answer 「is this magic」 the
+        // same way. Writes nothing when every layer covers the hit (the ordinary shared barrier), which is why
+        // the shipped behaviour of a plain 護盾 is unchanged.
+        com.astrum.pcrd.impl.effect.Shields.parkForTypedDamage(event.getEntity(), event.getSource());
+        // 「物理无敌」 first, and before the two defence buffs: an immune hit takes no health at all, so there is
+        // nothing for a percentage to reduce. The decision is PhysicalImmunity's — it asks the same
+        // DamageReduction.isMagic the line below asks, so the physical/magic split has one owner.
+        if (com.astrum.pcrd.impl.effect.PhysicalImmunity.blocks(event.getEntity(), event.getSource())) {
+            event.setNewDamage(0.0F);
+            Astrum.LOGGER.debug("astrum: physical immunity nullified {} damage from {} on {}", incoming,
+                    damageTypeId(event.getSource()), event.getEntity().getName().getString());
+            return;
+        }
+        // Both halves in one call: the defence buffs' reduction and the magic-defence <em>debuff</em>'s
+        // increase. They are one multiplication of the remaining fraction (see DamageReduction.applyBoth),
+        // which is why this is one call rather than two stages — two stages would leave the debuff applied
+        // to damage the buff had already removed, or not at all if the buff's early return fired.
+        double reduction = DamageReduction.reductionFor(event.getEntity(), event.getSource());
+        double magicPenalty = DamageReduction.magicPenaltyFor(event.getEntity(), event.getSource());
+        if (!(reduction > 0.0) && !(magicPenalty > 0.0)) {
+            return;
+        }
+        float adjusted = DamageReduction.applyBoth(incoming, reduction, magicPenalty);
+        if (adjusted == incoming) {
+            return;
+        }
+        event.setNewDamage(adjusted);
+        Astrum.LOGGER.debug("astrum: {} defence took {} damage to {} ({}% reduction, {}% magic-defence-down, "
+                        + "{} source)", DamageReduction.isMagic(event.getSource()) ? "magic" : "physical",
+                incoming, adjusted, Math.round(reduction * 100.0), Math.round(magicPenalty * 100.0),
+                damageTypeId(event.getSource()));
     }
 
     /**
@@ -235,15 +334,24 @@ public final class CombatEvents {
             // The hit has landed, so the combo chain advances here — once per hit, whatever the wheel
             // contains, because a chain is the attacker's rhythm and not a character's feature.
             int comboHits = TriggerRuntime.noteHit(attacker);
+            // 「战斗开始」 rides the same blow, and that is the whole firing path: the first blow after blows
+            // stopped for a while IS the moment a fight begins, so the fact is read here rather than from a
+            // listener of its own (no login, no respawn, no tick). Evaluating it inside this hit's facts —
+            // rather than in a second pass — is what gives a battle-start hook a real target, the hit's own
+            // multiplier slot, and a position in the character's list order, so 雪菲's mark grant runs before
+            // the swing that reads the tally.
+            boolean battleStart = TriggerRuntime.noteBattleStart(attacker);
             TriggerFacts facts = TriggerFacts.forHit(
                     source.getDirectEntity() == attacker,
                     source.is(DamageTypeTags.IS_PROJECTILE),
                     takeCrit(attacker, target),
                     comboHits,
-                    TriggerFacts.isLowHealth(attacker.getHealth(), attacker.getMaxHealth()));
+                    TriggerFacts.isLowHealth(attacker.getHealth(), attacker.getMaxHealth()),
+                    battleStart);
             Astrum.LOGGER.debug("astrum: hit facts on {}: melee={} projectile={} crit={} combo={} "
-                    + "lowHealth={}", target.getName().getString(), facts.meleeHit(),
-                    facts.projectileHit(), facts.crit(), facts.comboHits(), facts.lowHealth());
+                    + "lowHealth={} battleStart={}", target.getName().getString(), facts.meleeHit(),
+                    facts.projectileHit(), facts.crit(), facts.comboHits(), facts.lowHealth(),
+                    facts.battleStart());
             queue(attacker, target, source, dealt, facts);
         }
     }
@@ -271,6 +379,15 @@ public final class CombatEvents {
         }
         credit(killer, ServerConfig.UB.ubChargePerKill.get());
         if (event.getEntity() != killer) {
+            // 「+2 秒 / 击杀，无上限」 — the second loop's extension rides the kill this method already recognised:
+            // same event, same killer, no second "did something die" rule and no listener of its own. It runs
+            // beside the kill charge because both are payouts for the same fact, and before the queue because
+            // an extension is state rather than damage.
+            int extended = SecondRotationRuntime.extendOnKill(killer);
+            if (extended > 0) {
+                Astrum.LOGGER.debug("astrum: kill extended {} second rotation(s) for {}",
+                        extended, killer.getGameProfile().getName());
+            }
             // The kill's experience is settled here, on the same event that pays kill charge and runs
             // the killer's `kill` hooks: one combat surface, not two. KillExperience consumes the
             // contribution ledger (so the same victim cannot pay twice) and writes the roster.
@@ -364,8 +481,42 @@ public final class CombatEvents {
                     target.getName().getString());
             return;
         }
+        applyBatchNow(pended.attacker(), target, pended.batch());
+    }
+
+    /**
+     * Applies one batch <b>immediately</b>, one {@code hurt()} per damage type — the same body
+     * {@link #flush} runs at the end of the tick.
+     *
+     * <h2>Why this is extracted rather than copied</h2>
+     * The per-entry work is not trivial: it resolves the damage type holder, asks {@code MagicAttack} for the
+     * magic scale, draws {@code Crit}'s roll (with the entry's own multiplier when a skill declared one), and
+     * logs the landed amount. A second caller that needs a batch settled outside the tick's queue — the
+     * ultimate's <b>land hooks</b>, which fire inside the settlement's own victim loop and whose
+     * {@code extra_damage} must land as part of that cast — would otherwise have to re-implement all of it,
+     * and the two copies would disagree the first time one of those rules changed. So the loop lives here
+     * once and both callers use it.
+     *
+     * <p>The only difference between the two callers is <b>when</b>: a hit's batch is merged with any other
+     * queued for the same (attacker, target) pair and drained after the tick, while the ultimate's own batch is
+     * settled inside the cast. Nothing about the scaling, the type resolution or the recursion fuse differs.
+     *
+     * <p>Never throws: a missing damage type, a dead target or one failing {@code hurt()} costs that entry,
+     * and the remaining entries still run — the policy {@link #flush} has always followed.
+     *
+     * @param attacker the player the damage is attributed to
+     * @param target   the body it lands on
+     * @param batch    the entries to apply, in order
+     */
+    public static void applyBatchNow(ServerPlayer attacker, LivingEntity target, DamageBatch batch) {
+        if (attacker == null || target == null || batch == null || batch.isEmpty()) {
+            return;
+        }
+        if (target.isRemoved() || !target.isAlive()) {
+            return;
+        }
         Registry<DamageType> damageTypes = target.level().registryAccess().registryOrThrow(Registries.DAMAGE_TYPE);
-        for (DamageBatch.Entry entry : pended.batch().entries()) {
+        for (DamageBatch.Entry entry : batch.entries()) {
             if (entry.amount() <= 0.0F) {
                 continue;
             }
@@ -377,13 +528,31 @@ public final class CombatEvents {
                         entry.type().getPath());
                 continue;
             }
-            DamageSource applied = new DamageSource(holder, pended.attacker(), pended.attacker());
+            DamageSource applied = new DamageSource(holder, attacker, attacker);
+            // The one place a hook-batch amount meets the attacker's stats, and it happens exactly once, on
+            // the amount about to be handed to hurt().
+            //
+            // MagicAttack.scaleFor answers exactly 1.0 for a physical type (it asks DamageReduction.isMagic,
+            // the same predicate the victim's defence buffs use), so a melee hit is untouched by that factor.
+            // Crit.factorFor is the second factor: one roll per entry, from the level's RandomSource, and
+            // exactly 1.0 for a caster with no crit chance — which is also why it draws nothing in that case.
+            // `entry.critMultiplier()` is the skill's OWN multiplier (「本技能暴击 4 倍」), and it REPLACES the
+            // caster's global one for this entry; empty — every hook that does not declare one — keeps the
+            // global, exactly as before task 55. The multiplier travels with the amount from HookContext's
+            // per-hook batch tag, because several skills' amounts are merged here at the end of the tick.
+            // Scaling here, before hurt(), is what keeps the number from being multiplied a second time by
+            // anything downstream (armour, the defence buffs, the vanilla crit flag and the damage-event
+            // stages all see the already-final value).
+            float dealt = entry.amount()
+                    * (float) MagicAttack.scaleFor(attacker, applied)
+                    * (float) Crit.factorFor(attacker,
+                            attacker.serverLevel().getRandom(), entry.critMultiplier());
             try {
-                boolean landed = target.hurt(applied, entry.amount());
+                boolean landed = target.hurt(applied, dealt);
                 Astrum.LOGGER.debug("astrum: extra {} damage {} on {} landed={} hp={}", entry.type(),
-                        entry.amount(), target.getName().getString(), landed, target.getHealth());
+                        dealt, target.getName().getString(), landed, target.getHealth());
             } catch (RuntimeException e) {
-                Astrum.LOGGER.error("astrum: applying {} extra damage to {} threw", entry.amount(),
+                Astrum.LOGGER.error("astrum: applying {} extra damage to {} threw", dealt,
                         target.getName().getString(), e);
             }
         }
@@ -407,6 +576,12 @@ public final class CombatEvents {
      * <p>Merging rather than overwriting is what makes "same tick" literal for the whole pipeline, not
      * just for {@code extra_damage}: two hits on one target in one tick, and a splash from a third hit
      * elsewhere, all end in one {@code hurt()} per damage type (spec §5.1 rule 3).
+     *
+     * <p><b>The crit multiplier travels with the amount, so it must be re-applied here.</b> A skill's
+     * per-skill crit multiplier is part of what the amount <em>is</em> ({@code DamageBatch}'s second key),
+     * and {@link DamageBatch#add} files under whatever tag the batch it is called on carries. Re-adding an
+     * entry untagged would silently downgrade 鏡華's 4× back to the global 1.5 at merge time — a bug that
+     * only shows up in play. Hence the {@code tagged(...)} view below.
      */
     private void merge(PendingKey key, Pending fresh) {
         Pending already = pending.get(key);
@@ -415,7 +590,7 @@ public final class CombatEvents {
             return;
         }
         for (DamageBatch.Entry entry : fresh.batch().entries()) {
-            already.batch().add(entry.type(), entry.amount());
+            already.batch().tagged(entry.critMultiplier()).add(entry.type(), entry.amount());
         }
     }
 
@@ -429,12 +604,16 @@ public final class CombatEvents {
      * {@code astrum:hook_damage} it will not re-enter hook evaluation.
      */
     private void queueDamage(ServerPlayer attacker, LivingEntity target, ResourceLocation type,
-            float amount) {
+            float amount, java.util.OptionalDouble critMultiplier) {
         if (!(amount > 0.0F) || target.isRemoved() || !target.isAlive()) {
             return;
         }
         DamageBatch batch = new DamageBatch();
-        batch.add(type, amount);
+        // The skill's own multiplier, when it has one: a splash from a 4× skill must crit at 4× on every body it
+        // lands on, exactly as the primary hit does. Filed through the tagged view so the entry's key — and
+        // therefore the flush — carries it, and so a later merge (merge re-tags) cannot downgrade it to the
+        // caster's global 1.5.
+        batch.tagged(critMultiplier).add(type, amount);
         merge(new PendingKey(attacker.getUUID(), target.getUUID()),
                 new Pending(attacker, target, batch));
     }
@@ -451,8 +630,13 @@ public final class CombatEvents {
         // without every player logging out (a crash, a forced shutdown) must not leave cursors behind
         // for the next world, which is the same reason the rest of this method exists.
         SkillRotationStore.clearAll();
+        // A second loop is a deadline against this world's clock, so it belongs to this world's session for
+        // exactly the same reason — and a deadline carried into another world would compare against a
+        // game time that has nothing to do with it.
+        SecondRotationStore.clearAll();
         // One world's fights are not the next world's: the contribution ledger is cleared here, with
-        // the rest of this class's session state, exactly as DishThrottle is cleared by GrowthEvents.
+        // the rest of this class's session state. (The dish allowance used to be cleared in the same
+        // place; it is player data now, see FedDishes.)
         ContributionTracker.clear();
         // An operator-tuned guard must not silently govern the next world (spec §8.4): the override
         // is session state, not a persisted value. Task 14's command sets it; this clears it.
@@ -460,17 +644,22 @@ public final class CombatEvents {
     }
 
     /**
-     * A player left the world: forget her characters' skill rotations.
+     * A player left the world: forget her characters' skill rotations <b>and</b> their second loops.
      *
      * <p>「退出就重置。」 This is the event the human named, and it is the right one rather than login:
      * clearing on the way out means a player who disconnects and returns starts from her first skill
      * again, and it also releases the entries for a player who never comes back.
+     *
+     * <p>The second loop is cleared in the same breath and for the same reason. It is a combat state that
+     * pays out skills; a deadline that survived a relog would put a returning player straight back into a
+     * loop she had not cast for, with a game time from the session before.
      */
     @SubscribeEvent
     public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
-            SkillRotationStore.logCleared(SkillRotationStore.clear(player.getUUID()),
-                    player.getGameProfile().getName());
+            String who = player.getGameProfile().getName();
+            SkillRotationStore.logCleared(SkillRotationStore.clear(player.getUUID()), who);
+            SecondRotationStore.logCleared(SecondRotationStore.clear(player.getUUID()), who);
         }
     }
 
@@ -522,7 +711,7 @@ public final class CombatEvents {
         // The area_charge sink is constructed in exactly one place, and it is the guarded one.
         HookContext hit = new HookContext(attacker, target, source, dealt, Balance.MAX_MULTIPLIER,
                 GrowthMultiplier.NEUTRAL, NO_CHARACTER, batch,
-                (other, type, amount) -> queueDamage(attacker, other, type, amount),
+                (other, type, amount, crit) -> queueDamage(attacker, other, type, amount, crit),
                 areaCharge);
         // Experience is paid for damage, so only a hit that removed health records a contribution.
         // The kill and block paths reach this method too — a death has no health left to attribute
@@ -547,6 +736,17 @@ public final class CombatEvents {
             // affection definition/tier. The composition with multipliers[slot] happens per hook, in
             // HookContext.forHook, so there is exactly one chain (see MultiplierChain).
             GrowthMultiplier growth = GrowthMultiplier.of(progress, def);
+            // 「装备期间所有技能伤害都会增加物理伤害（大）」: 矛依未's 行动模式2 bonus, <b>read per hit</b> from the live
+            // deadline and folded into the one multiplier chain. Outside the mode this answers 1.0 and
+            // `inMode` returns the same value, so a character with no mode — and the same character before her
+            // ultimate — is byte-identically unchanged. That conditionality is the whole clause: an
+            // unconditional bonus would be 凭空变强, which is what the data refused to record.
+            double modeBonus = SecondRotationRuntime.modeBonusFor(attacker, characterId, def);
+            if (modeBonus > GrowthMultiplier.NO_MODE_BONUS) {
+                growth = growth.inMode(modeBonus);
+                Astrum.LOGGER.debug("astrum: {} is in a combat mode worth x{} this hit (character {})",
+                        attacker.getName().getString(), modeBonus, characterId);
+            }
             HookContext slotContext = hit.forSlot(multipliers[slot], growth, characterId);
             double before = totalOf(batch);
             HookEvaluator.evaluate(def, slotContext, facts);

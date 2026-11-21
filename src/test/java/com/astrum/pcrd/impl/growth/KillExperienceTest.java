@@ -4,7 +4,6 @@ import com.astrum.pcrd.api.v1.AffectionDef;
 import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.api.v1.CharacterProgress;
 import com.astrum.pcrd.api.v1.GrowthDef;
-import com.astrum.pcrd.api.v1.HookModifier;
 import com.astrum.pcrd.impl.InternalIds;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +13,7 @@ import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -128,7 +128,7 @@ class KillExperienceTest {
                 definition(AFFECTION));
         assertEquals(1.0, growth.level(), 1e-9);
         assertEquals(1, growth.tier());
-        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 1), 1e-9);
+        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth), 1e-9);
     }
 
     /** A level raises the multiplier linearly by {@link ExperienceKernel#LEVEL_GROWTH_PER_LEVEL}. */
@@ -138,38 +138,76 @@ class KillExperienceTest {
                 definition(AFFECTION));
         assertEquals(1.0 + ExperienceKernel.LEVEL_GROWTH_PER_LEVEL * 15, growth.level(), 1e-9);
         assertEquals(growth.level(),
-                com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 0), 1e-9,
+                com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth), 1e-9,
                 "with no diminishing and no tier-2 modifier, the chain is the level factor alone");
     }
 
     /**
-     * The tier-2 rule in one place: the hook the pack listed goes up by its declared factor, a hook it
-     * did not list stays exactly where it was (spec §6.2's 只改数值不改数量).
+     * <b>A tier no longer multiplies anything.</b>
+     *
+     * <p>This method used to be {@code tierTwoScalesOnlyTheListedHook}: the pack listed a hook index and a
+     * factor, and the chain applied the factor to that hook alone. That model is gone. A tier now
+     * <em>selects a skill set</em>, so the multiplier is a function of the level only — and the selection is
+     * asserted where it belongs, in {@code AffectionKernelTest} and
+     * {@code ThreeCharactersResourceTest.djeetaRotatesWideSlashThenWeaponBurst}.
+     *
+     * <p>The assertion is kept as a <b>negative</b> one on purpose: a future edit that reintroduced an
+     * affection factor into the chain would change this number, and this is the only place that would notice.
      */
     @Test
-    void tierTwoScalesOnlyTheListedHook() {
+    void aTierDoesNotMultiplyAnythingAnyMore() {
         GrowthMultiplier growth = GrowthMultiplier.of(new CharacterProgress(1, 0, 3),
                 definition(AFFECTION));
         assertEquals(2, growth.tier(), "affection 3 is the shipped tier-2 threshold");
-        assertEquals(1.5, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 0), 1e-9,
-                "hook index 0 is the one the pack lists at 1.5");
-        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 1), 1e-9,
-                "hook index 1 was not listed, so it must not move");
-        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 2), 1e-9);
+        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth), 1e-9,
+                "tier 2 replaces skills; it does not scale them");
     }
 
     /**
-     * Tier 3 is above tier 2: the character keeps the numbers it earned <b>and</b> is flagged for the
-     * enhanced ultimate. Losing the tier-2 modifier on the way to tier 3 would be a downgrade.
+     * Tier 3 casts the enhanced ultimate and runs the 6★ skill set — neither of which is a multiplier.
+     *
+     * <h2>Why this is where the old "keeps tier 2's numbers" test went</h2>
+     * That test asserted the tier-2 modifier survived into tier 3. There is no modifier now; what tier 3
+     * actually does is swap the ultimate <em>and</em> resolve the ladders a rung deeper. Both halves are
+     * asserted here, on the shipped 姬塔 data, so "tier 3 is strictly above tier 2" stays a claim with
+     * evidence.
      */
     @Test
-    void tierThreeKeepsTheTierTwoNumbersAndFlagsTheEnhancedUb() {
-        GrowthMultiplier growth = GrowthMultiplier.of(new CharacterProgress(1, 0, 8),
-                definition(AFFECTION));
+    void tierThreeSwapsTheUltimateAndDeepensTheSkillSet() throws Exception {
+        GrowthMultiplier growth = GrowthMultiplier.of(new CharacterProgress(1, 0, 8), definition(AFFECTION));
         assertEquals(3, growth.tier());
-        assertEquals(1.5, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 0), 1e-9,
-                "tier 3 must not lose tier 2's hook modifier");
         assertTrue(AffectionKernel.usesEnhancedUb(growth.tier()));
+
+        com.astrum.pcrd.api.v1.CharacterDef djeeta = shippedDjeeta();
+        assertEquals("黄金耀光",
+                com.astrum.pcrd.impl.growth.AffectionKernel.ladderFor(djeeta, "wide_slash")
+                        .orElseThrow().nameAt(growth.tier()),
+                "tier 3 does not scale 广域斩击+, it renames it");
+        assertEquals(20.0, firstDamage(
+                com.astrum.pcrd.impl.growth.AffectionKernel.hooksAt(djeeta, growth.tier())), 1e-9,
+                "and the body is 黄金耀光's 4.8 coefficient, not 广域斩击+'s 2.25");
+    }
+
+    /** {@return the shipped 姬塔 definition, read through the real codec} */
+    private static com.astrum.pcrd.api.v1.CharacterDef shippedDjeeta() throws Exception {
+        String path = "/data/astrum/" + net.minecraft.core.registries.Registries.elementsDirPath(
+                com.astrum.pcrd.api.v1.RegistryKeys.CHARACTERS) + "/djeeta.json";
+        try (java.io.InputStream in = KillExperienceTest.class.getResourceAsStream(path)) {
+            var json = com.google.gson.JsonParser.parseReader(
+                    new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8));
+            return com.astrum.pcrd.api.v1.CharacterDef.CODEC
+                    .parse(com.mojang.serialization.JsonOps.INSTANCE, json).getOrThrow();
+        }
+    }
+
+    /** {@return the first {@code extra_damage} amount in {@code hooks}} */
+    private static double firstDamage(java.util.List<com.astrum.pcrd.api.v1.EffectHook> hooks) {
+        for (com.astrum.pcrd.api.v1.EffectHook hook : hooks) {
+            if (hook instanceof com.astrum.pcrd.api.v1.EffectHook.ExtraDamage damage) {
+                return damage.amount();
+            }
+        }
+        return Double.NaN;
     }
 
     /** An unknown character is neutral rather than switched off. */
@@ -179,17 +217,26 @@ class KillExperienceTest {
         assertEquals(GrowthMultiplier.NEUTRAL, GrowthMultiplier.of(new CharacterProgress(5, 0, 8), null));
         assertEquals(1.0, GrowthMultiplier.NEUTRAL.level(), 1e-9);
         assertEquals(0.7, com.astrum.pcrd.impl.combat.MultiplierChain.effective(
-                0.7, GrowthMultiplier.NEUTRAL, 1), 1e-9,
+                0.7, GrowthMultiplier.NEUTRAL), 1e-9,
                 "neutral growth must change nothing: the party multiplier passes through untouched");
     }
 
-    /** A definition with no tier 2 and no tier 3 scales nothing, whatever the affection is. */
+    /**
+     * A definition with no tier 2 and no tier 3 resolves to tier 1, so it runs her <b>base</b> skill set.
+     *
+     * <p>This used to assert "nothing is scaled". With the multiplier gone the assertion is the same fact in
+     * the vocabulary that remains: a threshold of {@code 0} can never be reached, so the tier is 1 and
+     * {@code AffectionKernel.hooksAt} answers her untiered skills.
+     */
     @Test
-    void aDefinitionWithoutTiersScalesNothing() {
+    void aDefinitionWithoutTiersRunsTheBaseSkillSet() {
         AffectionDef bare = new AffectionDef(0, 0, List.of());
-        GrowthMultiplier growth = GrowthMultiplier.of(new CharacterProgress(1, 0, 99), definition(bare));
+        CharacterDef def = definition(bare);
+        GrowthMultiplier growth = GrowthMultiplier.of(new CharacterProgress(1, 0, 99), def);
         assertEquals(GrowthFacts.FIRST_TIER, growth.tier(), "threshold 0 can never be reached");
-        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth, 1), 1e-9);
+        assertSame(def.effects(), com.astrum.pcrd.impl.growth.AffectionKernel.hooksAt(def, growth.tier()),
+                "no reachable tier means her base hooks, untouched");
+        assertEquals(1.0, com.astrum.pcrd.impl.combat.MultiplierChain.effective(1.0, growth), 1e-9);
     }
 
     /** A minimum {@link CharacterDef} carrying only the two halves growth reads. */
@@ -198,11 +245,9 @@ class KillExperienceTest {
                 java.util.Optional.empty(), java.util.Optional.empty(), List.of(),
                 new com.astrum.pcrd.api.v1.UbDef(
                         new com.astrum.pcrd.api.v1.UbTier("base", 1, 20.0,
-                                java.util.OptionalDouble.empty(), Optional.empty(),
-                                OptionalDouble.empty(), java.util.Optional.empty()),
+                                java.util.OptionalDouble.empty(), List.of()),
                         new com.astrum.pcrd.api.v1.UbTier("enhanced", 4, 20.0,
-                                java.util.OptionalDouble.empty(), Optional.empty(),
-                                OptionalDouble.empty(), java.util.Optional.empty())),
+                                java.util.OptionalDouble.empty(), List.of())),
                 GROWTH, affection,
                 java.util.Optional.empty(), java.util.Optional.empty(),
                 java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),

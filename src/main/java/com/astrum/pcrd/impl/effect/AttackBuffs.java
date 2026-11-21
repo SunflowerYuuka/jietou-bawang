@@ -78,6 +78,15 @@ public final class AttackBuffs {
     /** The effect's registry id, for log lines and for a client-side lookup. */
     public static final ResourceLocation ID = InternalIds.id(PATH);
 
+    /** Registry path of the armour debuff: {@code astrum:defence_down}. */
+    public static final String DEFENCE_DOWN_PATH = "defence_down";
+
+    /** The armour debuff's registry id, for log lines and for a client-side lookup. */
+    public static final ResourceLocation DEFENCE_DOWN_ID = InternalIds.id(DEFENCE_DOWN_PATH);
+
+    /** The translation key vanilla resolves for the debuff's name, {@code effect.astrum.defence_down}. */
+    public static final String DEFENCE_DOWN_NAME_KEY = "effect." + DEFENCE_DOWN_ID.toLanguageKey();
+
     /** The translation key vanilla resolves for the effect's name, {@code effect.astrum.attack_buff}. */
     public static final String NAME_KEY = "effect." + ID.toLanguageKey();
 

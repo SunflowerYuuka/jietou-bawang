@@ -104,12 +104,15 @@ class HookPlanTest {
     /**
      * The shipped character fires <b>one</b> small skill per {@code melee_hit}, and her two skills
      * alternate: swing 1 runs {@code extra_damage} (广域斩击), swing 2 runs <b>both</b> halves of
-     * 武器爆发 (attack_buff + gain_charge), swing 3 is back to {@code extra_damage}.
+     * 剑意迸发 (charge_rate_up + attack_buff), swing 3 is back to {@code extra_damage}.
      *
-     * <p>This is the shape the human's 技能2 correction forced: ウェポンバースト is 「自分の物理攻撃力を
-     * 小アップし、TPを特大回復」, so it is two effects on one skill — not two skills, which would have
-     * made the rotation three long and dealt half of 广域斩击 on the swing that should have cast the
-     * whole of 武器爆发.
+     * <p>This is the shape the human's 技能2 correction forced: ウェポンバースト is 「自分の物攻を小アップ
+     * し、TPを特大回復」, so it is two effects on one skill — not two skills, which would have made the
+     * rotation three long and dealt half of 广域斩击 on the swing that should have cast the whole of it.
+     *
+     * <p>The TP half is {@code charge_rate_up}, not {@code gain_charge}: 「TP 特大回復」 raises how fast
+     * the gauge fills (TP上昇), and a one-off lump of charge points is a different mechanic. See
+     * {@code docs/character-effect-mapping.md}.
      *
      * <p>Breaks if: the rotation stops advancing, advances on a failed chance roll, something dedupes
      * the list down to a single fixed hook, <b>or the rotation counts hooks instead of skill groups</b>
@@ -130,10 +133,10 @@ class HookPlanTest {
                 TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
                 (index, hook) -> Optional.empty(), invalid -> {
                 }, first.rotation());
-        assertEquals(List.of(EffectType.ATTACK_BUFF, EffectType.GAIN_CHARGE), types(second.fired()),
-                "swing 2 must run BOTH halves of 武器爆发 (attack up + TP), in one rotation step");
-        assertEquals(List.of(1, 2), indices(second.fired()),
-                "and both are the two hooks tagged weapon_burst");
+        assertEquals(List.of(EffectType.GAIN_CHARGE), types(second.fired()),
+                "swing 2 must run 剑意迸发 — bwiki's 「回复自身【150+1.5*技能等级】技能值」, a TP grant");
+        assertEquals(List.of(1), indices(second.fired()),
+                "and it is the hook tagged weapon_burst");
 
         HookPlan.Outcome third = HookPlan.fire(djeeta.effects(),
                 TriggerFacts.forHit(true, false, false, 3, false), chance -> true,
@@ -147,7 +150,7 @@ class HookPlanTest {
 
     /**
      * The same claim counted from the outside: over four swings the rotation alternates
-     * 广域斩击 ↔ 武器爆发, and 武器爆发 always arrives as a pair.
+     * 广域斩击 ↔ 剑意迸发, and 剑意迸发 always arrives as a pair.
      *
      * <p>Written separately from the test above because it asserts the <b>sequence</b> rather than
      * three hand-fed cursors — a rotation whose {@code advance} were applied twice on a two-hook skill
@@ -167,9 +170,9 @@ class HookPlanTest {
             cursor = outcome.rotation();
         }
         assertEquals(List.of(EffectType.EXTRA_DAMAGE), swings.get(0));
-        assertEquals(List.of(EffectType.ATTACK_BUFF, EffectType.GAIN_CHARGE), swings.get(1));
+        assertEquals(List.of(EffectType.GAIN_CHARGE), swings.get(1));
         assertEquals(List.of(EffectType.EXTRA_DAMAGE), swings.get(2));
-        assertEquals(List.of(EffectType.ATTACK_BUFF, EffectType.GAIN_CHARGE), swings.get(3));
+        assertEquals(List.of(EffectType.GAIN_CHARGE), swings.get(3));
         assertEquals(SkillRotation.START, cursor, "四次挥砍之后回到起点");
     }
 
@@ -205,8 +208,8 @@ class HookPlanTest {
                 },
                 invalid -> fail("no hook of the shipped character may be rejected: " + invalid.problem()),
                 new SkillRotation(1));
-        assertEquals(List.of(EffectType.ATTACK_BUFF, EffectType.GAIN_CHARGE), second,
-                "技能2 through the adapter is both of its effects, on one swing");
+        assertEquals(List.of(EffectType.GAIN_CHARGE), second,
+                "技能2 through the adapter is her one TP-grant hook, on one swing");
     }
 
     /**

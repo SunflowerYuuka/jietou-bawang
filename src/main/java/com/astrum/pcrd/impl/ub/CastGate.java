@@ -19,6 +19,11 @@ import org.jetbrains.annotations.ApiStatus;
  * class has no Minecraft types and no registry access, and cannot accidentally index the party with a
  * slot it has not range-checked.
  *
+ * <p><b>The cooldown in {@link Facts} is the requested slot's character's own.</b> The caller resolves
+ * it ({@code UbState.cooldownOf(characterId)}), because this class does not know how cooldowns are
+ * keyed. That is what keeps the class free of the keying rule: it is handed one deadline and compares
+ * it with the clock, and the "whose deadline" question is answered once, on the reader's side.
+ *
  * @see Reason
  */
 @ApiStatus.Internal
@@ -35,7 +40,8 @@ public final class CastGate {
      * @param known     whether the pack still defines that character
      * @param charge    the gauge, {@code 0..100}; only exactly {@code 100.0} is full
      * @param nowTick   the current game time
-     * @param cdEndTick the tick the global cooldown ends; the end tick is already usable
+     * @param cdEndTick the tick <b>that slot's own character's</b> cooldown ends, from
+     *                  {@code UbState.cooldownOf(character).endTick()}; the end tick is already usable
      */
     public record Facts(int slot, boolean occupied, boolean known, double charge, long nowTick,
             long cdEndTick) {
@@ -51,7 +57,14 @@ public final class CastGate {
         CHARACTER_UNKNOWN,
         /** The gauge is not exactly full. */
         NOT_CHARGED,
-        /** The globally shared cooldown has not ended. */
+        /**
+         * This slot's character is still on her own cooldown.
+         *
+         * <p>「每个角色UB的CD不共享」 — the deadline is read for the character in the requested slot, so
+         * this refusal says "she is still cooling", never "the wheel is cooling". A cast from another
+         * slot whose character is ready passes while this one is refused, and that is the intended
+         * consequence of the human's request rather than a bug: see {@code UbState}'s javadoc.
+         */
         COOLDOWN
     }
 

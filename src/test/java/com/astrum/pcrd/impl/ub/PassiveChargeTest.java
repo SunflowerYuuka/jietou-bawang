@@ -24,7 +24,7 @@ class PassiveChargeTest {
 
     /** Runs {@code ticks} ticks from an empty gauge at {@code perSecond}, returning the final state. */
     private static PassiveCharge.Step run(int ticks, double perSecond) {
-        PassiveCharge.Step state = new PassiveCharge.Step(0.0, 0.0);
+        PassiveCharge.Step state = new PassiveCharge.Step(0.0, 0.0, 0.0);
         for (int i = 0; i < ticks; i++) {
             state = PassiveCharge.step(state.charge(), state.carry(), perSecond);
         }
@@ -83,7 +83,7 @@ class PassiveChargeTest {
         assertEquals(0.0, atCap.carry(), 1e-9, "a full bar must not hoard charge it cannot store");
 
         // Many ticks at the cap stay at the cap rather than overflowing past it.
-        PassiveCharge.Step state = new PassiveCharge.Step(ChargeKernel.MAX_CHARGE, 0.0);
+        PassiveCharge.Step state = new PassiveCharge.Step(ChargeKernel.MAX_CHARGE, 0.0, 0.0);
         for (int i = 0; i < 500; i++) {
             state = PassiveCharge.step(state.charge(), state.carry(), 20.0);
         }
@@ -121,12 +121,61 @@ class PassiveChargeTest {
     @Test
     void theCarryIsAlwaysAFraction() {
         for (double rate : new double[] { 0.2, 0.7, 1.0, 3.0, 4.0, 7.5, 100.0 }) {
-            PassiveCharge.Step state = new PassiveCharge.Step(0.0, 0.0);
+            PassiveCharge.Step state = new PassiveCharge.Step(0.0, 0.0, 0.0);
             for (int tick = 0; tick < 200; tick++) {
                 state = PassiveCharge.step(state.charge(), state.carry(), rate);
                 assertTrue(state.carry() >= 0.0 && state.carry() < 1.0,
                         "carry for " + rate + "/s went out of [0, 1) at tick " + tick + ": " + state.carry());
             }
         }
+    }
+
+    /**
+     * <b>The passive trickle is one of the four sources 「TP上昇」 must reach.</b>
+     *
+     * <h2>What the two halves of the answer mean</h2>
+     * {@link PassiveCharge.Step} reports the gauge <em>with</em> the rate applied ({@code charge}) and the
+     * <b>raw</b> pre-rate points ({@code points}) the listener credits. That split exists so the multiplier is
+     * applied exactly once — inside {@code ChargeKernel.add}, through {@code UbCharge} — while this test can
+     * still prove the rate arrives at the trickle at all.
+     *
+     * <p>So the assertion is on both: {@code points} must be the plain count (ten ticks of 20/s pay ten), and
+     * {@code charge} must be that count times the rate. A listener that credited {@code step.charge()} instead
+     * of {@code step.points()} would double-apply the rate, and the second assertion is what makes that
+     * visible.
+     */
+    @Test
+    void theTrickleHonoursTheChargeRate() {
+        double rate = ChargeKernel.rateForAmplifier(2);      // tier 3: 1.75x
+        assertEquals(1.75, rate, 1e-9);
+
+        // Each tick's Step reports the raw points it paid, so the ten ticks are summed here the way the
+        // listener's gauge accumulates them.
+        double gauge = 0.0;
+        double rawPaid = 0.0;
+        double carry = 0.0;
+        for (int i = 0; i < 10; i++) {
+            PassiveCharge.Step tick = PassiveCharge.step(gauge, carry, 20.0, rate);
+            gauge = tick.charge();
+            rawPaid += tick.points();
+            carry = tick.carry();
+        }
+        assertEquals(10.0, rawPaid, 1e-9, "20/s pays one raw point a tick: ten ticks are ten points");
+        assertEquals(17.5, gauge, 1e-9,
+                "the gauge after the rate is 10 x 1.75; a source that paid only the raw points would read 10");
+
+        // And the neutral rate is the identity, which is what keeps every pre-existing number intact.
+        double plain = 0.0;
+        double plainCarry = 0.0;
+        for (int i = 0; i < 10; i++) {
+            PassiveCharge.Step tick = PassiveCharge.step(plain, plainCarry, 20.0, ChargeKernel.NEUTRAL_RATE);
+            plain = tick.charge();
+            plainCarry = tick.carry();
+        }
+        assertEquals(10.0, plain, 1e-9);
+
+        // A full bar is still a full bar under any rate.
+        PassiveCharge.Step full = PassiveCharge.step(99.0, 0.0, 20.0, 2.25);
+        assertEquals(ChargeKernel.MAX_CHARGE, full.charge(), 1e-9);
     }
 }

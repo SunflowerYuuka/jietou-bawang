@@ -26,7 +26,7 @@ class CharacterRegistryTest {
              "ub":{"base":{"animation":"tempest_blade","hits":1,"damage":20.0},
                    "enhanced":{"animation":"seiga_itten","hits":4,"damage":20.0}},
              "growth":{"expBase":100,"expPerLevel":1.15,"maxLevel":30},
-             "affection":{"tier2Threshold":3,"tier3Threshold":8,"tier2HookModifiers":[]}}""";
+             "affection":{"tier2Threshold":3,"tier3Threshold":8,"skills":[]}}""";
 
     @Test
     void lenientCodecDecodesAValidEntry() {

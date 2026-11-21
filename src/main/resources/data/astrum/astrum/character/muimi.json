@@ -1,0 +1,347 @@
+{
+  "schemaVersion": 1,
+  "displayName": "园上矛依未",
+  "skillName": "真破·天楼霸断剑",
+  "avatar": "astrum:textures/gui/portrait/muimi.png",
+  "icon1st": "astrum:textures/gui/portrait/muimi_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/muimi_3.png",
+  "icon6th": "astrum:textures/gui/portrait/muimi_6.png",
+  "still": "astrum:textures/gui/still/muimi_3.png",
+  "still6th": "astrum:textures/gui/still/muimi_6.png",
+  "dimension": "output",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-a.md §6（锚点口径 = docs/balance-derivation.md §14.1）。UB 天楼霸断剑 4.2A+50+50L = 18850 → 17.0；6★UB 真破·天楼霸断剑 同一条公式 18850 → 17.0，但目标从『最近的敌人』变成『前方所有敌人』，所以 6★ 带 radius（全体伤害），本体不带。技能1 让你们老实点！ 两段：斩击范围280内【0.27*物理攻击力+3.4+3.4*技能等级】= 1250.6 → 1.1，踢击范围280内【0.36*物理攻击力+4.5+4.5*技能等级】= 1660.5 → 1.5，所以 extra_damage 1.1 + splash 1.5（半径 4）+ 击晕 1.5 秒 → panic 1 档（精确对应）；踢击的『击退150』没有机制，记录。技能2 这边这边！ 降低范围半径280内敌人【0.375+0.375*技能等级】= 78.4 物理防御力 12 秒 → 78.4/(0.20*2000) = 0.20 → 减益 1 档（四档阶梯的最小档，§14.4）。好感阶梯：tier2 = 专属（斩击范围300内【0.405*物理攻击力+5.1+5.1*技能等级】= 1875.9 → 1.7 + 击晕 1.5 秒；踢击范围300内【0.54*物理攻击力+6.75+6.75*技能等级】= 2490.75 → 2.3），tier3 = 6★ 改名 ビビらせてやる！++（bwiki 技能图标目录的 技能1_强化2 标签）；bwiki 没给 6★ 技能1 公式，tier3 沿用 tier2 的数，只换名字。EX 潜在之力 15+15L → flat_attack_up 15/15，潜在之力+ 240+15L → 240/15；没有 EX 改名，tier3 与 tier2 同名。 | 第二套循环（本次接入，见 ub.secondRotation）：原作『TP耗光前切换至技能循环2，每秒消费TP【100】』。TP 条 1000、消耗 100/秒 → 满条 10 秒，按 §14.5 的单位换算（1 充能点 = 10 TP）本 mod 的 100 点气槽同样是 10 秒，所以 seconds = 10.0，而且『直接消耗掉全部』(人类裁定①) 已由 UbTransaction 在施放瞬间把气槽清零，故这里只表达时长、不表达每秒扣减。击杀 +2 秒、无上限（人类裁定②）。SP1 天楼回刃斩 4.8A+60+60L = 22140 → 20.0；专武/六星 SP1+ 天楼回刃斩+ 的两个分支 9.6A+120+120L 同式 = 44280 → 40.0（条件分歧的两条分支公式完全相同，所以无条件的 40.0）；SP2 天楼闪薙斩 3.6A+40+40L = 15560 → 14.1。两招的『标记 ID 125 ≥ 1 时追加一段』现在是**真的分支**（task 63）：标记是 `astrum:marker_125` —— 一个只有『持有/不持有』的状态（States 里的第三个命名状态，与风之刃、西式小茶壶同一个形状），由 6★UB 的 `ally_effect` 以 amplifier 0、180 秒、radius 0 给出（『最大 1 层』不是一个要数出来的上限：vanilla 按类型合并效果，第二次授予只是刷新同一个实例）；两条追加分支各写一条 `triggerParams.requiresState: astrum:marker_125` 的 extra_damage —— SP1+ 追加 3.9A+48.75+48.75L = 17988.75 → 16.3、SP2 追加同值 14.1 —— 门在 HookPlan 的 state gate 上，每次命中都重新问一次，标记过期就自动不再追加。追加的那一段只写 extra_damage，不再叠一条 splash：『追加一段』是多了这一段伤害，不是把整个技能再放一次。 【修正】本体 UB 的「TP 耗光前切换至技能循环2」已由 ub.secondRotation 真正承载（人类裁定①：施放瞬间清零 + 持续时长），不再是缺口，故 UB.base 的 extra 已删除——它在详情页会渲染成「尚未实现」，而这句话当时是假的。（task 62 收尾：「装备期间所有技能伤害都会增加物理伤害（大）」已落盘为 secondRotation.damageBonus = 1.5 —— 「大」按 docs/balance-derivation.md §8 的形容词阶梯取 +50%（小 +10% / 中 +30% / 大 +50%），源材料没给百分比，这是本文件的取值理由。条件是重点：`CombatEvents.collect` 每次命中都读 SecondRotationStore.isActive，只在行动模式2 运行时把 1.5 折进 MultiplierChain 的那一次乘法；模式外因子恰好是 1.0，她的伤害与写死的数据完全一致，不存在无条件的凭空变强。已记录的近似：乘的是「她 hook 写的数值」，在伤害类型决定物理/魔法之前，所以她这套全是物理的技能完全对得上；若未来某个模式2 角色打魔法伤害，加成也会落在魔法上——这是本通道唯一的近似，已在 SecondRotation.damageBonus 的 javadoc 里写明。）",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "settle_down"
+      },
+      "effectParams": {
+        "amount": 1.1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "splash",
+      "triggerParams": {
+        "skill": "settle_down"
+      },
+      "effectParams": {
+        "radius": 4.0,
+        "damage": 1.5
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "panic",
+      "triggerParams": {
+        "skill": "settle_down"
+      },
+      "effectParams": {
+        "tier": 1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "defence_down",
+      "triggerParams": {
+        "skill": "over_here"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0,
+        "radius": 4.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "天楼霸断剑",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 17.0
+    },
+    "enhanced": {
+      "name": "真破·天楼霸断剑",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 17.0,
+      "radius": 6.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "control_immunity",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 180.0,
+            "radius": 0.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "ally_effect",
+          "vanillaEffect": "astrum:marker_125",
+          "amplifier": 0,
+          "effectParams": {
+            "seconds": 180.0,
+            "radius": 0.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/muimi_ub.png",
+    "secondRotation": {
+      "condition": "after_ultimate",
+      "seconds": 10.0,
+      "secondsPerKill": 2.0,
+      "damageBonus": 1.5,
+      "hooks": [
+        {
+          "trigger": "melee_hit",
+          "effect": "extra_damage",
+          "triggerParams": {
+            "skill": "sp1"
+          },
+          "effectParams": {
+            "amount": 20.0
+          }
+        },
+        {
+          "trigger": "melee_hit",
+          "effect": "extra_damage",
+          "triggerParams": {
+            "skill": "sp2"
+          },
+          "effectParams": {
+            "amount": 14.1
+          }
+        },
+        {
+          "trigger": "melee_hit",
+          "effect": "splash",
+          "triggerParams": {
+            "skill": "sp2"
+          },
+          "effectParams": {
+            "radius": 6.0,
+            "damage": 14.1,
+            "casterCentred": true
+          }
+        }
+      ],
+      "upgradedHooks": [
+        {
+          "trigger": "melee_hit",
+          "effect": "extra_damage",
+          "triggerParams": {
+            "skill": "sp1"
+          },
+          "effectParams": {
+            "amount": 40.0
+          }
+        },
+        {
+          "trigger": "melee_hit",
+          "effect": "extra_damage",
+          "triggerParams": {
+            "skill": "sp2"
+          },
+          "effectParams": {
+            "amount": 14.1
+          }
+        },
+        {
+          "trigger": "melee_hit",
+          "effect": "splash",
+          "triggerParams": {
+            "skill": "sp2"
+          },
+          "effectParams": {
+            "radius": 6.0,
+            "damage": 14.1,
+            "casterCentred": true
+          }
+        },
+        {
+          "trigger": "melee_hit",
+          "effect": "extra_damage",
+          "triggerParams": {
+            "skill": "sp1",
+            "requiresState": "astrum:marker_125"
+          },
+          "effectParams": {
+            "amount": 16.3
+          }
+        },
+        {
+          "trigger": "melee_hit",
+          "effect": "extra_damage",
+          "triggerParams": {
+            "skill": "sp2",
+            "requiresState": "astrum:marker_125"
+          },
+          "effectParams": {
+            "amount": 14.1
+          }
+        }
+      ]
+    }
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "settle_down",
+        "baseName": "让你们老实点！",
+        "tier2": {
+          "name": "让你们老实点！+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "settle_down"
+              },
+              "effectParams": {
+                "amount": 1.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "settle_down"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "damage": 2.3
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "panic",
+              "triggerParams": {
+                "skill": "settle_down"
+              },
+              "effectParams": {
+                "tier": 1
+              }
+            }
+          ]
+        },
+        "tier3": {
+          "name": "ビビらせてやる！++",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "settle_down"
+              },
+              "effectParams": {
+                "amount": 1.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "settle_down"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "damage": 2.3
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "panic",
+              "triggerParams": {
+                "skill": "settle_down"
+              },
+              "effectParams": {
+                "tier": 1
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/muimi_main1.png"
+      },
+      {
+        "skill": "over_here",
+        "baseName": "这边这边！",
+        "icon": "astrum:textures/gui/skillicon/muimi_main2.png"
+      },
+      {
+        "skill": "sp1",
+        "baseName": "天楼回刃斩",
+        "tier2": {
+          "name": "天楼回刃斩+"
+        }
+      },
+      {
+        "skill": "sp2",
+        "baseName": "天楼闪薙斩"
+      },
+      {
+        "skill": "ex",
+        "baseName": "潜在之力",
+        "tier2": {
+          "name": "潜在之力+"
+        },
+        "tier3": {
+          "name": "潜在之力+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 3,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/muimi_ex.png"
+      }
+    ]
+  }
+}

@@ -25,7 +25,7 @@ import sys
 
 from PIL import Image, ImageDraw
 
-SIZE = 32
+SIZE = 16   # same 16x16 as every other effect sprite - see gen_effect_icon_copies.py
 
 #: One colour per slot: five visually distinct entries even when the fallback is what is drawn.
 SLOT_COLORS = (

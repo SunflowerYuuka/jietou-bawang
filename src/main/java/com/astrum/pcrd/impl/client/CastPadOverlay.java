@@ -151,11 +151,12 @@ public final class CastPadOverlay {
         Optional<CharacterDef> definition = AstrumApi.characters()
                 .flatMap(registry -> Optional.ofNullable(registry.get(id.get())));
         // Same tier join as the wheel and the book: one rule, so the pad's chip cannot show an older picture
-        // than the roster cell a few keys away.
+        // than the roster cell a few keys away. And the same square frame, with no circle around her:
+        // 「把圆圈删除。」 The chip's own plate and its outline are the chip's geometry, not the avatar's.
         WheelIcon icon = WheelIcon.of(
                 definition.flatMap(value -> TierAvatar.forPartySlot(value, id.get())),
                 ClientPartyCache.enhanced(slot));
-        return WheelIconDraw.draw(graphics, x, y, icon, definition, ICON_RADIUS);
+        return WheelIconDraw.drawCentred(graphics, x, y, icon, definition, ICON_RADIUS);
     }
 
     /** {@return an ARGB colour as a printable {@code #AARRGGBB}, for the per-frame diagnostic} */

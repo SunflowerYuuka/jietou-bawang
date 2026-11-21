@@ -98,6 +98,25 @@ public final class GrowthFacts {
     }
 
     /**
+     * {@return how many effect tiers a character of {@code level} adds to every tiered effect}
+     *
+     * <p>A delegation to {@link LevelBands#bonusAt}, which owns the four bands (1–30 {@code +0}, 31–60
+     * {@code +1}, 61–90 {@code +2}, 91–100 {@code +3}). It is here as well as in
+     * {@code AffectionKernel} because both of those are documented front doors to the growth rules and a
+     * caller should not have to know which one re-exports this; neither of them restates the table.
+     *
+     * <p><b>Not</b> a degree of {@link #tier}: that one is the affection ladder (which skill set runs) and
+     * this one is the level band (how many rungs above the declared tier an effect lands). One is selected
+     * by affection, the other by level, and both end up as "a tier" — which is precisely why the table lives
+     * in one class and the clamp lives in {@code EffectTiers}.
+     *
+     * @param level the character's level; anything below 1 answers the first band
+     */
+    public static int bandBonus(int level) {
+        return LevelBands.bonusAt(level);
+    }
+
+    /**
      * {@return the threshold of the tier above the one {@code affection} is in, or empty at the top}
      *
      * <p>Used by the growth view's text ("goodwill 5, next tier at 8"). Empty means "there is nothing

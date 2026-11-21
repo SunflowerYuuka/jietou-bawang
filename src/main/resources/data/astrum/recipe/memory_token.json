@@ -1,0 +1,12 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "group": "astrum",
+  "category": "misc",
+  "ingredients": [
+    { "item": "astrum:character_card" }
+  ],
+  "result": {
+    "id": "astrum:memory_token",
+    "count": 1
+  }
+}

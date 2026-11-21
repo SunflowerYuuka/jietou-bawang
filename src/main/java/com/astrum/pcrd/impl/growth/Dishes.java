@@ -20,7 +20,7 @@ import org.jetbrains.annotations.Nullable;
  *       is a block. Feeding a character a spoonful of sugar reads as a placeholder, because it is
  *       one.</li>
  *   <li><b>The throttle made the list pointless.</b> The rule is one of each dish per game-day
- *       ({@link DishThrottle}), so four dishes bought four affection a day from four unrelated pantry
+ *       ({@link com.astrum.pcrd.impl.attach.FedDishes}), so four dishes bought four affection a day from four unrelated pantry
  *       items. The list was not a choice the player made; it was a checklist.</li>
  *   <li><b>A dedicated dish is one thing to draw, name and balance.</b> One item, one icon, one recipe,
  *       one line in the lang file per language — and the affection rule now reads "cook a meal, feed it",

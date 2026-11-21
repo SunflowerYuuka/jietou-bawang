@@ -223,9 +223,11 @@ public final class WheelOverlay {
                 def.flatMap(definition -> TierAvatar.forPartySlot(definition, id.get())), enhanced);
         int vertices = 0;
         if (layout.showIcon()) {
-            // The icon itself is drawn by WheelIconDraw, which the cast pad also uses: the rings, the
-            // glyph fallback and the tier-3 marker exist once, so the two overlays cannot drift apart.
-            vertices += WheelIconDraw.draw(graphics, x, y + layout.iconOffsetY(), icon, def,
+            // The icon itself is drawn by WheelIconDraw, which the cast pad also uses: the square frame, the
+            // glyph fallback and the tier-3 marker exist once, so the two overlays cannot drift apart. There is
+            // no circle around the avatar — 「按B呼出的轮盘菜单，还是原来的带圆圈的头像，把圆圈删除。」 The wheel's own
+            // geometry (the sector plates and the outline band) is untouched; only the per-avatar ring is gone.
+            vertices += WheelIconDraw.drawCentred(graphics, x, y + layout.iconOffsetY(), icon, def,
                     layout.iconRadius());
         }
 

@@ -1,7 +1,6 @@
 package com.astrum.pcrd.impl.combat;
 
 import com.astrum.pcrd.Astrum;
-import com.astrum.pcrd.impl.growth.AffectionKernel;
 import com.astrum.pcrd.impl.growth.GrowthMultiplier;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -10,7 +9,7 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>The formula</h2>
  * <pre>
- * effective(slot, hook) = diminishing(slot) × level(character) × affectionHook(character, hook)
+ * effective(slot, character) = diminishing(slot) × level(character) × mode(character, now)
  * </pre>
  *
  * <ul>
@@ -18,26 +17,45 @@ import org.jetbrains.annotations.ApiStatus;
  *       same-dimension character is worth less (spec §5.2). Clamped into {@code [0.1, 1.0]} there.</li>
  *   <li>{@code level(character)} — {@code ExperienceKernel.levelMultiplier}, per <b>character</b>:
  *       {@code 1 + 0.02 × (level − 1)} (spec §6.1's 数值).</li>
- *   <li>{@code affectionHook(character, hook)} — {@code AffectionKernel.hookMultiplier}, per
- *       <b>hook</b>: {@code 1.0} below tier 2, and at tier 2 only the hooks the pack listed in
- *       {@code tier2HookModifiers} are scaled; tier 3 keeps those numbers and additionally swaps the
- *       ultimate (that swap is {@code UbService.atTier3}, not a multiplier).</li>
+ *   <li>{@code mode(character, now)} — the multiplier a <b>live combat mode</b> adds, {@code 1.0} when none is
+ *       running. It is the third factor for the same reason the second one is: 矛依未's 「装备期间所有技能伤害都会增加
+ *       物理伤害（大）」 is a per-hit bonus conditioned on a state, and this chain is the mod's <b>one</b> place a
+ *       per-hit factor is composed. Applied anywhere else it would be a second multiplication, and then "is the
+ *       bonus in twice?" would be unanswerable. It carries no growth: the state is read per hit by the caller
+ *       ({@code CombatEvents.collect} → {@code SecondRotationRuntime}), and this method only multiplies.</li>
+ * </ul>
+ *
+ * <h2>What left this chain, and why that is the point of task 35</h2>
+ * There used to be a third factor, {@code affectionHook(character, hookIndex)}: an affection-tier multiplier
+ * applied <b>per hook</b> from the pack's {@code tier2HookModifiers}. It is <b>gone</b>, and its removal is
+ * the change the whole affection rework consists of. The real game's 专武 and 6★ rungs do not scale a skill,
+ * they <b>replace</b> it — different coefficient, different constant, sometimes an extra clause (姬塔's 技能1
+ * gains a TP grant at 专武 and doubles its coefficient again at 6★). {@code AffectionKernel.hooksAt} now
+ * resolves which hook list a tier runs, so by the time this chain is asked for a number there is nothing
+ * left for a tier to multiply: the hook <em>is</em> the tier's version.
+ *
+ * <p>Two consequences worth stating, because both look like omissions:
+ * <ul>
+ *   <li><b>The function no longer takes a hook index.</b> That parameter existed only for the per-hook
+ *       modifier. Keeping it would be a parameter the body does not read — the kind of signature a later
+ *       author "restores" a multiplier into.</li>
+ *   <li><b>Affection still reaches combat</b>, through two doors: which hooks run
+ *       ({@code AffectionKernel.hooksAt}) and which ultimate is casted ({@code AffectionKernel.usesEnhancedUb}
+ *       → {@code UbService}). Neither is a multiplication, and neither belongs here.</li>
  * </ul>
  *
  * <h2>Why exactly one place</h2>
- * Three factors with three different scopes (slot, character, hook) invite three separate
- * multiplications sprinkled along the pipeline — one at the party table, one at the effect executor,
- * one at the charge sink — and then a reviewer has to prove that no path applies two of them twice or
- * skips one. So the product is computed here and in exactly one call site:
- * {@code HookEvaluator.evaluate}, at the moment a hook is about to run (the only moment the hook's
- * index is known). Everything downstream — every one of the eight effect executors — reads the single
- * number {@code HookContext.multiplier()} and multiplies by nothing else.
+ * Two factors with two different scopes (slot, character) invite two separate multiplications sprinkled
+ * along the pipeline — one at the party table, one at the effect executor — and then a reviewer has to prove
+ * that no path applies two of them twice or skips one. So the product is computed here and in exactly one
+ * call site: {@code HookContext.forCharacter}. Everything downstream — every effect executor — reads the
+ * single number {@code HookContext.multiplier()} and multiplies by nothing else.
  *
  * <h2>Hostile data</h2>
- * Config, saves and datapacks are all editable by hand. A non-finite or non-positive product (a
- * {@code NaN} from a hand-edited {@code mult}, an infinity from absurd data) is <b>not</b> passed on:
- * the diminishing factor alone is returned, so broken growth data leaves a character exactly as strong
- * as the party table says instead of <em>silently switching its hooks off</em> (§5.5).
+ * Config, saves and datapacks are all editable by hand. A non-finite or non-positive product (a {@code NaN}
+ * from a hand-edited save, an infinity from absurd data) is <b>not</b> passed on: the diminishing factor
+ * alone is returned, so broken growth data leaves a character exactly as strong as the party table says
+ * instead of <em>silently switching its hooks off</em> (§5.5).
  */
 @ApiStatus.Internal
 public final class MultiplierChain {
@@ -46,42 +64,41 @@ public final class MultiplierChain {
     }
 
     /**
-     * {@return the multiplier one character's hook {@code hookIndex} runs with}
+     * {@return the multiplier one character's hooks run with}
      *
      * @param diminishing this slot's diminishing multiplier, from
      *                    {@link PartyMultipliers#all(java.util.List, java.util.Map, double, boolean)}
-     * @param growth      the character's growth, from
-     *                    {@link GrowthMultiplier#of(com.astrum.pcrd.api.v1.CharacterProgress,
-     *                    com.astrum.pcrd.api.v1.CharacterDef)}
-     * @param hookIndex   the hook's index into the character's {@code effects[]}, i.e. the index a
-     *                    {@code HookModifier} names
+     * @param growth      the character's level factor <b>and</b> the multiplier of any combat mode that is live for
+     *                    her right now, from {@link GrowthMultiplier#of(
+     *                    com.astrum.pcrd.api.v1.CharacterProgress, com.astrum.pcrd.api.v1.CharacterDef)} and
+     *                    {@link GrowthMultiplier#inMode(double)}
      */
-    public static double effective(double diminishing, GrowthMultiplier growth, int hookIndex) {
+    public static double effective(double diminishing, GrowthMultiplier growth) {
         if (growth == null) {
             return diminishing;
         }
-        double affectionHook = AffectionKernel.hookMultiplier(growth.affection(), hookIndex, growth.tier());
-        return compose(diminishing, growth.level(), affectionHook);
+        // The mode factor is folded into the same factor before composing, rather than multiplying the product
+        // afterwards: `compose` already answers the "unusable factor" question for a level, and the mode is the same
+        // kind of number (a factor at or above 1). `GrowthMultiplier` has already normalised a hostile mode to 1.
+        return compose(diminishing, growth.level() * growth.modeBonus());
     }
 
     /**
-     * {@return {@code diminishing × level × affectionHook}, or {@code diminishing} when the growth
-     * factors cannot produce a usable number}
+     * {@return {@code diminishing × level}, or {@code diminishing} when the level factor is unusable}
      *
-     * <p>Split out so the arithmetic — including the two rejection rules — is testable without a
-     * character definition, and so {@link #effective} stays one line of policy.
+     * <p>Split out so the arithmetic — including the two rejection rules — is testable without a character
+     * definition, and so {@link #effective} stays one line of policy.
      */
-    static double compose(double diminishing, double level, double affectionHook) {
+    static double compose(double diminishing, double level) {
         if (!(diminishing > 0.0) || !Double.isFinite(diminishing)) {
             return 0.0;
         }
-        if (!(level > 0.0) || !Double.isFinite(level)
-                || !(affectionHook > 0.0) || !Double.isFinite(affectionHook)) {
-            Astrum.LOGGER.debug("astrum: growth multiplier of {} x {} is unusable, keeping the party "
-                    + "multiplier {} alone", level, affectionHook, diminishing);
+        if (!(level > 0.0) || !Double.isFinite(level)) {
+            Astrum.LOGGER.debug("astrum: level multiplier {} is unusable, keeping the party multiplier {} "
+                    + "alone", level, diminishing);
             return diminishing;
         }
-        double product = diminishing * level * affectionHook;
+        double product = diminishing * level;
         if (!(product > 0.0) || !Double.isFinite(product)) {
             return diminishing;
         }

@@ -1,0 +1,229 @@
+{
+  "schemaVersion": 1,
+  "displayName": "佐佐木咲恋",
+  "skillName": "凤凰终焉",
+  "avatar": "astrum:textures/gui/portrait/saren.png",
+  "icon1st": "astrum:textures/gui/portrait/saren_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/saren_3.png",
+  "icon6th": "astrum:textures/gui/portrait/saren_6.png",
+  "still": "astrum:textures/gui/still/saren_3.png",
+  "still6th": "astrum:textures/gui/still/saren_6.png",
+  "dimension": "resource",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-a.md §4（锚点口径 = docs/balance-derivation.md §14.1）。UB 凤凰之剑 前方范围半径700内所有敌人【1.44*物理攻击力+18+18*技能等级】= 6642 → 6.0，外加【0.2*损失的生命值】——『损失的生命值越低越大』这种随当前血量变化的项目没有机制，取满血（该加成为 0）的定值，与佩可莉姆 6★UB 的 0.05*生命值 同一个记录口径。6★UB 凤凰终焉 范围半径900内【2.4*物理攻击力+30+30*技能等级】= 11070 → 10.0 + 【2.5*损失的生命值】（同上的缺口）+ 提升己方全体【17.5+17.5*技能等级】= 3657.5 物理·魔法攻击力 18 秒 → 3657.5/(0.20*2000) = 9.1 与 3657.5/(0.26*2000) = 7.0 都远超五档，所以物攻/魔攻各 5 档（封顶，见 balance-derivation §14.4 的三行封顶）；其中的 +【0.2*损失的生命值】项同样没有机制。技能1 烈焰斩击 前方范围半径500内所有敌人【0.72*物理攻击力+9+9*技能等级】= 3321 → 3.0：这是范围伤害，所以写成 extra_damage（被击中的那只）+ splash（半径 5 内其余敌人，同一数值）。技能2 优雅声援 是『恢复第二近的友方【75+2.5*技能等级】= 595 技能值』→ 595 TP / 10 = 59.5 充能点（换算比 1 点 = 10 TP，balance-derivation §14.5），用 area_charge 表达；本 mod 的友方选择（AllySelector）按半径取，没有『第二近』这一个排序，所以实际是半径 8 内的友方各得 59.5，而不是只有第二近的那一位——这条差异记录在此与 §4，不是静默替换。好感阶梯：tier2 = 专属（范围半径500内【0.9*物理攻击力+12+12*技能等级】= 4308 → 3.9 +【0.4*损失的生命值】缺口），tier3 = 6★ 改名 ファイアスラッシュ++（bwiki 技能图标目录的 技能1_强化2 标签）；bwiki 没给 6★ 技能1 公式，tier3 沿用 tier2 的数，只换名字。EX 优雅高贵之魂 15+15L → flat_attack_up 15/15，优雅高贵之魂+ 240+15L → 240/15（系数照抄，见 balance-derivation §17.2）；没有 EX 改名，tier3 与 tier2 同名。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "flame_slash"
+      },
+      "effectParams": {
+        "amount": 3.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "splash",
+      "triggerParams": {
+        "skill": "flame_slash"
+      },
+      "effectParams": {
+        "radius": 5.0,
+        "damage": 3.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "area_charge",
+      "triggerParams": {
+        "skill": "elegant_cheer"
+      },
+      "effectParams": {
+        "radius": 8.0,
+        "amount": 59.5,
+        "includeSelf": false
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "凤凰之剑",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 6.0,
+      "radius": 7.0,
+      "segments": [
+        {
+          "damage": 6.0,
+          "hits": 1,
+          "target": "nearest",
+          "lostHealthBonus": 4.0
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "凤凰终焉",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 10.0,
+      "radius": 9.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "buff_attack_area",
+          "effectParams": {
+            "tier": 5,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_magic_attack_area",
+          "effectParams": {
+            "tier": 5,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        }
+      ],
+      "segments": [
+        {
+          "damage": 10.0,
+          "hits": 1,
+          "target": "all_in_radius",
+          "radius": 9.0,
+          "lostHealthBonus": 50.0
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/saren_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "flame_slash",
+        "baseName": "烈焰斩击",
+        "tier2": {
+          "name": "烈焰斩击+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "flame_slash"
+              },
+              "effectParams": {
+                "amount": 3.9,
+                "lostHealthBonus": 8.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "flame_slash"
+              },
+              "effectParams": {
+                "radius": 5.0,
+                "damage": 3.9
+              }
+            }
+          ]
+        },
+        "tier3": {
+          "name": "ファイアスラッシュ++",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "flame_slash"
+              },
+              "effectParams": {
+                "amount": 3.9,
+                "lostHealthBonus": 8.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "flame_slash"
+              },
+              "effectParams": {
+                "radius": 5.0,
+                "damage": 3.9
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/saren_main1.png"
+      },
+      {
+        "skill": "elegant_cheer",
+        "baseName": "优雅声援",
+        "icon": "astrum:textures/gui/skillicon/saren_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "优雅高贵之魂",
+        "tier2": {
+          "name": "优雅高贵之魂+"
+        },
+        "tier3": {
+          "name": "优雅高贵之魂+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 3,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/saren_ex.png"
+      }
+    ]
+  }
+}

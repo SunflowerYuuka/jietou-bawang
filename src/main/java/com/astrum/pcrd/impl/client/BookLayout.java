@@ -23,17 +23,20 @@ import org.jetbrains.annotations.ApiStatus;
  *   | title                                                      |
  *   | ~~~~~~~~~~~~ ornament (theme divider) ~~~~~~~~~~~~~~~~~~~  |
  *   | +--- roster grid (2 x 3 cells) ---+  party heading         |
- *   | | cell cell                        |  [1][2][3][4][5]      |
  *   | | cell cell                        |  growth heading       |
  *   | | cell cell                        |  level / exp bar      |
  *   | +----------------------------------+  affection / bar       |
  *   |                                       feed entry           |
  *   |                                       skills heading       |
- *   |                                       [icon] trigger · effect|
- *   |                                       [icon] trigger · effect|
+ *   |                                       技能详情              >|
  *   | refusal line (only while a refusal is fresh)               |
  *   +------------------------------------------------------------+
  * </pre>
+ *
+ * <p>That strip has <b>no picture</b>: 「技能详情按钮不要显示技能图标，使用角色册同风格的按钮配色就行。」 The button
+ * is a control drawn in the panel's palette, and the skill pictures live on the detail page's columns, which
+ * put their skill's one picture on the name row ({@code SkillDetailLayout}). An effect row has no picture at
+ * all (「通用效果不需要图标」).
  *
  * <p>Everything is derived from {@code screenWidth}/{@code screenHeight} and one of the two
  * {@link Metrics} tiers below; there are no absolute pixel coordinates anywhere, because GUI scale is
@@ -86,7 +89,7 @@ public final class BookLayout {
 
     // ---------------------------------------------------------------------------------------------
     // The compact tier's numbers, kept as named constants: they are what the shipped screen used, and
-    // BookLayoutTest plus SkillIcons read several of them by name.
+    // BookLayoutTest reads several of them by name.
     // ---------------------------------------------------------------------------------------------
 
     /** Outer padding inside the compact panel. */
@@ -372,14 +375,52 @@ public final class BookLayout {
         }
     }
 
+    /**
+     * The seven boxes of one growth view, stacked top to bottom.
+     *
+     * <h2>Why a record and not seven more methods</h2>
+     * The growth view is drawn twice now — in the right-hand column of the 角色编队 page, and in the bottom
+     * right of the 角色一览 front page — from <b>one</b> drawing method, because a second copy of "level line,
+     * experience bar, affection line, affection bar, next tier" is a second copy that drifts the first time a
+     * line is added. The renderer therefore takes this record and asks it for boxes instead of asking
+     * {@code BookLayout} by name; which page is on screen decides which column is passed, and the drawing code
+     * cannot tell the difference. The order of the components <b>is</b> the drawing order.
+     *
+     * @param heading       the 「③ 养成」 heading
+     * @param levelLine     the level, with the experience numbers right-aligned inside it
+     * @param expBar        the experience bar
+     * @param affectionLine affection and her tier
+     * @param affectionBar  the affection bar
+     * @param nextTierLine  the next tier's threshold, or "already at the last tier"
+     * @param feedEntry     the feeding entry point: a button when a dish handler is installed, text otherwise
+     */
+    public record GrowthColumn(Box heading, Box levelLine, Box expBar, Box affectionLine, Box affectionBar,
+                               Box nextTierLine, Box feedEntry) {
+    }
+
     private final Metrics metrics;
     private final int panelX;
     private final int panelY;
+
+    /**
+     * The growth view of the 角色编队 page (right-hand column) and of the front page (bottom right).
+     *
+     * <p>Both are built once, in the constructor: a layout is immutable for one screen size, the front page is
+     * the page the book opens on, and the front page asks for its column on <b>every</b> frame it is drawn. Both
+     * are the same seven-box stack ({@link #growthColumn}) anchored at a different top, so the two pages cannot
+     * disagree about their internal rhythm — only about where the stack starts.
+     */
+    private final GrowthColumn growth;
+    private final GrowthColumn boardGrowth;
 
     private BookLayout(Metrics metrics, int panelX, int panelY) {
         this.metrics = metrics;
         this.panelX = panelX;
         this.panelY = panelY;
+        // Neither of these reads the fields assigned below, so the constructor can build them directly:
+        // rightLeft()/partyRow() are pure functions of (metrics, panelX, panelY).
+        this.growth = growthColumn(rightLeft(), partyRow().bottom() + metrics.lineGap());
+        this.boardGrowth = growthColumn(boardGrowthPanel().x(), boardGrowthPanel().y());
     }
 
     /**
@@ -510,46 +551,69 @@ public final class BookLayout {
         return new Box(rightLeft(), bodyTop(), metrics.rightWidth(), Metrics.LINE_HEIGHT);
     }
 
-    /** {@return the box the "growth" heading occupies} */
+    /**
+     * {@return the seven boxes of a growth view anchored at {@code (x, y)} with the right column's width}
+     *
+     * <p>The <b>one</b> definition of the stack's internal rhythm: seven boxes, each one {@code lineGap} below
+     * the previous, at heights this tier's metrics give them. Both pages read it through
+     * {@link #growthColumn()} and {@link #boardGrowthColumn()}, so a change to a line's height or to the gap
+     * between two of them moves both pages together — which is the only way two copies of one panel can stay
+     * one panel.
+     *
+     * @param x the column's left edge
+     * @param y the top of the heading row
+     */
+    private GrowthColumn growthColumn(int x, int y) {
+        int width = metrics.rightWidth();
+        int gap = metrics.lineGap();
+        Box heading = new Box(x, y, width, Metrics.LINE_HEIGHT);
+        Box level = new Box(x, heading.bottom() + gap, width, Metrics.LINE_HEIGHT);
+        Box exp = new Box(x, level.bottom() + gap, width, metrics.barHeight());
+        Box affectionLine = new Box(x, exp.bottom() + gap, width, Metrics.LINE_HEIGHT);
+        Box affectionBar = new Box(x, affectionLine.bottom() + gap, width, metrics.barHeight());
+        Box nextTier = new Box(x, affectionBar.bottom() + gap, width, Metrics.LINE_HEIGHT);
+        Box feed = new Box(x, nextTier.bottom() + gap, width, metrics.feedHeight());
+        return new GrowthColumn(heading, level, exp, affectionLine, affectionBar, nextTier, feed);
+    }
+
+    /** {@return the growth view of the right-hand column of the 角色编队 page} */
+    public GrowthColumn growthColumn() {
+        return growth;
+    }
+
+    /** {@return the box the "growth" heading occupies on the roster page} */
     public Box growthHeading() {
-        return new Box(rightLeft(), partyRow().bottom() + metrics.lineGap(), metrics.rightWidth(),
-                Metrics.LINE_HEIGHT);
+        return growth.heading();
     }
 
-    /** {@return the box the level line occupies} */
+    /** {@return the box the level line occupies on the roster page} */
     public Box levelLine() {
-        return new Box(rightLeft(), growthHeading().bottom() + metrics.lineGap(),
-                metrics.rightWidth(), Metrics.LINE_HEIGHT);
+        return growth.levelLine();
     }
 
-    /** {@return the experience bar} */
+    /** {@return the experience bar on the roster page} */
     public Box expBar() {
-        return new Box(rightLeft(), levelLine().bottom() + metrics.lineGap(),
-                metrics.rightWidth(), metrics.barHeight());
+        return growth.expBar();
     }
 
-    /** {@return the affection line} */
+    /** {@return the affection line on the roster page} */
     public Box affectionLine() {
-        return new Box(rightLeft(), expBar().bottom() + metrics.lineGap(), metrics.rightWidth(),
-                Metrics.LINE_HEIGHT);
+        return growth.affectionLine();
     }
 
-    /** {@return the affection bar} */
+    /** {@return the affection bar on the roster page} */
     public Box affectionBar() {
-        return new Box(rightLeft(), affectionLine().bottom() + metrics.lineGap(),
-                metrics.rightWidth(), metrics.barHeight());
+        return growth.affectionBar();
     }
 
-    /** {@return the line naming the next affection tier} */
+    /** {@return the line naming the next affection tier, on the roster page} */
     public Box nextTierLine() {
-        return new Box(rightLeft(), affectionBar().bottom() + metrics.lineGap(),
-                metrics.rightWidth(), Metrics.LINE_HEIGHT);
+        return growth.nextTierLine();
     }
 
-    /** {@return the feeding entry point: a button when a dish handler is installed, text otherwise} */
+    /** {@return the feeding entry point on the roster page: a button when a dish handler is installed} */
     public Box feedEntry() {
-        return new Box(rightLeft(), nextTierLine().bottom() + metrics.lineGap(),
-                metrics.rightWidth(), metrics.feedHeight());
+        return growth.feedEntry();
     }
 
     /**
@@ -562,6 +626,80 @@ public final class BookLayout {
     public Box skillsHeading() {
         return new Box(rightLeft(), feedEntry().bottom() + metrics.lineGap(),
                 metrics.rightWidth(), Metrics.LINE_HEIGHT);
+    }
+
+    /**
+     * {@return the button that opens the skill-detail page, in the strip the skill list used to fill}
+     *
+     * <h2>Why the strip is one box, and not the heading plus N rows</h2>
+     * The list needed a heading row and {@link #hookRows()} effect rows, and on the compact tier that is two
+     * rows for six of ペコリーヌ's hooks — 「角色册界面的4技能，满了不显示」. Paging the strip was the previous
+     * answer and it did not solve the real problem: the strip is <b>too small to read a skill in</b>. So the
+     * whole strip — heading row included — is now one target, and clicking it opens the page that has room.
+     * The rect is exactly the union of the old heading and rows, so no metric moves and nothing else on the
+     * panel has to be re-measured.
+     */
+    public Box skillsEntry() {
+        BookLayout.Box heading = skillsHeading();
+        BookLayout.Box last = hookRow(Math.max(0, metrics.hookRows() - 1));
+        int height = last == null ? heading.height() : last.bottom() - heading.y();
+        return new BookLayout.Box(heading.x(), heading.y(), heading.width(), height);
+    }
+
+    /**
+     * Inset of the 「技能详情」 button's label from the button's own left edge, in GUI pixels.
+     *
+     * <p>The button has <b>no picture</b> — 「技能详情按钮不要显示技能图标，使用角色册同风格的按钮配色就行。」 — so
+     * the label starts at the padding every other control in the panel uses, and there is no reserved square
+     * left over from a removed picture. The value is the one the label used before the picture was introduced
+     * and after it was removed again.
+     */
+    private static final int ENTRY_TEXT_INSET = 5;
+
+    /**
+     * Width kept free at the button's right end for the chevron, in GUI pixels.
+     *
+     * <p>A constant rather than the chevron's measured width because this class does no font work and the
+     * label box has to be answerable without a font: the game's own {@code >} is 5 pixels wide, it is drawn 5
+     * pixels in from the button's right edge, and one more pixel is air — 11 in all. A little too much only
+     * shortens the label; too little would let a full-width label run under the glyph.
+     */
+    private static final int ENTRY_CHEVRON = 11;
+
+    /**
+     * {@return the box the 「技能详情」 button's label is drawn in}
+     *
+     * <p>One font line tall and vertically centred, starting at the button's own left inset and stopping before
+     * the chevron strip, so the two decorations cannot overlap the words. The vertical centring lives here and
+     * not in the render method for the same reason the detail page's rectangles do.
+     *
+     * <p><b>There is no picture box.</b> The button is a control in the panel's palette, not a place where a
+     * skill is identified — 「技能详情按钮不要显示技能图标，使用角色册同风格的按钮配色就行。」 The detail page's
+     * columns keep their skill pictures; this button has none, so the label starts where the text always did.
+     */
+    public Box skillsEntryLabel() {
+        Box box = skillsEntry();
+        int left = box.x() + ENTRY_TEXT_INSET;
+        int right = box.right() - ENTRY_CHEVRON;
+        return new Box(left, box.y() + (box.height() - Metrics.LINE_HEIGHT) / 2,
+                Math.max(0, right - left), Metrics.LINE_HEIGHT);
+    }
+
+    /**
+     * {@return the whole body of the panel, for the skill-detail page}
+     *
+     * <p>The detail page is a <b>mode</b> of this screen, not a second screen, so it reuses this panel — and
+     * then it has the entire body rather than the right-hand column: the roster grid, the party slots and the
+     * growth bars are not drawn while it is open, so their rectangles are free. The box is the full body
+     * width ({@link #bodyWidth()}) and the body height, i.e. exactly the area between the ornament and the
+     * footer line, which {@code SkillDetailLayout} then divides into columns.
+     *
+     * <p>The footer ({@link #refusalLine()}) is deliberately <b>not</b> part of it: while the page is open that
+     * line carries the way back ({@code Esc}), which must stay visible while the grid scrolls under it.
+     */
+    public Box skillDetailBody() {
+        return new BookLayout.Box(panelX + metrics.padding(), bodyTop(), bodyWidth(),
+                metrics.bodyHeight());
     }
 
     /** {@return the number of hook rows this tier has room for} */
@@ -679,9 +817,229 @@ public final class BookLayout {
                 Metrics.LINE_HEIGHT);
     }
 
+    /** {@return the vertical span a growth view needs, from its heading to its last line} */
+    public int rightColumnHeight() {
+        return metrics.rightColumnHeight();
+    }
+
     /** {@return the horizontal span the roster grid's grid + right column covers (for wide banners)} */
     public int bodyWidth() {
         return metrics.gridWidth() + metrics.columnGap() + metrics.rightWidth();
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // The front page: 角色一览
+    //
+    // 「进入现在这个界面之前的界面，一排5个角色横着摆，角色行下面左侧两个按钮，一个是角色编队，一个是技能详情，
+    //  角色行下面右侧显示养成选中角色的养成信息。」
+    //
+    // The page is the book's <b>landing</b> page: five party slots in one horizontal row across the top, two
+    // buttons under the row on the left, the selected character's growth view under the row on the right.
+    // Everything below is derived from the same two body corners the roster page uses, so the front page and
+    // the roster page are the same panel seen twice — not two panels.
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * {@return the edge of one large party portrait on the front page}
+     *
+     * <p>The five portraits <b>fill the body's width</b>: the edge is what is left of {@code bodyWidth} after
+     * four {@code cellGap}s, divided by {@link Party#SLOTS}. That is the sketch — 「一排5个角色横着摆」 — taken
+     * literally, and it is also the reason the row needs no alignment rule: five equal squares whose widths
+     * and gaps add up to the body end exactly at the body's right edge, so the row is balanced by construction
+     * rather than by a centring offset that has to be re-derived per tier.
+     *
+     * <p>Square (same edge on both axes), so a portrait is not stretched, and derived from the <b>body</b> and
+     * not from a pixel constant, because the body's size is per-tier. {@code BookLayoutTest} asserts the
+     * five-slot row stays inside the body at both tiers and at both screen sizes.
+     */
+    public int boardSlotSize() {
+        int gaps = (Party.SLOTS - 1) * metrics.cell().gap();
+        return Math.max(0, (bodyWidth() - gaps) / Party.SLOTS);
+    }
+
+    /**
+     * {@return the row the five large portraits occupy: the sketch's 角色行}
+     *
+     * <p>At the top of the body, exactly as wide as its five slots and four gaps — so
+     * {@code boardSlot(0).x() == boardRow().x()} and the row's right edge is the last slot's.
+     */
+    public Box boardRow() {
+        int size = boardSlotSize();
+        int gap = metrics.cell().gap();
+        return new Box(panelX + metrics.padding(), bodyTop(),
+                Party.SLOTS * size + (Party.SLOTS - 1) * gap, size);
+    }
+
+    /**
+     * {@return the box of large portrait {@code index} on the front page, or {@code null} past the last one}
+     *
+     * <p>Laid out left to right from the row's own left edge with the roster grid's cell gap between
+     * neighbours: these portraits are several times the size of a party slot, and the party row's 3-4 pixel gap
+     * would read as one solid block of faces.
+     *
+     * @param index 0-based party slot
+     */
+    public Box boardSlot(int index) {
+        if (index < 0 || index >= Party.SLOTS) {
+            return null;
+        }
+        Box row = boardRow();
+        int size = boardSlotSize();
+        return new Box(row.x() + index * (size + metrics.cell().gap()), row.y(), size, size);
+    }
+
+    /** {@return every large portrait box on the front page, in slot order, for drawing} */
+    public List<Box> boardSlots() {
+        List<Box> boxes = new ArrayList<>(Party.SLOTS);
+        for (int i = 0; i < Party.SLOTS; i++) {
+            boxes.add(boardSlot(i));
+        }
+        return List.copyOf(boxes);
+    }
+
+    /**
+     * {@return the slot index under a point on the front page, or empty when the point is not on a portrait}
+     *
+     * <p>The inverse of {@link #boardSlot}, for the click that selects whose growth information the front page
+     * is describing. Selecting is <b>all</b> a click does here: placing a character into a slot is the roster
+     * page's gesture ({@code 角色编队}), and the front page must not become a second way to write the party.
+     *
+     * @param px mouse x in GUI pixels
+     * @param py mouse y in GUI pixels
+     */
+    public OptionalInt boardSlotAt(double px, double py) {
+        for (int i = 0; i < Party.SLOTS; i++) {
+            Box box = boardSlot(i);
+            if (box != null && box.contains(px, py)) {
+                return OptionalInt.of(i);
+            }
+        }
+        return OptionalInt.empty();
+    }
+
+    /** Height of one front-page button: two lines, so it reads as a control and not as a line of text. */
+    public int boardButtonHeight() {
+        return 2 * Metrics.LINE_HEIGHT;
+    }
+
+    /** {@return the horizontal gap between the two front-page buttons} */
+    public int boardButtonGap() {
+        return metrics.lineGap() * 2;
+    }
+
+    /**
+     * {@return the band the two buttons and the growth panel share, under the portrait row}
+     *
+     * <p>One band, two halves: the buttons on the left, the growth information on the right, both starting
+     * {@code lineGap} under the portrait row — 「角色行下面左侧两个按钮……角色行下面右侧显示养成信息」. Having the
+     * band as one function is what keeps the two halves on the same baseline; the growth column is simply taller
+     * than a button.
+     */
+    private int boardBandTop() {
+        return boardRow().bottom() + metrics.lineGap();
+    }
+
+    /** {@return how much width the button half of the band has: everything the growth column does not take} */
+    private int boardButtonSpan() {
+        return Math.max(0, bodyWidth() - metrics.rightWidth() - metrics.columnGap());
+    }
+
+    /**
+     * {@return the width one of the two front-page buttons gets}
+     *
+     * <p>The button half of the band, minus the gap the pair keeps between them, halved. Derived from the
+     * <b>growth column it must clear</b> rather than from a fraction of the body, so "the buttons never reach
+     * the growth panel" is arithmetic rather than a coincidence that holds at two screen sizes.
+     */
+    public int boardButtonWidth() {
+        return Math.max(0, (boardButtonSpan() - boardButtonGap()) / 2);
+    }
+
+    /**
+     * {@return the box of the 「角色编队」 button — the way into the page that used to be the whole book}
+     *
+     * <p>Leftmost of the two, under the portrait row. Clicking it opens {@link #boardPage()}'s other page, i.e.
+     * the roster grid, the party column and the growth panel: everything this book was before the front page
+     * existed, unchanged.
+     */
+    public Box boardPartyButton() {
+        return new Box(panelX + metrics.padding(), boardBandTop(), boardButtonWidth(),
+                boardButtonHeight());
+    }
+
+    /**
+     * {@return the box of the 「技能详情」 button on the front page, right of the party button}
+     *
+     * <p>Opens the <b>existing</b> skill-detail page for the selected character — the page the roster screen
+     * already reaches through its skills entry. This page gets a second door to it, not a second copy of it.
+     */
+    public Box boardSkillsButton() {
+        Box party = boardPartyButton();
+        return new Box(party.right() + boardButtonGap(), party.y(), boardButtonWidth(),
+                boardButtonHeight());
+    }
+
+    /**
+     * {@return the box a front-page button's label is drawn in}
+     *
+     * <p>One font line, inset from both ends and vertically centred, so the two buttons of the pair are worded
+     * the same way whatever their labels are: {@code CharacterBookScreen} centres the text inside this box, and a
+     * label longer than it is truncated rather than allowed to run out of the button.
+     *
+     * @param button the button box ({@link #boardPartyButton()} or {@link #boardSkillsButton()})
+     */
+    public Box boardButtonLabel(Box button) {
+        int inset = 3;
+        return new Box(button.x() + inset, button.centreY() - Metrics.LINE_HEIGHT / 2,
+                Math.max(0, button.width() - 2 * inset), Metrics.LINE_HEIGHT);
+    }
+
+    /**
+     * {@return the box the front page's growth information occupies}
+     *
+     * <p>The right-hand half of the band, {@code rightWidth} wide — the tier's own column width, which is the
+     * width the growth view was designed to be read at (the same 112/128 pixels the roster page gives it). Taking
+     * the proven width rather than "whatever is left" is what keeps the front page's numbers laid out exactly like
+     * the roster page's.
+     *
+     * <p>It is anchored to the body's <b>right</b> edge, so the panel is flush with the portrait row above it
+     * however narrow the buttons get.
+     */
+    public Box boardGrowthPanel() {
+        return new Box(panelX + metrics.padding() + bodyWidth() - metrics.rightWidth(), boardBandTop(),
+                metrics.rightWidth(), growthStackHeight());
+    }
+
+    /**
+     * {@return the vertical span one growth view needs, heading to feeding entry}
+     *
+     * <p>Read off the stack itself ({@link #growthColumn(int, int)}) rather than written a second time: the
+     * difference between the first box's top and the last box's bottom <em>is</em> the height, so a change to a
+     * line's height or to a gap moves the panel that has to hold it as well.
+     */
+    private int growthStackHeight() {
+        GrowthColumn stack = growthColumn(0, 0);
+        return stack.feedEntry().bottom();
+    }
+
+    /** {@return the seven boxes of the front page's growth view, under the portrait row on the right} */
+    public GrowthColumn boardGrowthColumn() {
+        return boardGrowth;
+    }
+
+    /**
+     * {@return the edge of a front-page portrait's picture, inside the slot's plate}
+     *
+     * <p>Two pixels of plate on each side, the same rule {@link #slotIconDiameter()} follows, so a front-page
+     * portrait is the party slot scaled up rather than a different way of framing a face.
+     */
+    public int boardSlotIconDiameter() {
+        return Math.max(0, boardSlotSize() - 4);
+    }
+
+    /** {@return the box the front page's title row is drawn in — the same row the other pages use} */
+    public Box boardTitle() {
+        return title();
     }
 
     /** {@return the radius of a party-slot portrait} */

@@ -11,8 +11,9 @@ import net.neoforged.neoforge.registries.NeoForgeRegistries;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * Registration of the four attachment types: three persistent player-state ones and one runtime-only
- * stack cache.
+ * Registration of the seven attachment types: three persisted player-state ones ({@link #ROSTER},
+ * {@link #PARTY}, {@link #UB_STATE}) and four runtime-only ones ({@link #STACK}, {@link #COMBO},
+ * {@link #SHIELD_POOL}, {@link #BATTLE_START}).
  *
  * <h2>Why the three player-state types are separate and not one big object</h2>
  * Sync frequency. {@link UbState} changes every tick; {@link Roster} changes a handful of times per
@@ -122,6 +123,18 @@ public final class Attachments {
      * that is a UI nicety and does not justify copying a full charge bar through a death, which
      * would hand the player an immediate ultimate on respawn.
      */
+    /**
+     * <b>Which dishes this player has fed on which game day</b> — the state behind 「每游戏日一次」.
+     *
+     * <p>Persisted, and {@code copyOnDeath()}: the rule is per <b>game day</b>, not per life, so dying must not
+     * hand the allowance back. Its size is bounded by the number of dish items, not by elapsed days — see
+     * {@link FedDishes}.
+     */
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<FedDishes>> FED_DISHES =
+            ATTACHMENT_TYPES.register("fed_dishes",
+                    () -> AttachmentType.builder(FedDishes::empty).serialize(FedDishes.CODEC)
+                            .copyOnDeath().build());
+
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<UbState>> UB_STATE =
             ATTACHMENT_TYPES.register("ub_state",
                     () -> AttachmentType.builder(UbState::fresh).serialize(UbState.CODEC).build());
@@ -164,6 +177,48 @@ public final class Attachments {
     public static final DeferredHolder<AttachmentType<?>, AttachmentType<ComboState>> COMBO =
             ATTACHMENT_TYPES.register("combo",
                     () -> AttachmentType.builder(() -> ComboState.EMPTY).build());
+
+    /**
+     * Our share of one entity's absorption — the pool that lets a {@code SHIELD} effect <b>add to</b>
+     * vanilla's golden-apple absorption rather than being cancelled by it.
+     *
+     * <p>Also {@code serialize = false}, for the reason {@link ShieldState} gives: it only means anything
+     * while the effect that granted it is still ticking, so a pool restored from disk would describe a
+     * shield the game has already expired.
+     *
+     * <p>Lives on the entity that <em>carries</em> the shield (a player or a mob), because absorption is
+     * per-body. That also makes "did I forget to clean it up?" a non-question: the effect's own expiry
+     * clears it, and an entity that unloads takes its pool with it — the same argument {@link #STACK} makes.
+     */
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<ShieldState>> SHIELD_POOL =
+            ATTACHMENT_TYPES.register("shield_pool",
+                    () -> AttachmentType.builder(() -> ShieldState.NONE).build());
+
+    /**
+     * One player's 「战斗开始」 boundary: the tick of the last blow she landed (see {@link BattleStartState}).
+     *
+     * <p>Also {@code serialize = false}, and for the same reason as {@link #COMBO}: whether a fight is in
+     * progress is a property of the session, not of the save. A boundary restored from disk would describe a
+     * fight that stopped when the server did — and, worse, it would make the <b>first</b> fight of the next
+     * session invisible, because the stored tick would still be the last blow of the previous one.
+     *
+     * <h2>What that costs, stated rather than hidden</h2>
+     * The <em>marks</em> a {@code battle_start} hook grants are ordinary effect instances on the player, and
+     * vanilla saves those with the player, so a relog keeps the tally while it clears the boundary. A player
+     * can therefore log out and back in to have her first blow count as a new fight and top the tally up. That
+     * is bounded twice — by the counter's own rung cap ({@code Counters.capForTier}: 12 for 雪菲's tally) and
+     * by the grant's duration (180 s) — and the alternative is worse: a persisted tick would let a stale
+     * timestamp suppress a real fight's opening, and would outlive the buff it gates.
+     *
+     * <p>No {@code copyOnDeath()}, and it is not an omission: an unserialized type cannot be copied (NeoForge
+     * throws from {@code copyOnDeath()} when there is no serializer), and a death is exactly the moment a new
+     * fight should begin. Vanilla clears the effect instances on death anyway, so the respawned player starts
+     * from an empty tally and the next blow opening a fight is the honest read — not a farm, because the marks
+     * she had are gone.
+     */
+    public static final DeferredHolder<AttachmentType<?>, AttachmentType<BattleStartState>> BATTLE_START =
+            ATTACHMENT_TYPES.register("battle_start",
+                    () -> AttachmentType.builder(() -> BattleStartState.EMPTY).build());
 
     private Attachments() {
     }

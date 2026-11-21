@@ -159,7 +159,7 @@ public final class ShowcaseManager implements ShowcaseSink {
     @Override
     public void settle(ServerLevel level, ServerPlayer caster, ResourceLocation characterId,
             CharacterDef def, UbTier tier, boolean enhanced) {
-        Runnable damage = damageFor(level, caster, characterId, def, tier);
+        Runnable damage = damageFor(level, caster, characterId, def, tier, enhanced);
         try {
             int cap = ServerConfig.MULTIPLAYER.maxActiveShowcaseEntities.get();
             int active = activeCount(level);
@@ -187,10 +187,11 @@ public final class ShowcaseManager implements ShowcaseSink {
      * "once" means.
      */
     private static Runnable damageFor(ServerLevel level, ServerPlayer caster,
-            ResourceLocation characterId, CharacterDef def, UbTier tier) {
+            ResourceLocation characterId, CharacterDef def, UbTier tier, boolean enhanced) {
         // No ledger: the entity sink draws nothing with particles (the clip is the visual), so the
         // victims it would record have no reader. `null` says that, rather than a list nobody drains.
-        return UbDamageSettlement.once(level, caster, characterId, def, tier, null);
+        // `enhanced` selects which rung's `ub.landHooks` fires, the same bit that selected the tier.
+        return UbDamageSettlement.once(level, caster, characterId, def, tier, enhanced, null);
     }
 
     // ------------------------------------------------------------------ the factory

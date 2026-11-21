@@ -40,8 +40,10 @@ class DjeetaResourceTest {
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
             assertEquals(Dimension.CHARGE, def.dimension());
-            // Three hooks, but TWO skills: 技能2 (武器爆发) is attack up + TP on the same swing.
-            assertEquals(3, def.effects().size());
+            // Two hooks, and they are TWO skills: 广域斩击 (damage) and 剑意迸发 (a TP grant). 技能2's
+            // attack-up clause is gone — bwiki gives her 技能2 as 「回复自身【150+1.5*技能等级】技能值」 and
+            // nothing else, so the old ttack_buff there was a number the real game does not have.
+            assertEquals(2, def.effects().size());
             assertEquals(3, def.affection().tier2Threshold());
             assertEquals(8, def.affection().tier3Threshold());
         }
@@ -61,22 +63,25 @@ class DjeetaResourceTest {
         try (InputStream in = DjeetaResourceTest.class.getResourceAsStream(DJEETA_JSON)) {
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
-            // Hooks are a rotation of two SKILLS, six effects[] entries being three:
+            // Hooks are a rotation of two SKILLS, three effects[] entries being two:
             //   swing 1 = 广域斩击 (extra_damage)
-            //   swing 2 = 武器爆发 (attack_buff + gain_charge, tagged the same skill)
+            //   swing 2 = 剑意迸发 (charge_rate_up + attack_buff, tagged the same skill)
             assertInstanceOf(EffectHook.ExtraDamage.class, def.effects().get(0));
-            assertInstanceOf(EffectHook.AttackBuff.class, def.effects().get(1));
-            assertInstanceOf(EffectHook.GainCharge.class, def.effects().get(2));
+            assertInstanceOf(EffectHook.GainCharge.class, def.effects().get(1),
+                    "技能2 is a one-off TP grant: bwiki says 「回复自身技能值」, a lump sum, not a rate");
             assertEquals(Optional.of("weapon_burst"),
-                    def.effects().get(1).triggerParams().skillTag(),
-                    "攻击力上升与充能必须同属一个技能，否则一斩会变成两个半技能");
-            assertEquals(def.effects().get(1).triggerParams().skillTag(),
-                    def.effects().get(2).triggerParams().skillTag());
+                    def.effects().get(1).triggerParams().skillTag());
             assertEquals(Optional.of("wide_slash"), def.effects().get(0).triggerParams().skillTag());
             assertEquals("tempest_blade", def.ub().base().animation());
             assertEquals(4, def.ub().enhanced().hits());
-            assertEquals(0, def.affection().tier2HookModifiers().get(0).hookIndex());
-            assertEquals(1.5, def.affection().tier2HookModifiers().get(0).mult());
+            // The affection ladder is data now: 技能1's three rungs, each with its own name. The tier-2 rung
+            // is 广域斩击+ and the tier-3 one renames to 黄金耀光 — the human's 「a rename supersedes a +」 rule,
+            // which the old (hookIndex, mult) shape could not express at all.
+            var wideSlash = def.affection().ladderFor("wide_slash").orElseThrow(
+                    () -> new AssertionError("her 技能1 must be on the ladder"));
+            assertEquals("广域斩击", wideSlash.nameAt(1));
+            assertEquals("广域斩击+", wideSlash.nameAt(2));
+            assertEquals("黄金耀光", wideSlash.nameAt(3));
         }
     }
 
@@ -84,21 +89,25 @@ class DjeetaResourceTest {
      * The damage numbers are a <b>ratio</b> of the real game's, not invented ones.
      *
      * <h2>The derivation this pins</h2>
-     * gamewith's 姬塔 (Lv208) gives 疾风剑雨 / 星河一天 as <b>355293</b> and 技能1 广域斩击 as
-     * <b>118431</b>. The mod's numbers are the same ratio at the scale the ultimate already used:
+     * bwiki gives 姬塔's skills as formulas in her own attack and level:
      *
      * <pre>
-     *   UB           355293            -> 20.0   (the scale anchor, per hit × 4 hits)
-     *   技能1        118431 / 355293   -> 6.66…  -> 6.7
+     *   UB     疾风剑雨   【4.8*物理攻击力+60+60*技能等级】物理伤害
+     *   6星UB  星河漫天   【7.5*物理攻击力+93.75+93.75*技能等级】+ 攻击buff
+     *   技能1  广域斩击   【1.6*物理攻击力+20+20*技能等级】
      * </pre>
      *
-     * <p>Re-derive it in one line whenever the real numbers change:
-     * {@code 技能 = 20.0 * 技能伤害 / 355293}, rounded to one decimal. The assertion is against the
-     * <b>shipped JSON text</b> rather than a Java constant, because the JSON is what a future author
-     * edits — a drift between the two would otherwise be invisible until somebody re-read gamewith.
+     * <p>At the stated reference point (level 208, attack 2000 — see {@code docs/balance-derivation.md} §14.1)
+     * the UB formula gives 22140, and that is the anchor: {@code 20.0}, the number the mod has always used.
+     * So {@code value = 20.0 × raw / 22140}, and 技能1 comes out at 7380 → <b>6.7</b>.
      *
-     * <p>Hits stay at 4 on both tiers: 星河一天 strengthens 疾风剑雨, it does not change how many times
-     * it strikes.
+     * <p><b>Why the reference attack is 2000 and not her real 355293/4.8.</b> Both work — the ratio is
+     * scale-free — but a round number makes every intermediate in the document checkable by hand, and the
+     * derivation is what a future author reads. §14.1 records the choice and shows that the real-attack
+     * back-solve gives the identical ratios.
+     *
+     * <p>Hits stay at 4 on both tiers: 星河漫天 strengthens 疾风剑雨, it does not change how many times it
+     * strikes.
      */
     @Test
     void theDamageNumbersAreTheRealGamesRatioAtTheUltimatesScale() throws Exception {
@@ -106,19 +115,32 @@ class DjeetaResourceTest {
             var json = JsonParser.parseReader(new InputStreamReader(in, StandardCharsets.UTF_8));
             var def = CharacterDef.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
 
-            double ubPerHit = def.ub().base().damage();
-            assertEquals(20.0, ubPerHit, 1e-9, "UB 每段 20.0 是比例锚点");
+            assertEquals(20.0, def.ub().base().damage(), 1e-9, "UB 每段 20.0 是比例锚点");
             assertEquals(4, def.ub().base().hits());
             assertEquals(4, def.ub().enhanced().hits(), "强化 tier 只加强，不改变段数");
 
-            double realUb = 355293.0, realSkill1 = 118431.0;
-            double derived = Math.round(ubPerHit * realSkill1 / realUb * 10.0) / 10.0;
-            assertEquals(6.7, derived, 1e-9, "118431/355293 × 20 = 6.66…，取一位小数");
+            double reference = 2000.0;
+            double level = 208.0;
+            double anchorRaw = 4.8 * reference + 60.0 + 60.0 * level;   // 22140
+            assertEquals(22140.0, anchorRaw, 1e-9, "the bwiki UB formula at the stated reference");
+            double skill1Raw = 1.6 * reference + 20.0 + 20.0 * level;   // 7380
+            assertEquals(6.7, round1(20.0 * skill1Raw / anchorRaw), 1e-9, "7380/22140 × 20 = 6.67 → 6.7");
 
             double shipped = ((EffectHook.ExtraDamage) def.effects().get(0)).amount();
-            assertEquals(derived, shipped, 1e-9,
-                    "djeeta.json 的 extra_damage 必须等于这条推导；实际 " + shipped);
+            assertEquals(6.7, shipped, 1e-9, "djeeta.json's tier-1 extra_damage must equal this derivation");
+
+            // And the 6★ tier's own formula: 7.5A + 93.75 + 93.75L, which is a *different* coefficient.
+            double ub6Raw = 7.5 * reference + 93.75 + 93.75 * level;
+            assertEquals(31.3, round1(20.0 * ub6Raw / anchorRaw), 1e-9,
+                    "the 6★ ultimate is its own formula, not a multiple of the 5★ one");
+            assertEquals(round1(20.0 * ub6Raw / anchorRaw), def.ub().enhanced().damage(), 1e-9,
+                    "and the JSON carries exactly that number");
         }
+    }
+
+    /** {@return {@code value} rounded to one decimal, the precision every shipped damage number carries} */
+    private static double round1(double value) {
+        return Math.round(value * 10.0) / 10.0;
     }
 
     /**
@@ -144,8 +166,9 @@ class DjeetaResourceTest {
             // name is kept in the JSON for future use but no longer drives the effect label.
             assertEquals("姬塔", def.displayName(),
                     "the party effect is labelled with the character's name");
-            assertEquals("星河一天", def.effectiveSkillName(),
-                    "her ultimate's name is still shipped, even though it is not the effect label");
+            assertEquals("星河漫天", def.effectiveSkillName(),
+                    "her 6 star ultimate's name is shipped here; the roster reads the per-tier name from "
+                            + "ub.base / ub.enhanced, which is where the names actually live");
             assertEquals("astrum:textures/gui/portrait/djeeta.png",
                     def.avatar().orElseThrow().toString(),
                     "avatar 是她本人的官方头像，不是通用的角色卡贴图");

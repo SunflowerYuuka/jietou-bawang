@@ -2,11 +2,13 @@ package com.astrum.pcrd.impl.combat;
 
 import com.astrum.pcrd.api.v1.EffectHook;
 import com.astrum.pcrd.api.v1.Trigger;
+import com.astrum.pcrd.impl.effect.EffectCollapse;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.function.DoublePredicate;
+import java.util.function.Predicate;
 import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.ApiStatus;
 
@@ -119,6 +121,26 @@ public final class HookPlan {
     }
 
     /**
+     * Runs one already-decided hook <b>at a resolved tier</b>.
+     *
+     * <h2>Why the tier arrives here rather than being read off the hook</h2>
+     * 「不同技能都相同效果，取最高等级」 — the same effect coming from two skills is applied
+     * <b>once</b>, at the highest rung either skill reached. That decision needs the <em>whole</em> hook list
+     * of one firing, so it cannot live in an executor (which sees one hook) and it cannot be done by rewriting
+     * the list either, because the winner depends on the character's level band as well as on the declared
+     * tiers. So {@link #fire} runs the collapse ({@code EffectCollapse.collapse}) and hands the survivor's
+     * tier to the runner alongside the hook.
+     *
+     * <p>{@code tier} is {@code 0} for a hook that has no tier at all ({@code extra_damage} and friends), so a
+     * runner that ignores it is correct for those — and one that used it blindly would be reporting a
+     * non-tiered effect as tier 0, which no ladder contains. See {@code EffectCollapse.Applied#tier()}.
+     */
+    @FunctionalInterface
+    public interface TieredEffectRun {
+        Optional<ResourceLocation> run(int hookIndex, EffectHook hook, int tier);
+    }
+
+    /**
      * The whole answer of one {@link #fire}: what ran, and where the character's rotation now stands.
      *
      * @param fired    every effect that ran, in order, including any {@code stack_full} pass
@@ -132,6 +154,17 @@ public final class HookPlan {
         }
     }
 
+    /**
+     * The gate a caller passes when it <b>cannot answer</b> "does the caster hold this state" — a test that
+     * never declares one, an ultimate whose caster has no live effect map.
+     *
+     * <p>Answers {@code false}, i.e. <b>fail-closed</b>: a state-gated hook does not fire for a caller that
+     * could not check its state. The opposite default would make an unchecked gate mean "the state is always
+     * held", which is the fail-open shape this project forbids and which would silently turn 怜's
+     * wind-blade branch on for everybody.
+     */
+    public static final Predicate<ResourceLocation> NO_STATE_HELD = state -> false;
+
     private HookPlan() {
     }
 
@@ -143,7 +176,7 @@ public final class HookPlan {
      * second rule: the rotation is simply discarded.
      *
      * @param hooks     the character's hook list, indexed by its position
-     * @param facts     what just happened, as the eight triggers see it
+     * @param facts     what just happened, as the nine triggers see it
      * @param chance    the chance roll; called once per hook that is about to run
      * @param effects   runs one hook and answers with the stack it filled, if any
      * @param onInvalid receives every hook that cannot work as written
@@ -155,14 +188,78 @@ public final class HookPlan {
     }
 
     /**
+     * Fires {@code hooks} for one event, with the <b>same effect coming from several skills collapsed</b>.
+     *
+     * <p>The production form. {@link EffectRun} cannot express this: the collapse has to look at the whole
+     * firing list at once and then hand the survivor's <em>resolved</em> tier to the executor, so the behaviour
+     * that 「不同技能都相同效果，取最高等级」 describes has nowhere to live in a signature that says "run this
+     * hook". See {@link TieredEffectRun}.
+     *
+     * @param hooks     the character's hook list, indexed by its position
+     * @param facts     what just happened, as the nine triggers see it
+     * @param chance    the chance roll; called once per hook that is about to run
+     * @param effects   runs one hook at one resolved tier, and answers with the stack it filled
+     * @param onInvalid receives every hook that cannot work as written
+     * @param level     the character's level, for the band the collapse adds; {@code 0} for "unknown"
+     */
+    public static Outcome fireTiered(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
+            TieredEffectRun effects, Consumer<Invalid> onInvalid, int level) {
+        return fireTiered(hooks, facts, chance, effects, onInvalid, SkillRotation.START, level);
+    }
+
+    /**
+     * Fires {@code hooks} at an explicit rotation cursor, with the same-effect collapse applied.
+     *
+     * @param hooks    the character's hook list, indexed by its position
+     * @param facts    what just happened
+     * @param chance   the chance roll
+     * @param effects  runs one hook at one resolved tier
+     * @param onInvalid receives every hook that cannot work as written
+     * @param rotation her cursor before the event; {@code null} means {@link SkillRotation#START}
+     * @param level    the character's level, for the band
+     */
+    public static Outcome fireTiered(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
+            TieredEffectRun effects, Consumer<Invalid> onInvalid, SkillRotation rotation, int level) {
+        return fireTiered(hooks, facts, chance, effects, onInvalid, rotation, level, NO_STATE_HELD);
+    }
+
+    /**
+     * Fires {@code hooks} at an explicit rotation cursor, with the same-effect collapse applied and a
+     * <b>state gate</b>.
+     *
+     * <h2>The state gate</h2>
+     * 「状态」 is a {@code MobEffect} the caster is holding (see {@code TriggerParams#requiresState()}). A hook
+     * that names one fires only while {@code stateHeld} answers true for it, and stops the moment the effect
+     * expires — the gate is asked on <b>every</b> firing, so nothing has to be cleared when the state ends.
+     * The gate is a {@link Predicate} rather than an {@code EffectType} check because "does she hold it" is a
+     * live question about one entity; keeping it a function is what lets the rule be asserted with no world.
+     *
+     * <p>A skipped gated hook is silent and does not advance the rotation (its skill's other hooks still
+     * decide the turn), which is the same treatment a missed chance roll gets: the branch is unavailable, not
+     * broken. {@link #NO_STATE_HELD} is the fail-closed default every older overload passes.
+     *
+     * @param stateHeld answers "is {@code state} on the caster right now"; called once per gated hook
+     */
+    public static Outcome fireTiered(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
+            TieredEffectRun effects, Consumer<Invalid> onInvalid, SkillRotation rotation, int level,
+            Predicate<ResourceLocation> stateHeld) {
+        return run(hooks, facts, chance, effects, onInvalid,
+                rotation == null ? SkillRotation.START : rotation, true, level, true, stateHeld);
+    }
+
+    /**
      * Fires {@code hooks} for one event, in list order, honouring the character's own rotation.
      *
      * <p>See the class javadoc for the rule. In one sentence: of the hooks whose trigger is
      * {@link Trigger#MELEE_HIT}, exactly the cursor-th runs, and the cursor advances only if that one
      * actually fired.
      *
+     * <p>This form does <b>not</b> collapse duplicate effects: it is the low-level seam, where "every hook you
+     * were given runs" is what a caller is asserting. Production goes through {@link #fireTiered}, which
+     * collapses. The difference is one boolean in {@link #run}, not a second loop.
+     *
      * @param hooks     the character's hook list, indexed by its position
-     * @param facts     what just happened, as the eight triggers see it
+     * @param facts     what just happened, as the nine triggers see it
      * @param chance    the chance roll; called once per hook that is about to run
      * @param effects   runs one hook and answers with the stack it filled, if any
      * @param onInvalid receives every hook that cannot work as written
@@ -171,23 +268,51 @@ public final class HookPlan {
      */
     public static Outcome fire(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
             EffectRun effects, Consumer<Invalid> onInvalid, SkillRotation rotation) {
-        return fire(hooks, facts, chance, effects, onInvalid,
-                rotation == null ? SkillRotation.START : rotation, true);
+        return run(hooks, facts, chance, (index, hook, tier) -> effects.run(index, hook), onInvalid,
+                rotation == null ? SkillRotation.START : rotation, true, 0, false, NO_STATE_HELD);
     }
 
-    private static Outcome fire(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
-            EffectRun effects, Consumer<Invalid> onInvalid, SkillRotation rotation,
-            boolean allowStackFull) {
-        List<Fired> fired = new ArrayList<>();
+    /**
+     * The one firing loop: decide, collapse, execute.
+     *
+     * <h2>Why decide-then-execute rather than execute-as-you-walk</h2>
+     * The collapse needs the <b>whole</b> set of hooks this event will fire before it can answer which single
+     * tier each effect runs at — an executor cannot see the hook after it. And the decision itself must not be
+     * computed twice: the chance roll is drawn once per hook and the rotation advances once per swing, so a
+     * second walk would either roll again (changing the outcome) or need the rolls cached.
+     *
+     * <p>So the walk has two phases over one list. <b>Decide</b> applies the six gates in their documented
+     * order — well-formed, state held, trigger observed, this skill's turn, chance roll — and records the
+     * survivors with their indices. <b>Execute</b> then collapses those survivors and runs them. The rotation
+     * and the grouping are computed on the <b>author's</b> list, so collapsing cannot change the rotation's
+     * period or which skill's turn it is.
+     *
+     * @param collapse whether to collapse duplicate tiered effects; {@code false} for the low-level seam
+     * @param stateHeld the state gate; {@link #NO_STATE_HELD} for every caller that cannot answer it
+     */
+    private static Outcome run(List<EffectHook> hooks, TriggerFacts facts, DoublePredicate chance,
+            TieredEffectRun effects, Consumer<Invalid> onInvalid, SkillRotation rotation,
+            boolean allowStackFull, int level, boolean collapse, Predicate<ResourceLocation> stateHeld) {
         SkillGroups groups = SkillGroups.of(hooks);
         int target = rotation.peek(groups.count());
-        boolean rotatingSkillFired = false;
         SkillRotation current = rotation;
+
+        // ---- phase 1: decide. Survivors, in author order, with the index each one reports.
+        List<Integer> survivors = new ArrayList<>();
+        List<EffectHook> survivorHooks = new ArrayList<>();
+        boolean rotatingSkillFired = false;
         for (int index = 0; index < hooks.size(); index++) {
             EffectHook hook = hooks.get(index);
             Optional<String> problem = invalidReason(hook);
             if (problem.isPresent()) {
                 onInvalid.accept(new Invalid(index, hook, problem.get()));
+                continue;
+            }
+            Optional<ResourceLocation> requiredState = hook.triggerParams().requiresState();
+            if (requiredState.isPresent() && !stateHeld.test(requiredState.get())) {
+                // 「持有某状态才生效的分支」: the branch is unavailable, not broken — no diagnostic, and the
+                // skill's other hooks still decide this turn. The gate is re-asked on the next firing, so an
+                // expired state simply stops the branch with nothing to clear.
                 continue;
             }
             if (!facts.observes(hook.trigger(), hook.triggerParams())) {
@@ -203,11 +328,22 @@ public final class HookPlan {
             if (group != SkillGroups.NOT_ROTATING) {
                 rotatingSkillFired = true;
             }
-            fired.add(new Fired(index, hook));
-            Optional<ResourceLocation> filled = effects.run(index, hook);
+            survivors.add(index);
+            survivorHooks.add(hook);
+        }
+
+        // ---- phase 2: collapse, then execute.
+        List<Fired> fired = new ArrayList<>(survivors.size());
+        List<EffectCollapse.Applied> applied = collapse
+                ? EffectCollapse.collapse(survivorHooks, level)
+                : uncollapsed(survivorHooks);
+        for (EffectCollapse.Applied one : applied) {
+            int index = survivorIndexOf(survivors, survivorHooks, one.hook());
+            fired.add(new Fired(index, one.hook()));
+            Optional<ResourceLocation> filled = effects.run(index, one.hook(), one.tier());
             if (filled.isPresent() && allowStackFull) {
-                Outcome pass = fire(hooks, TriggerFacts.forStackFull(filled.get()), chance, effects,
-                        onInvalid, current, false);
+                Outcome pass = run(hooks, TriggerFacts.forStackFull(filled.get()), chance, effects,
+                        onInvalid, current, false, level, collapse, stateHeld);
                 fired.addAll(pass.fired());
             }
         }
@@ -216,6 +352,40 @@ public final class HookPlan {
         // a two-effect skill is still one skill.
         current = rotatingSkillFired ? current.advance(groups.count()) : current;
         return new Outcome(fired, current);
+    }
+
+    /**
+     * {@return every hook as its own application, for the seam that must not collapse}
+     *
+     * <p>The tier is read as written ({@code 0} for a hook that has none): this path exists so a caller can
+     * assert "all N hooks ran", and inventing a band here would make that assertion depend on a level the
+     * caller never supplied.
+     */
+    private static List<EffectCollapse.Applied> uncollapsed(List<EffectHook> hooks) {
+        List<EffectCollapse.Applied> all = new ArrayList<>(hooks.size());
+        for (EffectHook hook : hooks) {
+            Optional<com.astrum.pcrd.api.v1.TieredParams> params = hook.tieredParams();
+            int tier = params.map(com.astrum.pcrd.api.v1.TieredParams::tier).orElse(0);
+            all.add(new EffectCollapse.Applied(hook, tier, tier, 1));
+        }
+        return all;
+    }
+
+    /**
+     * {@return the author's index of {@code hook} among the survivors}
+     *
+     * <p>Matched by <b>identity</b>, which is what the collapse preserves: the survivor of a key is the first
+     * hook that carried it, not a copy. So a duplicate that was collapsed away keeps no index, and the
+     * diagnostic lines and {@code Fired.hookIndex} keep pointing at the hook an author wrote.
+     */
+    private static int survivorIndexOf(List<Integer> survivors, List<EffectHook> survivorHooks,
+            EffectHook hook) {
+        for (int i = 0; i < survivorHooks.size(); i++) {
+            if (survivorHooks.get(i) == hook) {
+                return survivors.get(i);
+            }
+        }
+        return -1;
     }
 
     /**
@@ -236,7 +406,8 @@ public final class HookPlan {
                     : Optional.of("combo_n needs triggerParams.hits >= 1 but has hits="
                             + hook.triggerParams().hits() + "; add triggerParams or the hook never fires "
                             + "(it is not treated as 1, which would pay out on every hit)");
-            case MELEE_HIT, PROJECTILE_HIT, CRIT, KILL, BLOCK, LOW_HEALTH, STACK_FULL -> Optional.empty();
+            case MELEE_HIT, PROJECTILE_HIT, CRIT, KILL, BLOCK, LOW_HEALTH, BATTLE_START, UB_LAND,
+                    STACK_FULL -> Optional.empty();
         };
     }
 }

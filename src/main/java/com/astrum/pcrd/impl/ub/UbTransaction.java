@@ -1,8 +1,10 @@
 package com.astrum.pcrd.impl.ub;
 
+import com.astrum.pcrd.impl.attach.UbCooldown;
 import com.astrum.pcrd.impl.attach.UbState;
 import java.util.Optional;
 import java.util.function.Consumer;
+import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
@@ -11,9 +13,10 @@ import org.jetbrains.annotations.ApiStatus;
  *
  * <h2>Why the transaction is its own class</h2>
  * This is the one path in the mod where a player's property is spent, and it used to be verifiable only
- * by reading {@code UbService.tryCast}: "accepted ⇒ bar exactly {@code 0.0}, {@code cdEndTick == now +
- * ubGlobalCooldownTicks}, event posted once, sink called once; refused ⇒ nothing changes" was a claim
- * about statements in a method that needs a {@link net.minecraft.server.level.ServerPlayer} to run.
+ * by reading {@code UbService.tryCast}: "accepted ⇒ bar exactly {@code 0.0}, <b>that character's</b>
+ * cooldown ending at {@code now + ubGlobalCooldownTicks} while every other character's is untouched,
+ * event posted once, sink called once; refused ⇒ nothing changes" was a claim about statements in a
+ * method that needs a {@link net.minecraft.server.level.ServerPlayer} to run.
  * Two plausible slips break that contract without failing anything: writing the new gauge as a
  * subtraction, and posting the event before the write. Both are pinned now, because both halves live
  * here as plain functions:
@@ -66,19 +69,32 @@ public final class UbTransaction {
      * {@return the refusal, or the exact state an accepted cast writes}
      *
      * <p>The paid state is, precisely: the bar emptied to {@code 0.0} (a full bar, no partial spend —
-     * spec §5.4), the slot that fired remembered as the selection, and the shared cooldown armed at
-     * {@code nowTick + cooldownTicks} (the end tick is already usable, see {@link CastGate.Facts}).
+     * spec §5.4), the slot that fired remembered as the selection, and <b>that slot's character's</b>
+     * cooldown armed at {@code nowTick + cooldownTicks} while every other character's cooldown is
+     * carried over untouched (the end tick is already usable, see {@link CastGate.Facts}).
      *
-     * @param facts         the resolved cast inputs
-     * @param cooldownTicks the configured global cooldown, {@code ubGlobalCooldownTicks}
+     * <p>The character key comes from {@code characterId}, not from the slot: the slot is where she was
+     * standing when the cast happened, and the party can be edited afterwards. Keying on the character
+     * is exactly what makes A's cooldown survive her being moved to another wheel slot — and what makes
+     * two different characters in two slots independent, which is the request
+     * (「每个角色UB的CD不共享」).
+     *
+     * @param facts         the resolved cast inputs; the cooldown check inside them is the one for
+     *                      {@code characterId}
+     * @param cooldownTicks the configured cooldown length, {@code ubGlobalCooldownTicks}; it is now the
+     *                      length each character's own cooldown is given, not one shared deadline
+     * @param characterId   the character in {@code facts.slot()}, as the caller resolved her
+     * @param before        the player's state before the cast, whose other cooldowns are carried over
      */
-    public static Outcome decide(CastGate.Facts facts, int cooldownTicks) {
+    public static Outcome decide(CastGate.Facts facts, int cooldownTicks,
+            ResourceLocation characterId, UbState before) {
         Optional<CastGate.Reason> refusal = CastGate.refusal(facts);
         if (refusal.isPresent()) {
             return new Outcome(refusal, Optional.empty());
         }
+        UbCooldown armed = new UbCooldown(facts.nowTick() + cooldownTicks, cooldownTicks);
         return new Outcome(Optional.empty(),
-                Optional.of(new UbState(0.0f, facts.slot(), facts.nowTick() + cooldownTicks)));
+                Optional.of(before.withCharge(0.0f, facts.slot()).withCooldown(characterId, armed)));
     }
 
     /**

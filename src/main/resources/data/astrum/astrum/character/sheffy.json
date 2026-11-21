@@ -1,0 +1,261 @@
+{
+  "schemaVersion": 1,
+  "displayName": "雪菲",
+  "skillName": "冰牙蛮咬",
+  "avatar": "astrum:textures/gui/portrait/sheffy.png",
+  "icon1st": "astrum:textures/gui/portrait/sheffy_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/sheffy_3.png",
+  "icon6th": "astrum:textures/gui/portrait/sheffy_6.png",
+  "still": "astrum:textures/gui/still/sheffy_3.png",
+  "still6th": "astrum:textures/gui/still/sheffy_6.png",
+  "dimension": "charge",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/balance-derivation.md §18（锚点与 §14.1 完全一致：参考等级 208、参考攻击力 2000、锚点 22140 → 20.0，一字未动）。UB 舞斩·月下冰龙 4.8A+60+60L = 22140 → 20.0（锚点本身）；6★UB 冰牙蛮咬 6A+75+75L = 27675 → 25.0。技能1 雪靴 0.4A+10+10L = 2890 → 2.6，其「+【0.4*攻击力】*『冰龙之印』」项 = 800/枚 → 0.7/枚，写成 consume_counter 的 damagePerMark（先读持有、再减 1，见 Counters）；物防下降 0.54+0.54L = 112.86 → 1 档。技能2 冻结之湖 是 (2.5+2.5L)*(1+计数) = 522.5(base) → buff_attack_area 1 档。专属（技能1 的 tier2）伤害 0.6A+15+15L = 4335 → 3.9，计数项 0.6A = 1200/枚 → 1.1/枚，物防下降 0.8+0.8L = 167.2 → 1 档，自身物攻 (4+4L) = 836 → buff_attack_area 2 档。EX 加速回旋曲【15+15*技能等级】物攻 → flat_attack_up base15/perLevel15，EX+【240+15*技能等级】→ base240/perLevel15（系数照抄，不预先乘等级，见 §17.2）。冰龙之印上限：本体 UB 写「最大10个」→ 阶梯 tier 3（上限 12，多 2 枚余量，这是「不截断的最小档」规则的结果，不是笔误）；6★ UB 写「最多可获得20个」→ tier 5（上限 20，精确）。特殊技能1 冰龙之印 已落地（不再挂在 extra 里）：battle_start trigger 触发 counter，base 4（bwiki「获得4个」，常量授予，perMark 0），cap 写 12 → 阶梯 tier 3（上限 12，与本体 UB 同一档），授予 180 秒。battle_start = 一场战斗的第一击（距她上一次挥砍 ≥600 tick / 30 秒才算新战斗，见 TriggerRuntime）；这个 hook 写在 effects 最前面，所以开战那一击先得 4 枚，紧接着雪靴读走的 1 枚是按「持有 4 枚」算的。SP1 的图标是自产的「冰龙之印」图（skillicon/sheffy_sp1.png，取自自绘的 gui/effect_icon.png）：bwiki 的「技能图标」文件夹里没有特殊技能1 的官方图（只有 EX / UB / 技能1 / 技能2），所以这里不是漏了官方图。6★ 玩家由 6★UB 拿到的 12 枚以上存量不会被这一档顶高，也不会被削低（vanilla 的 addEffect 取较大 amplifier）。EX 仍然走 enrolment passive，不复用这个 trigger —— EX 不是 hook（见 SkillLadder/ExPassives）。已记录的缺口（不静默丢弃）：(1) 技能2 与专属的「×(1+『冰龙之印』)」倍率没有机制，取的是 base 值；(2) 6★UB 的「每秒恢复【10+计数】技能值，持续10.5秒，最大总计315」已由 counter_charge_regen 承载（按 §14.5 的 1 充能点 = 10 TP 换算成 base 1.0 / perMark 0.1 充能点每秒 → 10 + 1/枚 TP 每秒，10.5 秒；雪菲自己在持续期间用技能1消耗印记，效果每 tick 读当前计数，所以后半段会变低，这正是原文「+「冰龙之印」」的意思）。残留差异：原文的「若「冻结之湖」存在」是一个前置条件，本 mod 的 UB 效果列表没有条件字段，所以这 10.5 秒的回复每次都直接生效——这一点记录在此，不是静默丢弃；(3) 本体 UB「增加1枚计数器，至多5枚」/6★「至多13枚」是原作自己的计数器上限，本 mod 的计数上限统一走 EffectTiers 的阶梯（tier 3 = 12 / tier 5 = 20），不再有第二个上限。",
+  "effects": [
+    {
+      "trigger": "battle_start",
+      "effect": "counter",
+      "triggerParams": {
+        "skill": "sp1"
+      },
+      "effectParams": {
+        "base": 4,
+        "cap": 12,
+        "seconds": 180.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "consume_counter",
+      "triggerParams": {
+        "skill": "snow_boots"
+      },
+      "effectParams": {
+        "remove": 1,
+        "damagePerMark": 0.7
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "snow_boots"
+      },
+      "effectParams": {
+        "amount": 2.6
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "defence_down",
+      "triggerParams": {
+        "skill": "snow_boots"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "consume_counter",
+      "triggerParams": {
+        "skill": "frozen_lake"
+      },
+      "effectParams": {
+        "remove": 1,
+        "damagePerMark": 0.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_attack_area",
+      "triggerParams": {
+        "skill": "frozen_lake"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0,
+        "radius": 8.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "舞斩·月下冰龙",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 20.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "counter",
+          "effectParams": {
+            "tier": 3,
+            "seconds": 180.0
+          },
+          "counter": {
+            "base": 5,
+            "perMark": 1,
+            "cap": 10
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "冰牙蛮咬",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 25.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "counter",
+          "effectParams": {
+            "tier": 5,
+            "seconds": 180.0
+          },
+          "counter": {
+            "base": 7,
+            "perMark": 1,
+            "cap": 20
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "counter_charge_regen",
+          "chargeRate": {
+            "base": 1.0,
+            "perMark": 0.1
+          },
+          "effectParams": {
+            "seconds": 10.5
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/sheffy_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "sp1",
+        "baseName": "冰龙之印"
+      },
+      {
+        "skill": "snow_boots",
+        "baseName": "雪靴",
+        "tier2": {
+          "name": "雪靴+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "consume_counter",
+              "triggerParams": {
+                "skill": "snow_boots"
+              },
+              "effectParams": {
+                "remove": 1,
+                "damagePerMark": 1.1
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "snow_boots"
+              },
+              "effectParams": {
+                "amount": 3.9
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "defence_down",
+              "triggerParams": {
+                "skill": "snow_boots"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_attack_area",
+              "triggerParams": {
+                "skill": "snow_boots"
+              },
+              "effectParams": {
+                "tier": 2,
+                "seconds": 12.0,
+                "radius": 0.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/sheffy_main1.png"
+      },
+      {
+        "skill": "frozen_lake",
+        "baseName": "冻结之湖",
+        "icon": "astrum:textures/gui/skillicon/sheffy_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "加速回旋曲",
+        "tier2": {
+          "name": "加速回旋曲+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 3,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/sheffy_ex.png"
+      }
+    ]
+  }
+}

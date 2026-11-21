@@ -48,7 +48,8 @@ import org.jetbrains.annotations.ApiStatus;
  * @param quarantined whether the server's book is an unreadable save (then {@code entries} is empty)
  */
 @ApiStatus.Internal
-public record RosterSyncPayload(List<Entry> entries, boolean quarantined) implements CustomPacketPayload {
+public record RosterSyncPayload(List<Entry> entries, boolean quarantined, int part, int parts)
+        implements CustomPacketPayload {
 
     /** {@code astrum:roster_sync}. */
     public static final Type<RosterSyncPayload> TYPE = new Type<>(InternalIds.id("roster_sync"));
@@ -61,10 +62,20 @@ public record RosterSyncPayload(List<Entry> entries, boolean quarantined) implem
     public static final int MAX_ENTRIES = 256;
 
     /** The empty, readable book: a player who owns nothing, or a client that has not been synced yet. */
-    public static final RosterSyncPayload EMPTY = new RosterSyncPayload(List.of(), false);
+    public static final RosterSyncPayload EMPTY = new RosterSyncPayload(List.of(), false, 0, 1);
 
     /** The "save could not be read" state: no rows, and the screen must say so. */
-    public static final RosterSyncPayload QUARANTINED = new RosterSyncPayload(List.of(), true);
+    public static final RosterSyncPayload QUARANTINED = new RosterSyncPayload(List.of(), true, 0, 1);
+
+    /**
+     * A whole book in one packet — the shape every caller used before {@code part}/{@code parts} existed.
+     *
+     * <p>Kept because most books <b>are</b> one packet: {@link #MAX_ENTRIES} is far beyond any pack this
+     * slice ships, so the single-part case must stay the ordinary one and must not pay for the batching.
+     */
+    public RosterSyncPayload(List<Entry> entries, boolean quarantined) {
+        this(entries, quarantined, 0, 1);
+    }
 
     /**
      * One owned character, as the screen needs it.
@@ -90,10 +101,23 @@ public record RosterSyncPayload(List<Entry> entries, boolean quarantined) implem
     /** Copies the list so a caller's collection cannot change what this payload holds. */
     public RosterSyncPayload {
         entries = List.copyOf(entries);
+        // A part index outside its own count is a protocol error, not something to clamp: the receiver's
+        // accumulator keys on it, and a silent fix would assemble a book out of the wrong frames.
+        if (parts < 1) {
+            parts = 1;
+        }
+        if (part < 0 || part >= parts) {
+            part = 0;
+            parts = 1;
+        }
     }
 
     private static void encode(FriendlyByteBuf buf, RosterSyncPayload payload) {
         buf.writeBoolean(payload.quarantined);
+        // Part index and count first: a receiver must know how much is still coming before it decides what
+        // to do with this frame's rows.
+        buf.writeVarInt(payload.part);
+        buf.writeVarInt(payload.parts);
         buf.writeVarInt(payload.entries.size());
         for (Entry entry : payload.entries) {
             writeEntry(buf, entry);
@@ -102,6 +126,12 @@ public record RosterSyncPayload(List<Entry> entries, boolean quarantined) implem
 
     private static RosterSyncPayload decode(FriendlyByteBuf buf) {
         boolean quarantined = buf.readBoolean();
+        int part = buf.readVarInt();
+        int parts = buf.readVarInt();
+        if (parts < 1 || part < 0 || part >= parts) {
+            throw new io.netty.handler.codec.DecoderException(
+                    "astrum: roster_sync carried part " + part + " of " + parts);
+        }
         int count = buf.readVarInt();
         if (count < 0 || count > MAX_ENTRIES) {
             throw new io.netty.handler.codec.DecoderException(
@@ -111,7 +141,7 @@ public record RosterSyncPayload(List<Entry> entries, boolean quarantined) implem
         for (int i = 0; i < count; i++) {
             entries.add(readEntry(buf));
         }
-        return new RosterSyncPayload(entries, quarantined);
+        return new RosterSyncPayload(entries, quarantined, part, parts);
     }
 
     /**

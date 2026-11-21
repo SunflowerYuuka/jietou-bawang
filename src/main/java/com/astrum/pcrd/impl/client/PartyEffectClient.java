@@ -93,13 +93,27 @@ final class PartyEffectClient implements IClientMobEffectExtensions {
     }
 
     /**
+     * {@return the extension that serves party slot {@code slot}}
+     *
+     * <p>Package-private, and the only way a caller outside {@link #registerExtensions} obtains one — which
+     * is what lets {@code PartyRowLayerRegistrationTest} assert the hide-from-the-bar predicate for
+     * <b>every</b> registered slot without constructing its own equivalent. A test that built its own
+     * instance would pass while production registered a different one.
+     *
+     * @param slot 0-based party slot
+     */
+    static IClientMobEffectExtensions forSlot(int slot) {
+        return new PartyEffectClient(slot);
+    }
+
+    /**
      * Attaches one extension per slot effect. Called from {@code ClientEvents.register} on the mod bus
      * with {@code RegisterClientExtensionsEvent} — the non-deprecated replacement for overriding
      * {@code MobEffect#initializeClient}, which is {@code forRemoval} since 1.21.
      */
     static void registerExtensions(RegisterClientExtensionsEvent event) {
         for (int slot = 0; slot < Party.SLOTS; slot++) {
-            event.registerMobEffect(new PartyEffectClient(slot), PartyEffects.holderFor(slot));
+            event.registerMobEffect(forSlot(slot), PartyEffects.holderFor(slot));
         }
         Astrum.LOGGER.info("astrum: {} party effect icons registered (avatar + skill name)", Party.SLOTS);
     }
@@ -131,6 +145,94 @@ final class PartyEffectClient implements IClientMobEffectExtensions {
         blitWholeTexture(graphics, avatar, x + HUD_INSET, y + HUD_INSET);
         graphics.setColor(1.0F, 1.0F, 1.0F, 1.0F);
         return true;
+    }
+
+    /**
+     * <b>The five party effects are not drawn in either of vanilla's effect lists.</b>
+     *
+     * <p>They are shown in our own {@link PartyStatusHud} row above the UB gauge instead. The reason is not
+     * taste: vanilla's bar is a column of 24px sprites with a duration, built for potions. Five entries for
+     * effects the player did not cast pushed real effects off the column, and 24px is not a size at which a
+     * party member's face, name and remaining time all read. A party is 「who is with me」, which is a
+     * different question from 「what is on me」 and deserves its own row.
+     *
+     * <p>Returning {@code false} from {@code isVisibleInGui} is the whole mechanism: vanilla's
+     * {@code Gui.renderEffects} filters the player's effect list through this predicate, so the entry is not
+     * drawn and the bar is honest again by subtraction. The <b>effect itself is untouched</b> — it is still
+     * registered, still on the entity, still visible through {@code /effect} and still the server's record of
+     * who is buffed ({@code PartyBuffs}). Only the drawing moved.
+     *
+     * <p><b>The inventory list hides them too</b> ({@link #isVisibleInInventory}): the human opened his
+     * inventory and found 姬塔 / 可可萝 / 佩可莉姆 / 凯露 sitting at the end of the potion list
+     * (「药水栏还有角色头像的药水效果。」). A party member is not a potion and no list of potions should name
+     * one, so the two predicates now agree. That reverses an earlier decision — the inventory was argued to
+     * be "where a player looks things up" — and the argument was wrong for the same reason the HUD one was:
+     * the row is the lookup, and vanilla's list is not a second copy of it.
+     *
+     * <p>The five <em>temporary</em> effects this mod also registers (攻击提升, 行动速度, 魔法防御力, TP
+     * 获得量提升, 攻击力提升) are a different kind of thing and stay in vanilla's list, because they are
+     * buffs on the player with a real duration, not a statement about who is in the party.
+     */
+    @Override
+    public boolean isVisibleInGui(MobEffectInstance instance) {
+        logHiddenOnce(HIDDEN_SURFACE_BAR);
+        return false;
+    }
+
+    /**
+     * <b>The inventory's effect list hides the party entries as well.</b>
+     *
+     * <p>Same rule, same reason as {@link #isVisibleInGui}: a party slot is not an effect on the player, and
+     * vanilla's list is a list of effects on the player. Keeping it here as well as on the HUD is the point
+     * — one answer for every surface, so there is nowhere left for a party avatar to appear among the
+     * potions.
+     *
+     * <p>The effect type remains registered, and {@link #renderInventoryIcon} / {@link #renderInventoryText}
+     * remain implemented: they are unreachable through vanilla now, but a {@code MobEffectInstance} of one of
+     * these types can still be produced by a command, and a surface that asks the extension how to draw one
+     * should get an avatar rather than a purple missing-texture checker.
+     */
+    @Override
+    public boolean isVisibleInInventory(MobEffectInstance instance) {
+        logHiddenOnce(HIDDEN_SURFACE_INVENTORY);
+        return false;
+    }
+
+    /** {@code Gui.renderEffects}: the HUD bar, the surface the party row replaced. */
+    static final String HIDDEN_SURFACE_BAR = "HUD";
+
+    /** {@code EffectRenderingInventoryScreen}: the inventory's effect page, the list he screenshotted. */
+    static final String HIDDEN_SURFACE_INVENTORY = "inventory";
+
+    /**
+     * The {@code slot:surface} pairs whose filtering has already been logged.
+     *
+     * <p>Bounded by {@code Party.SLOTS * 2}, and only ever added to, so it cannot grow with play time: the
+     * two surfaces are the only two places vanilla asks these predicates, which is what makes the key set
+     * finite.
+     */
+    private static final java.util.Set<String> LOGGED_HIDDEN =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /**
+     * Logs, once per slot and surface, that vanilla asked whether to draw this party effect and got "no".
+     *
+     * <p>The hiding is an <em>absence</em>, and an absence is the one kind of fix a screenshot cannot show:
+     * a picture of an empty corner proves nothing, and neither does a picture of a list that no longer holds
+     * four names — it could equally be a list that never had them. A line naming the slot, the surface and
+     * the moment vanilla asked is the only evidence that the filter ran.
+     *
+     * <p>Once per pair, not once per query: vanilla asks on every frame the inventory is open, and a line at
+     * 300 fps would be a formatting cost for a fact that does not move.
+     *
+     * @param surface {@link #HIDDEN_SURFACE_BAR} or {@link #HIDDEN_SURFACE_INVENTORY}
+     */
+    private void logHiddenOnce(String surface) {
+        if (!LOGGED_HIDDEN.add(slot + ":" + surface)) {
+            return;
+        }
+        Astrum.LOGGER.info("astrum: party effect slot {} filtered out of vanilla's {} effect list",
+                slot, surface);
     }
 
     @Override
@@ -173,7 +275,7 @@ final class PartyEffectClient implements IClientMobEffectExtensions {
      * texture's true size instead would crop every avatar larger than the icon.
      */
     private static void blitWholeTexture(GuiGraphics graphics, ResourceLocation texture, int x, int y) {
-        graphics.blit(texture, x, y, ICON_SIZE, ICON_SIZE, 0.0F, 0.0F, ICON_SIZE, ICON_SIZE,
+        graphics.blit(ArtFallback.resolve(texture), x, y, ICON_SIZE, ICON_SIZE, 0.0F, 0.0F, ICON_SIZE, ICON_SIZE,
                 ICON_SIZE, ICON_SIZE);
     }
 

@@ -72,6 +72,14 @@ class LangParityTest {
                 ClientKeyBindings.CONFIG_KEY));
         keys.addAll(AstrumCommand.LANG_KEYS);
         keys.addAll(CharacterCardItem.langKeys());
+        // The second loop of the lottery, end to end: a duplicate card becomes a 记忆结晶, and a stack of a
+        // hundred crystals is right-clicked to become a character card. Every step speaks a sentence, so
+        // every step's key has to be here — a missing one reads as "astrum.token.not_enough" in chat.
+        // The 选择券 that used to sit between the two is gone (the human removed it: 「直接随机获取一个没有的
+        // 角色」), so its six {@code astrum.voucher.*} keys left the lang files and this set together.
+        keys.addAll(com.astrum.pcrd.impl.item.MemoryTokenItem.langKeys());
+        // The token's own recycle hint names the card, so it belongs to the token and is listed with it.
+        keys.add(com.astrum.pcrd.impl.item.MemoryTokenItem.recycleHintKey());
         // The 角色册 item and screen, including every astrum.party.reason.* key derived from the enum.
         keys.addAll(BookText.LANG_KEYS);
         // The rice bowl's item name: the dish is a dedicated item, so its name is a key this test has to see
@@ -90,10 +98,23 @@ class LangParityTest {
         // the party sync; the normal name is the character's skill name, which is data, not a key. The
         // registry key has to be translated either way or a player reads "effect.astrum.party_1".
         keys.addAll(com.astrum.pcrd.impl.effect.PartyEffectSlots.langKeys());
+        // The skill rows' names: one fallback key with no digit in it, plus one per character for the effect
+        // type's own registry lookup. It used to be five keys, {@code effect.astrum.skill_1..5}, because vanilla
+        // resolves a MobEffect's name per registry type — and that is exactly what put 「技能效果 1 二级」 on the
+        // human's bar: a slot number, plus vanilla's effect-level suffix describing our row index as if it were a
+        // strength. Task 59 replaced five per-slot types with one type per (character, skill): the 91 types add
+        // NO key, because a skill's name is data (a ladder that renames at 6★), and the type-level key is one per
+        // character. Sourced from the owning class for the same reason as the party slots: renaming a key, or
+        // adding a character without its name, has to fail here.
+        keys.addAll(com.astrum.pcrd.impl.effect.SkillEffectTypes.langKeys());
         // The self attack buff's name, {@code effect.astrum.attack_buff}. A player reads this in the
         // HUD as the buff's label, so a missing translation is a raw key on the effect bar — the one
         // surface the buff exists for.
         keys.add(com.astrum.pcrd.impl.effect.AttackBuffs.NAME_KEY);
+        // The armour debuff's name, {@code effect.astrum.defence_down}. キャル's アーマーダウン puts it on
+        // the victim, where the player reads it in the effect bar — so a missing translation is a raw key
+        // on exactly the surface the debuff exists for.
+        keys.add(com.astrum.pcrd.impl.effect.AttackBuffs.DEFENCE_DOWN_NAME_KEY);
         // The 演出 entity's display name. Vanilla reads a name key per entity type; the showcase is not
         // pickable so no player normally sees it, but a rename that left one file behind would still be
         // a raw key on the /data and death-message surfaces.

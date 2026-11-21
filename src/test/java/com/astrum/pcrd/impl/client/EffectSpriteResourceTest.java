@@ -92,23 +92,6 @@ class EffectSpriteResourceTest {
         }
     }
 
-    /**
-     * Every effect's HUD sprite is reachable through the resource manager at the path vanilla derives.
-     *
-     * <p>The list is built from the registry ids ({@link PartyEffectSlots#ids()} and {@link AttackBuffs#ID}),
-     * so the sixth effect — the one that was missing — cannot be forgotten the way it was.
-     */
-    @Test
-    void everyEffectSpriteIsReachableThroughTheResourceManager() {
-        for (ResourceLocation id : effectIds()) {
-            ResourceLocation path = spritePathOf(id);
-            Optional<Resource> found = resources.getResource(path);
-            assertTrue(found.isPresent(), "astrum:" + id.getPath() + " would draw the missing-texture "
-                    + "checkerboard: the client cannot reach " + path);
-            assertTrue(found.get().sourcePackId().contains("astrum"),
-                    "the sprite must come from this mod's pack, not a fallback");
-        }
-    }
 
     /**
      * The atlas lists it under the id the effect HUD looks up.
@@ -138,16 +121,6 @@ class EffectSpriteResourceTest {
         }
     }
 
-    /** The book's self-buff icon is reachable as an ordinary texture — it is blitted directly, not atlased. */
-    @Test
-    void theSelfBuffIconIsReachableAsATexture() {
-        ResourceLocation path = ResourceLocation.fromNamespaceAndPath("astrum",
-                "textures/gui/skill/attack_buff.png");
-        assertTrue(resources.getResource(path).isPresent(),
-                "the book's self-buff row draws this texture directly: " + path);
-        assertEquals(path, SkillIcons.textureFor(com.astrum.pcrd.api.v1.EffectType.ATTACK_BUFF),
-                "the drawing code and the shipped file must name the same path");
-    }
 
     /**
      * <b>The 64x64 attack-buff sprite is what vanilla's atlas config resolves, at 64x64.</b>
@@ -173,41 +146,6 @@ class EffectSpriteResourceTest {
      * {@code maxSupportedTextureSize} and neither resizes nor rejects a sprite, which is read from its
      * bytecode — so the atlas mapping is the part that could have gone wrong, and it is asserted.
      */
-    @Test
-    void theAtlasConfigResolvesTheSharpenedSpriteAtSixtyFour() throws Exception {
-        ResourceLocation atlasId = ResourceLocation.withDefaultNamespace("mob_effects");
-        ResourceLocation spriteId = spriteIdOf(spritePathOf(AttackBuffs.ID));
-        try (MultiPackResourceManager withVanilla = new MultiPackResourceManager(
-                PackType.CLIENT_RESOURCES, vanillaAndModPacks())) {
-            // The atlas config itself has to be visible, or "it resolved" would mean nothing.
-            assertTrue(withVanilla.getResource(
-                            ResourceLocation.withDefaultNamespace("atlases/mob_effects.json")).isPresent(),
-                    "vanilla's mob_effects atlas config must be mounted for this test to mean anything");
-
-            // Run vanilla's own atlas config over the real packs. `list` is what the client calls to turn
-            // the `mob_effects` directory source into sprite suppliers; the suppliers are lazy, so this
-            // enumerates the mapping without decoding pixels (decoding the whole atlas needs LWJGL).
-            SpriteSourceList sourceList = SpriteSourceList.load(withVanilla, atlasId);
-            assertFalse(sourceList.list(withVanilla).isEmpty(),
-                    "the mob_effects atlas must resolve at least one sprite from the mounted packs");
-
-            // The sprite the atlas will decode is the committed file, and that file is 64x64.
-            Optional<Resource> file = withVanilla.getResource(spritePathOf(AttackBuffs.ID));
-            assertTrue(file.isPresent(), "the atlas source found no file for " + spritePathOf(AttackBuffs.ID)
-                    + ", so the HUD would draw the missing-texture checkerboard");
-            java.awt.image.BufferedImage image;
-            javax.imageio.ImageIO.setUseCache(false);
-            try (java.io.InputStream in = file.get().open()) {
-                image = javax.imageio.ImageIO.read(in);
-            }
-            assertNotNull(image, "not a readable PNG: " + spritePathOf(AttackBuffs.ID));
-            assertEquals(64, image.getWidth(),
-                    "the sprite the atlas decodes must be the committed 64x64, not a rescaled copy: a "
-                            + "pipeline that shrinks this would make the sharpen invisible");
-            assertEquals(64, image.getHeight(), "height");
-        }
-    }
-
     /**
      * {@return vanilla's resource pack, then this mod's — the order the game uses}
      *
@@ -244,10 +182,27 @@ class EffectSpriteResourceTest {
     // The two path rules, written once
     // -----------------------------------------------------------------------------------------
 
-    /** {@return every registered effect id, party slots plus the attack buff} */
+    /**
+     * {@return every registered effect id: the five party runes, the mechanic effects, and every skill type}
+     *
+     * <p>Built from the registries ({@link PartyEffectSlots#ids()}, {@code PartyEffects.mechanicHolders()} and
+     * {@code PartyEffects.skillHolders()}) rather than from a literal list, so a newly registered effect cannot
+     * be forgotten the way the seventh one was.
+     *
+     * <p>The 91 skill types joined this list in task 59. The extension still draws the <em>pack's</em> skill icon
+     * on the HUD, but the atlas is what JEI and every other sprite consumer asks, and a type with no file there
+     * is the magenta checkerboard — so each one ships a self-drawn placeholder at
+     * {@code textures/mob_effect/skill/<character>/<skill>.png}. See {@code SkillEffectTypes} for why the jar and
+     * the pack carry different pictures for the same row.
+     */
     private static List<ResourceLocation> effectIds() {
         List<ResourceLocation> ids = new java.util.ArrayList<>(PartyEffectSlots.ids());
-        ids.add(AttackBuffs.ID);
+        for (var holder : com.astrum.pcrd.impl.effect.PartyEffects.mechanicHolders()) {
+            ids.add(holder.getKey().location());
+        }
+        for (var holder : com.astrum.pcrd.impl.effect.PartyEffects.skillHolders()) {
+            ids.add(holder.getKey().location());
+        }
         assertFalse(ids.isEmpty());
         return ids;
     }
@@ -274,11 +229,56 @@ class EffectSpriteResourceTest {
     }
 
     /** Guard against a fixture that would pass on an empty pack: the manager must see more than one file. */
+    /**
+     * The party-slot runes are still packaged. They are the one {@code mob_effect} family this mod still
+     * ships: a generic effect stopped having a picture ("通用效果现在不需要图标，只作为代码引用"), but the row
+     * above the UB gauge still draws a rune per slot when a character has no face art, so those five files
+     * must stay.
+     */
     @Test
-    void theManagerReallySeesThisModsResources() {
+    void thePartySlotRunesAreStillPackaged() {
         Map<ResourceLocation, Resource> listed = resources.listResources("textures/mob_effect",
                 path -> path.getPath().endsWith(".png"));
-        assertTrue(listed.size() >= PartyEffectSlots.ids().size() + 1,
-                "the pack must expose every effect sprite plus the attack buff, saw " + listed);
+        for (ResourceLocation id : PartyEffectSlots.ids()) {
+            String path = "textures/mob_effect/" + id.getPath() + ".png";
+            ResourceLocation key = ResourceLocation.fromNamespaceAndPath(id.getNamespace(), path);
+            assertTrue(listed.containsKey(key),
+                    "the party slot rune " + path + " must stay packaged; saw " + listed.keySet());
+        }
     }
+
+    /**
+     * <b>Every skill type has a placeholder sprite in the pack, at the path its registry id names.</b>
+     *
+     * <p>The 91 types are nested one directory deeper than every other effect
+     * ({@code textures/mob_effect/skill/<character>/<skill>.png}), which is the part that could plausibly go
+     * wrong: vanilla's {@code DirectoryLister} walks the directory recursively and builds the sprite id from the
+     * relative path, so a nested file <em>is</em> addressable — but only if the file is really there. A missing
+     * one is the checkerboard in JEI, and the extension that draws the pack's art never touches this sprite, so
+     * nothing else in the build would notice.
+     *
+     * <p>The same {@code listResources} call the client's pack stack makes, over the real resource tree. What it
+     * cannot prove is the GL stitch (no {@code lwjgl} in this JVM), which the class javadoc already states.
+     */
+    @Test
+    void everySkillTypeHasAPlaceholderInThePack() {
+        Map<ResourceLocation, Resource> listed = resources.listResources("textures/mob_effect",
+                path -> path.getPath().endsWith(".png"));
+        List<ResourceLocation> missing = new java.util.ArrayList<>();
+        int checked = 0;
+        for (var holder : com.astrum.pcrd.impl.effect.PartyEffects.skillHolders()) {
+            ResourceLocation id = holder.getKey().location();
+            String path = "textures/mob_effect/" + id.getPath() + ".png";
+            ResourceLocation key = ResourceLocation.fromNamespaceAndPath(id.getNamespace(), path);
+            if (!listed.containsKey(key)) {
+                missing.add(key);
+            }
+            checked++;
+        }
+        assertEquals(List.of(), missing,
+                "every skill type needs a placeholder at textures/mob_effect/<path>.png, or the atlas draws the "
+                        + "missing-texture checkerboard; run tools/gen_skill_effect_types.py");
+        assertEquals(91, checked, "one placeholder per type: 22 characters x (their skills + their UB)");
+    }
+
 }

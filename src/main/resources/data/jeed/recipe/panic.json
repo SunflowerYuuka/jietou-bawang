@@ -1,0 +1,9 @@
+{
+  "type": "jeed:effect_provider",
+  "effect": "astrum:panic",
+  "providers": [
+    {
+      "item": "astrum:character_card"
+    }
+  ]
+}

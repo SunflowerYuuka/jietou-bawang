@@ -1,0 +1,9 @@
+{
+  "type": "jeed:effect_provider",
+  "effect": "astrum:attack_area",
+  "providers": [
+    {
+      "item": "astrum:character_card"
+    }
+  ]
+}

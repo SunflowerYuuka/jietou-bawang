@@ -56,7 +56,8 @@ import org.jetbrains.annotations.ApiStatus;
  * Vanilla's packet spreads {@code count} particles randomly inside a box; that produces a cloud, not
  * a ring. The ring is therefore made by sending each {@link UbBurstPlan} point as its own
  * one-particle call with zero spread and an explicit velocity. That is 21-31 small packets per
- * victim per cast (the global cooldown is 100 ticks), which is cheap next to a single explosion's
+ * victim per cast (a character's cooldown is 100 ticks by default, per character), which is cheap
+ * next to a single explosion's
  * particle packet, and it is what gives the burst its visible shape <em>and its direction</em>.
  *
  * <h2>Which side reads which config</h2>

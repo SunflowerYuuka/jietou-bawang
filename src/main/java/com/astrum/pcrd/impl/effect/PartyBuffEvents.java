@@ -30,6 +30,12 @@ public final class PartyBuffEvents {
     public static void register() {
         NeoForge.EVENT_BUS.addListener(PartyBuffEvents::onLogin);
         NeoForge.EVENT_BUS.addListener(PartyBuffEvents::onRespawn);
+        // 護盾's expiry half. Registered here rather than from Astrum so the entry point stays
+        // wiring-only, and because it is genuinely the same concern: an effect this mod registers has to
+        // be put back / taken away at the moments vanilla does not tell us about. Both are plain event
+        // handlers — no tick listener, no entity walk.
+        NeoForge.EVENT_BUS.addListener(ShieldControl::onEffectEnded);
+        NeoForge.EVENT_BUS.addListener(ShieldControl::onEffectRemoved);
     }
 
     /**
@@ -40,6 +46,10 @@ public final class PartyBuffEvents {
     public static void onLogin(PlayerEvent.PlayerLoggedInEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PartyBuffs.apply(player);
+            // The mechanical half, restored for the same reason: the party is saved state and an effect is
+            // not, so a player who re-enters a world must get her EX back without editing the party. Both
+            // calls are idempotent, so a login that changes nothing writes nothing.
+            ExPassives.apply(player);
         }
     }
 
@@ -51,6 +61,7 @@ public final class PartyBuffEvents {
     public static void onRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (event.getEntity() instanceof ServerPlayer player) {
             PartyBuffs.apply(player);
+            ExPassives.apply(player);
         }
     }
 }

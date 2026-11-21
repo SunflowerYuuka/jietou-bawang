@@ -7,7 +7,6 @@ import net.minecraft.world.item.ItemStack;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.neoforge.common.NeoForge;
 import net.neoforged.neoforge.event.entity.player.UseItemOnBlockEvent;
-import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
@@ -27,23 +26,23 @@ import org.jetbrains.annotations.ApiStatus;
  * there is no side branch beyond that one: {@code UseItemOnBlockEvent} is only posted where a player
  * interacts, so it never runs on a headless dedicated server without a player.
  *
- * <h2>The throttle, and where it dies</h2>
- * One {@link DishThrottle} per listener instance — i.e. one per server session, not a static — keyed on
- * (player, dish) → the day it was fed. It is cleared in {@link #onServerStopping}, together with
- * nothing else, because it is the only per-session table this class owns. It needs no expiry of its
- * own: a stored day that is not today <em>is</em> the expiry.
+ * <h2>The throttle, and why it is no longer here</h2>
+ * 「每游戏日一次」 used to be a table owned by this listener — one per server session — and it was cleared on
+ * {@code ServerStoppingEvent}. That made the rule "once per game day <b>or</b> once per server run, whichever
+ * comes first": feeding the whole pantry, quitting to the title screen and feeding it again worked, on the same
+ * world day. The allowance now lives in the player's saved attachment ({@code Attachments.FED_DISHES},
+ * {@link com.astrum.pcrd.impl.attach.FedDishes}), so it survives a restart because it was never session state in
+ * the first place. Nothing here owns a table any more, and there is no {@code ServerStoppingEvent} handler left
+ * to clear one.
  *
  * <h2>What this class does not do</h2>
  * It does not decide who is fed, whether today's allowance is spent, or how much affection moves — all
- * three are {@link DishFeed}/{@link DishThrottle}, which are unit-tested without a game. It also does
+ * three are {@link DishFeed}/{@link com.astrum.pcrd.impl.attach.FedDishes}, which are unit-tested without a game. It also does
  * not consume the dish unless affection actually changed: a refused click keeps the item, because
  * losing a cake to "you already fed that today" would be a bug a player would report immediately.
  */
 @ApiStatus.Internal
 public final class GrowthEvents {
-
-    /** The one day throttle of this server session. Not static: one server, one table. */
-    private final DishThrottle fedDishes = new DishThrottle();
 
     private GrowthEvents() {
     }
@@ -80,7 +79,7 @@ public final class GrowthEvents {
         // Read the name before the stack shrinks: after a successful feed the held stack is empty, and
         // a debug line saying "fed minecraft:air" is exactly the kind of wrong log that costs an hour.
         String dishName = held.getHoverName().getString();
-        DishFeed.Result result = DishFeed.feed(player, held, fedDishes, gameDay);
+        DishFeed.Result result = DishFeed.feed(player, held, gameDay);
         player.displayClientMessage(DishClick.message(result.outcome(), dishName, result.characters()),
                 false);
         if (result.outcome() == DishFeed.Outcome.FED) {
@@ -103,14 +102,6 @@ public final class GrowthEvents {
         }
     }
 
-    /** Drops the day table when the world goes away: one world's dishes are not the next world's. */
-    @SubscribeEvent
-    public void onServerStopping(ServerStoppingEvent event) {
-        fedDishes.clear();
-    }
-
-    /** {@return how many (player, dish) allowances the session remembers; for the log and for tests} */
-    public int rememberedAllowances() {
-        return fedDishes.size();
-    }
+    // There is deliberately <b>no</b> ServerStoppingEvent handler here: the day allowance is player data now, and
+    // clearing it on shutdown is exactly the defect this class was fixed for.
 }

@@ -107,11 +107,13 @@ class RosterCodecTest {
         assertEquals(Optional.of(d), p.slots().get(3));
     }
 
-    /** A cooldown tick beyond int range must not be truncated: cdEndTick is a long on disk too. */
+    /** A cooldown tick beyond int range must not be truncated: a deadline is a long on disk too. */
     @Test void ubStateKeepsACooldownBeyondIntRange() {
-        var s = new UbState(0.0f, 4, 5_000_000_000L);
+        var s = new UbState(0.0f, 4, Map.of(InternalIds.id("djeeta"),
+                new UbCooldown(5_000_000_000L, 5_000_000_000L)));
         var enc = UbState.CODEC.encodeStart(NbtOps.INSTANCE, s).getOrThrow();
-        assertEquals(5_000_000_000L, UbState.CODEC.parse(NbtOps.INSTANCE, enc).getOrThrow().cdEndTick());
+        assertEquals(5_000_000_000L, UbState.CODEC.parse(NbtOps.INSTANCE, enc).getOrThrow()
+                .cooldownOf(InternalIds.id("djeeta")).endTick());
     }
 
     @Test void decodedShortListIsPaddedToFive() {
@@ -171,13 +173,14 @@ class RosterCodecTest {
     }
 
     @Test void ubStateRoundTripsThroughNbt() {
-        var s = new UbState(12.5f, 2, 1234L);
+        var s = new UbState(12.5f, 2, Map.of(InternalIds.id("djeeta"), new UbCooldown(1234L, 100L)));
         var enc = UbState.CODEC.encodeStart(NbtOps.INSTANCE, s).getOrThrow();
         assertEquals(Optional.of(s), UbState.CODEC.parse(NbtOps.INSTANCE, enc).result(), enc.toString());
         var back = UbState.CODEC.parse(NbtOps.INSTANCE, enc).getOrThrow();
         assertEquals(12.5f, back.charge());
         assertEquals(2, back.selectedSlot());
-        assertEquals(1234L, back.cdEndTick());
+        assertEquals(1234L, back.cooldownOf(InternalIds.id("djeeta")).endTick());
+        assertEquals(100L, back.cooldownOf(InternalIds.id("djeeta")).totalTicks());
     }
 
     @Test void addOrIgnoreAddsANewCharacter() {

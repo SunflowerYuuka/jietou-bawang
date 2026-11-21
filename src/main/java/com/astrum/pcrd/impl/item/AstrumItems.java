@@ -49,6 +49,17 @@ public final class AstrumItems {
     public static final String CARD_PATH = "character_card";
 
     /**
+     * The 记忆结晶's mod-relative item path: {@code astrum:memory_token}.
+     *
+     * <p>The currency a <b>duplicate</b> card turns into, and the item a player right-clicks to spend a
+     * hundred of them on a card of a character they do not have yet. The human's loop is: a card is a
+     * lottery, a card of a character you already have is not worthless, and a hundred of them buy the
+     * character you actually want (「重复的角色卡可以销毁，或者参与合成得到一个新物品」, 「64个换一个自选角色卡」).
+     * The token is that whole sentence — there is no voucher item in between any more.
+     */
+    public static final String TOKEN_PATH = "memory_token";
+
+    /**
      * The character card: right-click to enrol the character named by its {@code astrum:character_id}
      * component.
      *
@@ -74,6 +85,25 @@ public final class AstrumItems {
     public static final DeferredItem<CharacterBookItem> CHARACTER_BOOK =
             ITEMS.registerItem(BOOK_PATH, CharacterBookItem::new,
                     new Item.Properties().stacksTo(1));
+
+    /**
+     * The 记忆结晶: what a duplicate character card turns into, a hundred of which buy a character card.
+     *
+     * <p>Stacks to <b>{@value com.astrum.pcrd.impl.gacha.TokenExchange#TOKENS_PER_VOUCHER}</b>, and that is
+     * the number the item needs rather than a coincidence: the exchange is one right-click on <b>one
+     * stack</b> (the human: 「一组，又不是放在合成台，是背包里右键直接使用的东西」), so a stack size below the
+     * requirement would make the interaction impossible and one above it would leave a fragment the check
+     * never uses. The previous revision stacked to 64 and summed the whole inventory, which cost a stack of
+     * 50 + 50 the ability to ever fire from one slot.
+     *
+     * <p>Its texture is <b>drawn</b>, not sourced ({@code tools/gen_token_texture.py}): there is no official
+     * "duplicate card shard" in the art dump, and resampling something that only looks like one would be a lie
+     * about provenance. The generator's docstring records that decision.
+     */
+    public static final DeferredItem<MemoryTokenItem> MEMORY_TOKEN =
+            ITEMS.registerItem(TOKEN_PATH, MemoryTokenItem::new,
+                    new Item.Properties()
+                            .stacksTo(com.astrum.pcrd.impl.gacha.TokenExchange.TOKENS_PER_VOUCHER));
 
     /** Hunger points one rice bowl restores: 6, the same as a bowl of mushroom stew. */
     public static final int RICE_BOWL_NUTRITION = 6;
@@ -111,8 +141,9 @@ public final class AstrumItems {
      * {@return every item id this build registers that is not the dish}, for {@code AstrumItemsTest}
      *
      * <p>Not used by the game: it exists so a test can check that a model and a lang key exist for every id
-     * this build registers, without reflecting over a registry that is not up in a unit test. Two entries —
-     * the card and the book — derived from the two path constants, so renaming one is a change in one place.
+     * this build registers, without reflecting over a registry that is not up in a unit test. Three entries —
+     * the card, the book and the token — derived from the three path constants, so renaming one is a change
+     * in one place.
      *
      * <p>The dish is excluded on purpose and checked separately: it is content, not a 角色册-family item, and
      * conflating the two is what would let a future dish inherit a book's model by accident.
@@ -125,6 +156,7 @@ public final class AstrumItems {
         Map<String, String> ids = new LinkedHashMap<>();
         ids.put(InternalIds.id(CARD_PATH).toString(), CARD_PATH);
         ids.put(InternalIds.id(BOOK_PATH).toString(), BOOK_PATH);
+        ids.put(InternalIds.id(TOKEN_PATH).toString(), TOKEN_PATH);
         return Map.copyOf(ids);
     }
 

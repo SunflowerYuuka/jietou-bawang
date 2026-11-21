@@ -61,10 +61,8 @@ class AstrumApiTest {
     private static CharacterDef sampleDef() {
         return new CharacterDef(1, "姬塔", Dimension.CHARGE, Optional.empty(), Optional.empty(), List.of(),
                 new UbDef(
-                        new UbTier("tempest_blade", 1, 20.0, OptionalDouble.empty(), Optional.empty(),
-                                OptionalDouble.empty(), Optional.empty()),
-                        new UbTier("seiga_itten", 4, 20.0, OptionalDouble.empty(), Optional.empty(),
-                                OptionalDouble.empty(), Optional.empty())),
+                        new UbTier("tempest_blade", 1, 20.0, OptionalDouble.empty(), List.of()),
+                        new UbTier("seiga_itten", 4, 20.0, OptionalDouble.empty(), List.of())),
                 new GrowthDef(100, 1.15, 30),
                 new AffectionDef(3, 8, List.of()),
                 Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),

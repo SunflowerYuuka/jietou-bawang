@@ -1,6 +1,8 @@
 package com.astrum.pcrd.impl.client;
 
+import com.astrum.pcrd.impl.attach.UbCooldown;
 import com.astrum.pcrd.impl.network.ChargeSyncPayload;
+import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
@@ -18,6 +20,12 @@ import org.jetbrains.annotations.ApiStatus;
  * volatile reference that keeps a reader from seeing a half-updated pair. Read by the HUD and the
  * wheel (Task 12).
  *
+ * <h2>What "the cooldown" means here now</h2>
+ * There is no single one. 「每个角色UB的CD不共享」 — the payload carries one deadline per character
+ * still cooling, so every reader must name <em>which</em> character she is asking about. There is
+ * deliberately no {@code cdEndTick()} convenience any more: it would have to guess a character, and the
+ * only two candidates (the preset slot, the last-cast slot) disagree exactly when it matters.
+ *
  * <h2>What it is not</h2>
  * Not authoritative: the server owns the gauge, and a client that disagreed would simply be wrong.
  * Nothing in this class is permitted to feed a decision back to the server (a cast request is
@@ -29,11 +37,11 @@ public final class ClientUbCache {
     /**
      * The last state the server pushed, or the fresh default before the first payload arrives.
      *
-     * <p>One volatile reference rather than two fields: the pair is only meaningful together, and a
-     * reader testing "charge says 100 but the cooldown still says the previous cast" would be reading
+     * <p>One volatile reference rather than several fields: the values are only meaningful together, and
+     * a reader testing "charge says 100 but the deadlines still say the previous cast" would be reading
      * two different packets.
      */
-    private static volatile ChargeSyncPayload latest = new ChargeSyncPayload(0.0f, 0L);
+    private static volatile ChargeSyncPayload latest = new ChargeSyncPayload(0.0f, java.util.Map.of());
 
     private ClientUbCache() {
     }
@@ -57,8 +65,19 @@ public final class ClientUbCache {
         return latest.charge();
     }
 
-    /** {@return the tick the server last reported as the end of the shared cooldown} */
-    public static long cdEndTick() {
-        return latest.cdEndTick();
+    /**
+     * {@return that character's cooldown as the server last reported it, or
+     *         {@link UbCooldown#NONE} when she is not cooling}
+     *
+     * <p>The single reader every client-side cooldown question goes through — the HUD's ring, the shade
+     * over her face and the "ready" outline all ask here, so they cannot disagree. See
+     * {@link ChargeSyncPayload#deadlineOf} for why a character absent from the payload is "ready"
+     * rather than an error.
+     *
+     * @param characterId the character, e.g. {@code astrum:djeeta}; {@code null} answers
+     *                    {@link UbCooldown#NONE}
+     */
+    public static UbCooldown cooldownOf(ResourceLocation characterId) {
+        return latest.deadlineOf(characterId);
     }
 }

@@ -1,0 +1,9 @@
+{
+  "type": "jeed:effect_provider",
+  "effect": "astrum:spirit",
+  "providers": [
+    {
+      "item": "astrum:character_card"
+    }
+  ]
+}

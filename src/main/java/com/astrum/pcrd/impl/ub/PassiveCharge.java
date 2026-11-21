@@ -5,6 +5,7 @@ import com.astrum.pcrd.impl.InternalIds;
 import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.UbState;
 import com.astrum.pcrd.impl.config.ServerConfig;
+import com.astrum.pcrd.impl.effect.ChargeRates;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -89,7 +90,7 @@ public final class PassiveCharge {
     }
 
     /**
-     * {@return one tick of the trickle: the gauge it produces, and what carries into the next tick}
+     * {@return one tick of the trickle: the gauge it produces, the raw points it pays, and what carries on}
      *
      * <p>The single pure rule of this class, so it is testable without a player or a config file. Three
      * states, and only three:
@@ -102,30 +103,64 @@ public final class PassiveCharge {
      *       the rest carries.</li>
      * </ul>
      *
+     * <h2>Why the rate is a parameter, and why the points are reported raw</h2>
+     * 「TP上昇」 multiplies <b>every</b> charge source, and the passive trickle is the fourth. The rule is
+     * applied in exactly one place — {@link ChargeKernel#add} — so this method must not apply it a second
+     * time on the way to the gauge. What it does is compute what the gauge <em>will</em> hold once the rate
+     * is applied ({@code charge}), and separately report the <b>raw</b> pre-rate points
+     * ({@link Step#points()}) that the listener hands to {@code UbCharge}.
+     *
+     * <p>That split is what makes the two halves provably one rule: the listener credits
+     * {@code step.points()} through {@code UbCharge}, which calls
+     * {@code ChargeKernel.add(before, points, rate)} — the identical expression this method evaluated. A
+     * test can therefore assert the rate reaches the trickle by reading {@code step.charge()} (22.5 for ten
+     * points at 2.25x), while the write path stays single-application.
+     *
      * @param charge    the gauge before this tick
      * @param carry     fractional charge left over from the previous tick
      * @param perSecond the configured {@code ubChargePerSecond}
+     * @param rate      the player's charge-rate multiplier, {@code 1.0} for none
      */
-    public static Step step(double charge, double carry, double perSecond) {
+    public static Step step(double charge, double carry, double perSecond, double rate) {
         if (!(perSecond > 0.0) || !Double.isFinite(perSecond)) {
-            return new Step(ChargeKernel.clamp(charge), 0.0);
+            return new Step(ChargeKernel.clamp(charge), 0.0, 0.0);
         }
         if (ChargeKernel.isFull(charge)) {
-            return new Step(ChargeKernel.MAX_CHARGE, 0.0);
+            return new Step(ChargeKernel.MAX_CHARGE, 0.0, 0.0);
         }
         double remainder = Double.isFinite(carry) && carry > 0.0 ? carry : 0.0;
         double total = remainder + ChargeKernel.naturalRegen(perSecond);
         double points = Math.floor(total + FLOOR_SLACK);
         if (!(points > 0.0)) {
-            return new Step(ChargeKernel.clamp(charge), total);
+            return new Step(ChargeKernel.clamp(charge), total, 0.0);
         }
         // Math.max, not a bare subtraction: the slack can push `points` a hair past `total`, which would
         // leave a negative carry — a value that would then silently cancel the next tick's share.
-        return new Step(ChargeKernel.add(charge, points), Math.max(0.0, total - points));
+        return new Step(ChargeKernel.add(charge, points, rate), Math.max(0.0, total - points), points);
     }
 
-    /** One tick of the trickle: the gauge after it, and the fraction carried into the next tick. */
-    public record Step(double charge, double carry) {
+    /**
+     * {@return one tick of the trickle at no charge-rate bonus}
+     *
+     * <p>The identity-rate form, for the callers and tests that have no effect to resolve — and the reason
+     * every pre-existing number in {@code PassiveChargeTest} is unchanged by the rate being added.
+     *
+     * @param charge    the gauge before this tick
+     * @param carry     fractional charge left over from the previous tick
+     * @param perSecond the configured {@code ubChargePerSecond}
+     */
+    public static Step step(double charge, double carry, double perSecond) {
+        return step(charge, carry, perSecond, ChargeKernel.NEUTRAL_RATE);
+    }
+
+    /**
+     * One tick of the trickle.
+     *
+     * @param charge the gauge after it, with this player's charge rate applied
+     * @param carry  the fraction carried into the next tick
+     * @param points the <b>raw</b>, pre-rate whole points this tick pays — what the listener credits
+     */
+    public record Step(double charge, double carry, double points) {
     }
 
     /**
@@ -148,7 +183,10 @@ public final class PassiveCharge {
             return;
         }
         UbState before = player.getData(Attachments.UB_STATE);
-        Step step = step(before.charge(), carry.getOrDefault(id, 0.0), perSecond);
+        // The rate is read here, per tick, for the same "handles, never copies" reason the config is:
+        // an effect that expires stops multiplying on the very tick it ends.
+        double rate = ChargeRates.multiplierOf(player);
+        Step step = step(before.charge(), carry.getOrDefault(id, 0.0), perSecond, rate);
         if (step.carry() == 0.0) {
             carry.remove(id);
         } else {
@@ -159,9 +197,12 @@ public final class PassiveCharge {
         }
         // Through UbCharge, so the API event still sees (and may veto or rescale) the gain, and the
         // write, the clamp and the "unchanged state costs no attachment churn" rule stay in one place.
-        UbCharge.apply(player, NO_CHARACTER, step.charge() - before.charge());
-        Astrum.LOGGER.debug("astrum: passive UB charge {} — {} -> {} ({}/s)",
-                player.getGameProfile().getName(), before.charge(), step.charge(), perSecond);
+        // The RAW points are credited, not the rate-scaled ones: UbCharge resolves the player's rate and
+        // applies it inside ChargeKernel.add, which is the single place the multiplier is applied.
+        UbCharge.apply(player, NO_CHARACTER, step.points());
+        Astrum.LOGGER.debug("astrum: passive UB charge {} — {} -> {} ({} pts x{} = {}/s)", 
+                player.getGameProfile().getName(), before.charge(), step.charge(), step.points(), rate,
+                perSecond);
     }
 
     /** One player's remainder dies with their connection. */

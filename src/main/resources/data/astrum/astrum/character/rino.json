@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "displayName": "璃乃",
+  "skillName": "日冕之雨",
+  "avatar": "astrum:textures/gui/portrait/rino.png",
+  "icon1st": "astrum:textures/gui/portrait/rino_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/rino_3.png",
+  "icon6th": "astrum:textures/gui/portrait/rino_6.png",
+  "still": "astrum:textures/gui/still/rino_3.png",
+  "still6th": "astrum:textures/gui/still/rino_6.png",
+  "dimension": "output",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-b.md §4（参考等级 208、参考物理攻击力 2000、锚点 22140 → 20.0）。她是物理角色。UB 箭矢之雨 1.62*物攻+20.4+20.4L = 7503.6 → 6.8（范围 1150 → radius 6.0），6★UB 日冕之雨 2.16*物攻+28+28L = 10172 → 9.2（范围 1300 → radius 6.0）。技能1 全神贯注 提升自身【15+15L=3135】物攻 12 秒 → buff_attack_area 5 档（封顶）；专属（技能1 的 tier2）【20+20L=4180】→ 仍是 5 档，并追加『行动速度 1.8 倍 12 秒』→ haste 3 档（阶梯顶档 = +60% 移速 + 攻速，见 balance-derivation §13.1）。技能2 突破之箭 1.6*物攻+20+20L = 7380 → 6.7；二专（技能2 的 tier2）2.8*物攻+35+35L = 12915 → 11.7，并追加【90+90L=18810】物攻 18 秒（→ 5 档）、恢复自身 650 技能值（→ gain_charge 65.0，1 充能点 = 10 TP，见 balance-derivation §14.5）。已记录的缺口（不静默丢弃）：(1) 技能1 / 专属 / 二专里的『物理暴击』与『物理爆伤』（45 / 75 物理暴击、15% 物理爆伤）没有对应效果类型 —— 本 mod 的 crit_chance / crit_damage 是玩家属性，没有 party 或 victim 侧的 crit 效果，也没有可写入的 hook；(2) 6★UB 的『暴击时将造成 3.5 倍伤害』由 task 55 的单技能暴击倍率通道承载：`ub.enhanced.critMultiplier: 3.5`，替换玩家全局的 astrum:crit_damage（默认 1.5），5★UB 不写字段、继续用全局；(3) 二专的【90+90L】一项 bwiki 没写是哪个属性，按二专描述『特大幅度提升自身物理攻击力』读作物攻 —— 这一读法写在 derivations §4 里。暴击率 0.0375：取她技能里最高的 75 点『物理暴击』，按 1 点 = 0.05 个百分点换算成 3.75%（affection.critChance；换算是设计选择，来源只给数值，见 task-58-report.md §1）。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_attack_area",
+      "triggerParams": {
+        "skill": "concentration"
+      },
+      "effectParams": {
+        "tier": 5,
+        "seconds": 12.0,
+        "radius": 0.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "breakthrough_arrow"
+      },
+      "effectParams": {
+        "amount": 6.7
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "箭矢之雨",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 6.8,
+      "radius": 6.0
+    },
+    "enhanced": {
+      "name": "日冕之雨",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 9.2,
+      "radius": 6.0,
+      "critMultiplier": 3.5
+    },
+    "icon": "astrum:textures/gui/skillicon/rino_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.2375,
+    "skills": [
+      {
+        "skill": "concentration",
+        "baseName": "全神贯注",
+        "tier2": {
+          "name": "全神贯注+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_attack_area",
+              "triggerParams": {
+                "skill": "concentration"
+              },
+              "effectParams": {
+                "tier": 5,
+                "seconds": 12.0,
+                "radius": 0.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "haste",
+              "triggerParams": {
+                "skill": "concentration"
+              },
+              "effectParams": {
+                "tier": 3,
+                "seconds": 12.0,
+                "radius": 0.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/rino_main1.png"
+      },
+      {
+        "skill": "breakthrough_arrow",
+        "baseName": "突破之箭",
+        "tier2": {
+          "name": "突破之箭+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "breakthrough_arrow"
+              },
+              "effectParams": {
+                "amount": 11.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_attack_area",
+              "triggerParams": {
+                "skill": "breakthrough_arrow"
+              },
+              "effectParams": {
+                "tier": 5,
+                "seconds": 18.0,
+                "radius": 0.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "gain_charge",
+              "triggerParams": {
+                "skill": "breakthrough_arrow"
+              },
+              "effectParams": {
+                "amount": 65.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/rino_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "敏锐洞察",
+        "tier2": {
+          "name": "敏锐洞察+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/rino_ex.png"
+      }
+    ]
+  }
+}

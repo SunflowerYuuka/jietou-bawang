@@ -99,6 +99,43 @@ public final class ContributionTracker {
         return tally == null ? Map.of() : tally.damage();
     }
 
+    /**
+     * <b>Replaces</b> what this character is credited for, after the hit's real outcome is known.
+     *
+     * <h2>The defect this exists for</h2>
+     * A credit has to be on the ledger <b>before</b> {@code hurt()} runs, because a killing blow settles the
+     * ledger from inside that call — the death handler pays the experience while the damage is still being
+     * applied. But the amount known at that moment is a <b>projection</b>, and {@code hurt()} can refuse it
+     * outright (invulnerability, a cancelled event, an already-dead body) or reduce it (armour, absorption,
+     * resistance). The projection could not be taken back, so a UB that dealt nothing still shared the exp of a
+     * kill somebody else earned.
+     *
+     * <p>So the projected note stays where it is — that is what makes a UB's own killing blow pay — and this
+     * call is made afterwards with the health the victim actually lost. When the kill already happened the pair
+     * is gone ({@link #take}), and correcting it is a no-op by construction: the settled payout is not rewritten
+     * after the fact.
+     *
+     * <p>Only ever lowers: a correction that would <b>raise</b> the credit is ignored, because the caller's
+     * projection is the optimistic bound and anything above it would be inventing damage. A correction to zero
+     * removes the character's entry entirely, so a hit that did nothing leaves nothing behind.
+     *
+     * @param attacker  the player whose wheel produced the hit
+     * @param victim    the entity that took it
+     * @param character the character the damage is attributed to
+     * @param actual    health actually removed, as measured around {@code hurt()}
+     */
+    public static void correct(UUID attacker, UUID victim, ResourceLocation character, double actual) {
+        if (attacker == null || victim == null || character == null) {
+            return;
+        }
+        Tally tally = LEDGER.get(new Key(attacker, victim));
+        if (tally == null) {
+            return;   // the kill already settled this pair: a payout is not rewritten afterwards
+        }
+        double measured = actual > 0.0 && Double.isFinite(actual) ? actual : 0.0;
+        tally.lowerTo(character, measured);
+    }
+
     /** Drops everything: one world's fights are not the next world's. */
     public static void clear() {
         LEDGER.clear();
@@ -138,6 +175,29 @@ public final class ContributionTracker {
         private void add(ResourceLocation character, double amount, long nowTick) {
             damage.merge(character, amount, Double::sum);
             lastTick = Math.max(lastTick, nowTick);
+        }
+
+        /**
+         * Lowers this character's credit to at most {@code measured}; zero removes the entry.
+         *
+         * <p>"At most" and not "to": {@link #correct} is called with the health the victim actually lost, but
+         * two hits of one ultimate can land before either correction runs, and the second hit's measurement
+         * must not erase the first hit's real damage. Lowering is therefore the only direction that cannot
+         * invent a contribution — the ledger never exceeds what was measured, and never exceeds what was
+         * projected either.
+         */
+        private void lowerTo(ResourceLocation character, double measured) {
+            Double current = damage.get(character);
+            if (current == null) {
+                return;
+            }
+            if (!(measured > 0.0)) {
+                damage.remove(character);
+                return;
+            }
+            if (measured < current) {
+                damage.put(character, measured);
+            }
         }
 
         private Map<ResourceLocation, Double> damage() {

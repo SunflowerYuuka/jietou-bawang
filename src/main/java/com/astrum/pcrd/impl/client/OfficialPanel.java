@@ -50,6 +50,22 @@ import org.jetbrains.annotations.Nullable;
  *       same 16 pixels, so no metric moved.</li>
  * </ol>
  *
+ * <h2>What the panel does when the art pack is not installed</h2>
+ * Both of the pictures above are <b>pack-only</b> (they are Cygames' art or derived from it, so
+ * {@code .gitignore} keeps them out of the repository): {@link #FRAME} and the character's still. Without the
+ * pack, the two would resolve to nothing and vanilla would draw the magenta checkerboard across the whole
+ * panel. Both legs are therefore covered by {@link ArtFallback}, the single "does this texture exist" answer,
+ * and they degrade differently on purpose:
+ * <ul>
+ *   <li><b>the still</b> becomes the 「请安装资源包」 placeholder — a picture for a picture. It is
+ *       letterboxed to a centred square rather than cover-cropped, because the placeholder is a
+ *       {@link ArtFallback#PLACEHOLDER_SIDE}-pixel square of text and the cover crop assumes a 16:9 still;</li>
+ *   <li><b>the frame</b> becomes a one-pixel stroke in the frame art's own gold ({@link #DIVIDER_INK}).
+ *       A nine-slice of the placeholder would be nine stretched fragments of its own text — the checkerboard
+ *       with extra steps. The mechanism is still one rule: the panel asks {@link ArtFallback#isInstalled} and
+ *       never the resource manager.</li>
+ * </ul>
+ *
  * <h2>The one thing no test can cover, and the log line for it</h2>
  * The panel size comes from the player's window and GUI scale, so "the panel we just drew has a non-empty
  * body" is not assertable offline. {@link #draw} returns the geometry it drew and the screen logs it once
@@ -102,6 +118,15 @@ final class OfficialPanel {
     /** The divider rule's colour: the frame stroke's own cream-gold, at the value its darkest row carries. */
     static final int DIVIDER_INK = 0xFFDDA93C;
 
+    /**
+     * Set once, when the frame art turned out not to be installed, so the run's log carries the reason the
+     * panel is a plain stroke — the one fact a screenshot of a <em>degraded</em> panel cannot prove.
+     *
+     * <p>A boolean, not a container: there is one fact per session and it never needs looking up again
+     * ({@link ArtFallback} is what remembers the texture verdicts).
+     */
+    private static boolean bareFrameLogged;
+
     private OfficialPanel() {
     }
 
@@ -132,15 +157,22 @@ final class OfficialPanel {
         }
 
         // 3. The nine frame cells. The centre is skipped by construction: its cell is empty.
-        for (int i = 0; i < NineSlice.PIECES; i++) {
-            if (i == CENTRE) {
-                continue;   // the body is the still; the centre cell exists only to make the sheet square
+        if (ArtFallback.isInstalled(FRAME)) {
+            for (int i = 0; i < NineSlice.PIECES; i++) {
+                if (i == CENTRE) {
+                    continue;   // the body is the still; the centre cell exists only to make the sheet square
+                }
+                Box piece = rects.piece(i);
+                if (piece.width() <= 0 || piece.height() <= 0) {
+                    continue;   // a degenerate target: nothing to draw here, and a 0x0 blit is a lie
+                }
+                blitCell(graphics, i, piece);
             }
-            Box piece = rects.piece(i);
-            if (piece.width() <= 0 || piece.height() <= 0) {
-                continue;   // a degenerate target: nothing to draw here, and a 0x0 blit is a lie
-            }
-            blitCell(graphics, i, piece);
+        } else {
+            // The frame sheet is pack-only art; without it the honest panel is its own silhouette, drawn in
+            // the frame's own gold. Nine cells of the placeholder would be nine fragments of its text.
+            paintBareFrame(graphics, panel);
+            logBareFrameOnce();
         }
 
         // 4. The divider rule.
@@ -273,7 +305,59 @@ final class OfficialPanel {
     }
 
     /**
-     * Draws the still as a cover-fit background with the readability wash over it.
+     * Draws the panel's silhouette as a one-pixel stroke of {@link #DIVIDER_INK}, for when {@link #FRAME} is
+     * not installed.
+     *
+     * <h2>Why a stroke and not the placeholder</h2>
+     * The frame is not a picture the panel shows; it is nine <em>sampled cells</em> of one sheet, stretched
+     * along one axis each. Blitting the placeholder into those cells would put a fragment of a glyph in each
+     * corner and a stretched band of text along each edge — unreadable, and worse than the checkerboard it
+     * replaces. A stroke is the same mark {@link #DIVIDER_INK} already makes for the divider, it uses the
+     * frame art's own colour, and it says the one thing that is true: this is the panel's edge, and the art
+     * that belongs here is missing. The player is told in words elsewhere — the body carries the placeholder
+     * and {@link ArtFallback} logs the file names.
+     *
+     * <p>Four {@code fill}s rather than a shape helper: the rectangle is already the simplest possible mark,
+     * and the four edges are what {@code CharacterBookScreen#frame} draws for a hover outline.
+     *
+     * @param graphics the GUI buffer
+     * @param panel    the panel's outer rectangle
+     */
+    private static void paintBareFrame(GuiGraphics graphics, Box panel) {
+        if (panel.width() <= 0 || panel.height() <= 0) {
+            return;
+        }
+        graphics.fill(panel.x(), panel.y(), panel.right(), panel.y() + 1, DIVIDER_INK);
+        graphics.fill(panel.x(), panel.bottom() - 1, panel.right(), panel.bottom(), DIVIDER_INK);
+        graphics.fill(panel.x(), panel.y(), panel.x() + 1, panel.bottom(), DIVIDER_INK);
+        graphics.fill(panel.right() - 1, panel.y(), panel.right(), panel.bottom(), DIVIDER_INK);
+    }
+
+    /** Logs once per session that the panel is a bare stroke, and names what the player is missing. */
+    private static void logBareFrameOnce() {
+        if (bareFrameLogged) {
+            return;
+        }
+        bareFrameLogged = true;
+        com.astrum.pcrd.Astrum.LOGGER.info("astrum: the 角色册 frame {} is not installed, so the panel is "
+                + "drawn as a 1px gold stroke around the body (and the body as the 「请安装资源包」 "
+                + "placeholder). Nine cells of that placeholder would be nine fragments of its text, so the "
+                + "frame is the one surface where the placeholder is not blitted. Install astrum-assets.zip "
+                + "for the official frame.", FRAME);
+    }
+
+    /**
+     * Draws the still as a cover-fit background with the readability wash over it — or, when the still is the
+     * 「请安装资源包」 placeholder, as a centred square with no wash.
+     *
+     * <h2>Why the placeholder is not cover-cropped</h2>
+     * The crop below is computed from the still's <em>committed</em> 512x288 size, and the placeholder is
+     * {@link ArtFallback#PLACEHOLDER_SIDE} pixels <b>square</b>: feeding a 1:1 picture through a 16:9 cover
+     * crop cuts roughly a seventh off each side of its text and then stretches what is left. So the
+     * placeholder takes a different branch — the largest centred square the body holds, sampled whole —
+     * which keeps the instruction readable at every panel size. The dim wash is skipped too: it exists to
+     * keep cream text legible over a bright illustration, and the placeholder's own ground is already dark,
+     * so all it would do there is darken the instruction the player needs to read.
      *
      * <p>The texture's true pixel size is not known here (it is whatever the pack ships), so the crop is computed
      * from the <em>committed</em> size {@link StillCover#STILL_WIDTH}x{@link StillCover#STILL_HEIGHT} — 512x288,
@@ -289,11 +373,36 @@ final class OfficialPanel {
         if (body.width() <= 0 || body.height() <= 0) {
             return;
         }
+        if (ArtFallback.PLACEHOLDER.equals(texture)) {
+            drawPlaceholder(graphics, body);
+            return;
+        }
         StillCover.Crop crop = StillCover.of(StillCover.STILL_WIDTH, StillCover.STILL_HEIGHT, body);
         graphics.blit(texture, body.x(), body.y(), body.width(), body.height(),
                 crop.x(), crop.y(), crop.width(), crop.height(), StillCover.STILL_WIDTH,
                 StillCover.STILL_HEIGHT);
         graphics.fill(body.x(), body.y(), body.right(), body.bottom(), STILL_DIM);
+    }
+
+    /**
+     * Draws the placeholder as the largest centred square the body holds, the whole image sampled.
+     *
+     * <p>{@code uWidth == textureWidth == side} normalises the source to {@code 0..1}, so the picture's own
+     * 128 pixels are not assumed anywhere: the same call is correct if the placeholder is ever re-rendered at
+     * another size. Square because the picture is square — the alternative, stretching it to the body, is the
+     * distortion this branch exists to avoid.
+     *
+     * @param graphics the GUI buffer
+     * @param body     the box the still would have covered
+     */
+    private static void drawPlaceholder(GuiGraphics graphics, Box body) {
+        int side = Math.min(body.width(), body.height());
+        if (side <= 0) {
+            return;
+        }
+        int x = body.x() + (body.width() - side) / 2;
+        int y = body.y() + (body.height() - side) / 2;
+        graphics.blit(ArtFallback.PLACEHOLDER, x, y, side, side, 0.0F, 0.0F, side, side, side, side);
     }
 
     /** Index of the centre cell in {@link NineSlice#PIECE_NAMES}: the one that is empty on purpose. */

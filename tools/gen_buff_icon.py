@@ -1,25 +1,31 @@
 """Derives the <b>attack buff</b> icon from one official source, for both surfaces that show it.
 
-<h2>Which official icon, in the human's words</h2>
-「你用的3015/2012/1012，我要的是3010/2003/1003。」 — he named three of the sixty-one official
-``icon_skill_*`` files and picked the first of each family. For ``attack_buff`` the answer is
-``icon_skill_3010``: a figure engulfed in golden flames inside a gold frame, the official 攻击提升
-picture. The previously shipped ``3015`` is a figure on a podium under a spotlight — a perfectly good
-icon, and the wrong one for this effect.
+<h2>Which official icon, and the human's final rule</h2>
+「所有攻击提升的效果共用一个图标」 — every attack-up effect wears **``icon_skill_3001``**, a raised
+clenched fist: the official 攻击提升 gesture ペコリーヌ and コッコロ already used. So ``attack_buff``
+moved here from ``3010`` (a figure engulfed in golden flames), and ``3010`` became the shared
+<b>self-buff</b> picture for physical defence, magical defence, haste and charge rate, told apart by a
+border colour. ``attack_buff`` carries <b>no border</b>: the fist already says "attack".
 
-<h2>Why ``attack_buff`` and ``stack`` are two pictures now</h2>
-An earlier revision gave both effects ``3015`` on a "every self-buff shares one picture" rule. That rule
-was misfiled: ``stack`` is <b>not a self-buff</b>. It is a per-target layer counter —
+<h2>Why ``attack_buff`` and ``buff_attack_area`` are the same bytes</h2>
+They are the same effect class (attack up) on the same picture, so the two files are required to be
+byte-identical — ``SkillIconsTest`` asserts equality here, the inverse of what it asserts for the four
+3010 variants. ``buff_attack_area`` is written by ``tools/gen_skill_icons.py`` from the same official
+file with the same LANCZOS resample, so the equality is a property of the pipeline rather than a
+promise. Only the HUD copy of ``attack_buff`` is this script's; ``attack_area``'s HUD copy belongs to
+``tools/gen_effect_icons.py``.
+
+<h2>Why ``attack_buff`` and ``stack`` are two pictures</h2>
+``stack`` is <b>not a self-buff</b>. It is a per-target layer counter —
 ``StackKernel``/``StackState``, spec §4.4 — that adds a layer to the <em>victim</em> and is consumed by
-``detonate``; its target is the enemy, not the caster. So there was never a category for the two to
-belong to together, and the two files are now <b>different bytes from different official sources</b>.
-``SkillIconsTest`` asserts that they differ, which is the inverse of what it asserted before.
+``detonate``; its target is the enemy, not the caster. So it keeps ``3015`` (a figure on a podium) and
+never joins either of the two buff pictures.
 
 <h2>Two outputs, one source, one script</h2>
 The two surfaces are different textures at different resolutions, so they cannot literally share one file:
 
 * the <b>book's hook row</b> draws ``assets/astrum/textures/gui/skill/attack_buff.png`` at 64x64 through
-  ``SkillIcons.textureFor`` — the same tree and the same size as the eight skill icons beside it;
+  ``SkillIcons.textureFor`` — the same tree and the same size as the skill icons beside it;
 * the <b>HUD effect icon</b> resolves ``assets/astrum/textures/mob_effect/attack_buff.png``, because that is
   the path vanilla's ``MobEffectTextureManager`` asks for: ``textures/mob_effect/<effect path>.png``, indexed
   by ``assets/minecraft/atlases/mob_effects.json``. Its absence is what the human saw as a purple/magenta
@@ -49,7 +55,7 @@ which art the effect wears, and the HUD's 18x18 footprint averages 8x8 blocks of
 1x1. ``18`` was not enforced by anything; it was a match to vanilla's *files*, and matching a file size is
 not a reason to throw away 64px of detail.
 
-Both outputs are generated here from ``icon_skill_3010.png`` and nothing else, so a re-pick is one
+Both outputs are generated here from ``icon_skill_3001.png`` and nothing else, so a re-pick is one
 constant, and ``--check`` proves both committed files are byte-identical to a fresh resample.
 
 Run:
@@ -68,10 +74,10 @@ from PIL import Image
 #: The unpacked official PCR art; not part of the repository.
 DEFAULT_SOURCE = os.path.join("K:\\", "AI", "Minecraft", "assets", "pcr", "extracted", "图片")
 
-#: The official icon ``attack_buff`` is drawn from: 「我要的是3010/2003/1003」 — the 攻击提升 picture, a figure
-#: engulfed in golden flames in a gold frame. Not ``3015``, which ``stack`` uses and which is a different
-#: effect (a per-target layer counter, spec §4.4) rather than a self-buff.
-ATTACK_BUFF = 3010
+#: The official icon ``attack_buff`` is drawn from: ``3001``, a raised clenched fist — the 攻击提升
+#: picture every attack-up effect now shares. Not ``3015`` (``stack``'s, a victim-side layer counter) and
+#: no longer ``3010``, which is the shared self-buff picture of the four defence/haste/charge effects.
+ATTACK_BUFF = 3001
 
 #: The effect this module owns a derived file for. ``stack`` gets its copy from ``gen_skill_icons.py``.
 EFFECT = "attack_buff"

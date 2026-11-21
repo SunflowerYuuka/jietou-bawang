@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "displayName": "春咲日和莉",
+  "skillName": "日和莉燃烧冲击",
+  "avatar": "astrum:textures/gui/portrait/hiyori.png",
+  "icon1st": "astrum:textures/gui/portrait/hiyori_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/hiyori_3.png",
+  "icon6th": "astrum:textures/gui/portrait/hiyori_6.png",
+  "still": "astrum:textures/gui/still/hiyori_3.png",
+  "still6th": "astrum:textures/gui/still/hiyori_6.png",
+  "dimension": "output",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-a.md §1（锚点口径与 docs/balance-derivation.md §14.1 完全一致：参考等级 208、参考攻击力 2000、锚点 22140 → 20.0，一字未动）。UB 日和莉突击 对最近敌人 2.4A+30+30L = 11070 → 10.0；「对范围半径400内全部敌人 1.08A+13.5+13.5L」= 4981.5 → 4.5 与最近敌人那一段写成 ub.base.segments 的两条子句（nearest 10.0 / all_in_radius 半径4 → 4.5），两条都是真的。6★UB 日和莉燃烧冲击 4.8A+60+60L = 22140 → 20.0，AoE 段 3.6A+45+45L = 16605 → 15.0，同样两条子句（nearest 20.0 / all_in_radius 半径6 → 15.0）。技能1 猫咪重击 1.6A+20+20L = 7380 → 6.7。技能2 猫咪组合拳 伤害 0.6A+8+8L = 2872 → 2.6，自身物攻【11+11*技能等级】= 2299 → 2299/(0.20*2000) = 5.75 → 攻击档位 5（阶梯只有五档，这是封顶，与佩可莉姆 6★UB 的 10+10L 同一个口径）。好感阶梯：tier2 = 专属（伤害 6.7 + 范围 0.72A+9+9L = 3321 → 3.0，写成 splash），tier3 = 6★ 改名 キャットストライク++（bwiki 技能图标目录的 技能1_强化2 标签），bwiki 的 角色数据.json 没有给 6★ 技能1 的公式，所以 tier3 沿用 tier2 的数，只换名字——这是记录在案的缺口，不是漏算。EX 肉球力量！ 15+15L / 肉球力量！+ 240+15L 是固定值，所以用 flat_attack_up（系数照抄，不预先乘等级，见 balance-derivation §17.2）；她没有 EX 改名，tier3 与 tier2 同名。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "cat_smash"
+      },
+      "effectParams": {
+        "amount": 6.7
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "cat_combo"
+      },
+      "effectParams": {
+        "amount": 2.6
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_attack_area",
+      "triggerParams": {
+        "skill": "cat_combo"
+      },
+      "effectParams": {
+        "tier": 5,
+        "seconds": 12.0,
+        "radius": 0.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "日和莉突击",
+      "animation": "ub_cast",
+      "segments": [
+        {
+          "target": "nearest",
+          "damage": 10.0
+        },
+        {
+          "target": "all_in_radius",
+          "radius": 4.0,
+          "damage": 4.5
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "日和莉燃烧冲击",
+      "animation": "ub_cast",
+      "segments": [
+        {
+          "target": "nearest",
+          "damage": 20.0
+        },
+        {
+          "target": "all_in_radius",
+          "radius": 6.0,
+          "damage": 15.0
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/hiyori_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "cat_smash",
+        "baseName": "猫咪重击",
+        "tier2": {
+          "name": "猫咪重击+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "cat_smash"
+              },
+              "effectParams": {
+                "amount": 6.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "cat_smash"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "damage": 3.0
+              }
+            }
+          ]
+        },
+        "tier3": {
+          "name": "キャットストライク++",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "cat_smash"
+              },
+              "effectParams": {
+                "amount": 6.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "cat_smash"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "damage": 3.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/hiyori_main1.png"
+      },
+      {
+        "skill": "cat_combo",
+        "baseName": "猫咪组合拳",
+        "icon": "astrum:textures/gui/skillicon/hiyori_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "肉球力量！",
+        "tier2": {
+          "name": "肉球力量！+"
+        },
+        "tier3": {
+          "name": "肉球力量！+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 3,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/hiyori_ex.png"
+      }
+    ]
+  }
+}

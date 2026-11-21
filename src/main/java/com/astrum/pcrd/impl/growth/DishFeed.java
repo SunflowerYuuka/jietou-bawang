@@ -5,6 +5,7 @@ import com.astrum.pcrd.api.v1.AstrumApi;
 import com.astrum.pcrd.api.v1.CharacterDef;
 import com.astrum.pcrd.api.v1.CharacterProgress;
 import com.astrum.pcrd.impl.attach.Attachments;
+import com.astrum.pcrd.impl.attach.FedDishes;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import java.util.LinkedHashMap;
@@ -33,7 +34,8 @@ import org.jetbrains.annotations.ApiStatus;
  * skipped rather than being fed for nothing.
  *
  * <h2>The throttle</h2>
- * One dish per game-day per player, enforced by {@link DishThrottle} — keyed on the <b>dish</b>, not on
+ * One dish per game-day per player, enforced by {@link FedDishes} on the player's own saved
+ * attachment — keyed on the <b>dish</b>, not on
  * the character, which is what "每物品每天上限 1 次" says: four dishes today is four affection for the
  * whole party, not four per character.
  *
@@ -90,11 +92,9 @@ public final class DishFeed {
      *
      * @param player   the player who right-clicked
      * @param stack    the held stack
-     * @param throttle the per-session day throttle
      * @param gameDay  the world's current day number
      */
-    public static Result feed(ServerPlayer player, ItemStack stack, DishThrottle throttle,
-            long gameDay) {
+    public static Result feed(ServerPlayer player, ItemStack stack, long gameDay) {
         ResourceLocation dish = Dishes.idOf(stack);
         if (!Dishes.isDishId(dish)) {
             return Result.of(Outcome.NOT_A_DISH);   // the handler filters first; belt to its braces
@@ -117,13 +117,18 @@ public final class DishFeed {
         if (raised.isEmpty()) {
             return Result.of(Outcome.ALREADY_FULL);
         }
-        UUID id = player.getUUID();
-        if (!throttle.allow(id, dish, gameDay)) {
+        // <b>The allowance lives in the player's saved attachment, not in a session table.</b> That is the
+        // whole fix for 「同一游戏日重启服务器，会重置料理的每日额度」: the answer must survive a restart, and a
+        // table owned by the listener cannot. Read-modify-write is safe because this runs on the server thread
+        // for one player.
+        FedDishes fed = player.getData(Attachments.FED_DISHES);
+        if (!fed.allow(dish, gameDay)) {
             return Result.of(Outcome.ALREADY_TODAY);
         }
+        player.setData(Attachments.FED_DISHES, fed);
         player.setData(Attachments.ROSTER, roster.withProgress(raised));
-        Astrum.LOGGER.debug("astrum: growth: {} fed {} on day {} -> affection raised {}",
-                player.getGameProfile().getName(), dish, gameDay, raised.size(), raised);
+        Astrum.LOGGER.info("astrum: growth: {} fed {} on day {} -> affection raised {}: {}",
+                player.getGameProfile().getName(), dish, gameDay, raised.size(), raised.keySet());
         return new Result(Outcome.FED, raised.size());
     }
 
@@ -152,13 +157,20 @@ public final class DishFeed {
             anyKnown = true;
             int updated = AffectionKernel.clampAffection(progress.affection(), 1,
                     def.affection().tier3Threshold());
+            // INFO, not DEBUG: the human's report was 「永远只说 1 名角色」, and that number is decided
+            // right here. One line per party member says whether she was skipped (not owned, not defined,
+            // already at the cap) or counted — which is the whole question, and DEBUG would be invisible
+            // in a normal session.
+            Astrum.LOGGER.info("astrum: growth: slot character {} affection {} -> {} (cap {}) — {}",
+                    characterId, progress.affection(), updated, def.affection().tier3Threshold(),
+                    updated != progress.affection() ? "RAISED" : "skipped, already at the cap");
             if (updated != progress.affection()) {
                 raised.put(characterId,
                         new CharacterProgress(progress.level(), progress.exp(), updated));
             }
         }
         if (!anyKnown) {
-            Astrum.LOGGER.debug("astrum: growth: no owned, known character in the party of {} to feed {}",
+            Astrum.LOGGER.info("astrum: growth: no owned, known character in the party of {} to feed {}",
                     player.getGameProfile().getName(), dish);
             return null;
         }

@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 1,
+  "displayName": "樱井望",
+  "skillName": "特别舞台上的演出",
+  "avatar": "astrum:textures/gui/portrait/nozomi.png",
+  "icon1st": "astrum:textures/gui/portrait/nozomi_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/nozomi_3.png",
+  "icon6th": "astrum:textures/gui/portrait/nozomi_6.png",
+  "still": "astrum:textures/gui/still/nozomi_3.png",
+  "still6th": "astrum:textures/gui/still/nozomi_6.png",
+  "dimension": "survival",
+  "_notes": "数值全部由 bwiki 公式推导，见 docs/derivations-batch-c.md §C2（锚点与 docs/balance-derivation.md §14.1 相同：Lv208 / A2000 / 22140 → 20.0）。她的两档 UB 都**没有伤害项**（bwiki 的 UB效果 只有增益、护盾、挑衅、眩晕），所以 damage 是 0.0 —— 这是正确的，与可可萝的 极光 同理。技能1 悦音斩击 0.27A+3.4+3.4L = 1250.6 → 1.1（`extra_damage` 给被击中的目标，`splash` 半径 4.0 给周围的敌人 —— 原文是「对前方范围半径280内的所有敌人」）；「击晕被伤害到的敌人」= PANIC 1 档（本 mod 的恐慌固定 1.5 秒，bwiki 也是 1.5 秒，精确）。技能2 偶像声援 0.6A+3.5+3.5L = 1931.5 → 1.75 单位 = 8.7% → heal_area 1 档。UB 演出开始：己方全体物攻【4.5+4.5L】= 940.5 → 攻击档位 round(940.5/(0.20*2000)) = 2 档；自身物魔防【1.8+1.8L】= 376.2 → 防御档位 round(376.2/(0.12*2000)) = 2 档（物理与魔法各一条，两种效果类型分开）。6★UB 特别舞台上的演出：物攻【12.5+12.5L】= 2612.5 → 封顶 5 档；护盾【27+27L】= 5643 → 5.10 单位 = 25.5% → SHIELD 1 档；物魔防【2.1+2.1L】= 438.9 → 2 档。好感阶梯：tier2 = 技能1 的专属「悦音斩击+」（伤害 0.6A+8+8L = 2872 → 2.6、击晕 2 秒、降低敌人物攻），EX+ 是「光明微笑+」；技能2 没有强化版，所以不写 rung。已记录的缺口：(1) 「挑衅」（自身吸引敌方攻击 10 / 11.5 秒）= TAUNT（party scope，施法者自己携带），两档 UB 各一条；(2) 专属的「降低被伤害到的敌人【1.5+1.5L】物理攻击力 12 秒」用 `apply_effect` 的 minecraft:weakness 表达 —— 原版 weakness 是每级 -4 伤害的固定值，bwiki 的 313.5 点无法换算成等级，所以等级取 1 并在报告里写明这是**只有方向、没有量级**的那一条；(3) 6★UB 的「击晕敌方全体」写成 victim 的 PANIC，但本 mod 的 victim 效果以 hurt() 为准，而 望 的两档 UB 都没有伤害项，0 伤害下这一条可能不施加 —— 记录，不猜；(4) 技能1 的 2 秒击晕与恐慌固定的 1.5 秒差 0.5 秒，取固定值。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "sound_slash"
+      },
+      "effectParams": {
+        "amount": 1.1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "splash",
+      "triggerParams": {
+        "skill": "sound_slash"
+      },
+      "effectParams": {
+        "radius": 4.0,
+        "damage": 1.1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "panic",
+      "triggerParams": {
+        "skill": "sound_slash"
+      },
+      "effectParams": {
+        "tier": 1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "heal_area",
+      "triggerParams": {
+        "skill": "idol_cheer"
+      },
+      "effectParams": {
+        "tier": 1,
+        "radius": 8.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "演出开始",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 0.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "buff_attack_area",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_phys_defence_area",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 18.0,
+            "radius": 0.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_magic_defence_area",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 18.0,
+            "radius": 0.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "taunt",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 10.0
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "特别舞台上的演出",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 0.0,
+      "radius": 6.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "buff_attack_area",
+          "effectParams": {
+            "tier": 5,
+            "seconds": 19.5,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "shield",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 19.5,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_phys_defence_area",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 19.5,
+            "radius": 0.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_magic_defence_area",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 19.5,
+            "radius": 0.0
+          }
+        },
+        {
+          "scope": "victim",
+          "effect": "panic",
+          "effectParams": {
+            "tier": 1
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "taunt",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 11.5
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/nozomi_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "sound_slash",
+        "baseName": "悦音斩击",
+        "tier2": {
+          "name": "悦音斩击+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "sound_slash"
+              },
+              "effectParams": {
+                "amount": 2.6
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "sound_slash"
+              },
+              "effectParams": {
+                "radius": 4.0,
+                "damage": 2.6
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "panic",
+              "triggerParams": {
+                "skill": "sound_slash"
+              },
+              "effectParams": {
+                "tier": 1
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "apply_effect",
+              "triggerParams": {
+                "skill": "sound_slash"
+              },
+              "effectParams": {
+                "effect": "minecraft:weakness",
+                "duration": 240,
+                "amplifier": 1
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/nozomi_main1.png"
+      },
+      {
+        "skill": "idol_cheer",
+        "baseName": "偶像声援",
+        "icon": "astrum:textures/gui/skillicon/nozomi_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "光明微笑",
+        "tier2": {
+          "name": "光明微笑+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "buff_phys_defence_area",
+                  "effectParams": {
+                    "tier": 2,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "buff_phys_defence_area",
+                  "effectParams": {
+                    "tier": 2,
+                    "radius": 0.0
+                  }
+                },
+                {
+                  "effect": "buff_magic_defence_area",
+                  "effectParams": {
+                    "tier": 1,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/nozomi_ex.png"
+      }
+    ]
+  }
+}

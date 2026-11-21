@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "displayName": "优衣",
+  "skillName": "花开治愈",
+  "avatar": "astrum:textures/gui/portrait/yui.png",
+  "icon1st": "astrum:textures/gui/portrait/yui_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/yui_3.png",
+  "icon6th": "astrum:textures/gui/portrait/yui_6.png",
+  "still": "astrum:textures/gui/still/yui_3.png",
+  "still6th": "astrum:textures/gui/still/yui_6.png",
+  "dimension": "survival",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-b.md §6（参考等级 208、参考魔法攻击力 2000、锚点 22140 → 20.0；回复 / 护盾的换算见 balance-derivation §14.3：u = 20.0 × raw / 22140，档位 = clamp(round(u/4),1,5)，一档 = 参考血条的 20%）。她是魔法角色，伤害带 damageType astrum:magic。UB 全体治愈 没有任何伤害项（bwiki 只有『回复己方全体【0.45*魔攻+6+6L=2154】生命值』）—— 所以 damage 0.0，这是正确的，不是漏填（与可可萝的极光同一条口径，balance-derivation §14.2）：回复 u = 1.95 → heal_area 1 档。6★UB 花开治愈 回复【0.6*魔攻+8+8L=2872】→ 1 档；物理防御力【1.2+1.2L=250.8】18 秒 → buff_phys_defence_area 1 档；护盾『可无效【45+45L=9405】物理伤害』→ u = 8.50 → shield 2 档；『行动速度提升为 2 倍』18 秒 → haste 3 档（阶梯顶档 +60%，2 倍在本阶梯上封顶，见 §6 的说明）。技能1 花瓣射击 1.2*魔攻+15+15L = 5535 → 5.0；专属（技能1 的 tier2）1.6*魔攻+20+20L = 7380 → 6.7，并降敌物攻【7.5+7.5L=1567.5】12 秒 → apply_effect weakness 1 级（『中幅』）。技能2 花之庇护 提升己方全体【0.23+0.23L=48.07】物理防御力 12 秒 → buff_phys_defence_area 1 档。EX 花之灵息 用 flat_magic_attack_up（15+15L）；EX+ 追加 30 魔法防御力 → buff_magic_defence_area 1 档。已记录的缺口（不静默丢弃）：(1) 6★UB 的护盾 bwiki 没给时长，落盘的 8 秒是设计值（与佩可莉姆的护盾同一个数）；(2)『护盾可无效物理伤害』已由 shield_phys 承载（task 60）：物理/魔法是两个单独的通道（ShieldKind），这一条护盾只吸收物理伤害，魔法伤害会穿过去打到血条上。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "petal_shot"
+      },
+      "effectParams": {
+        "amount": 5.0,
+        "damageType": "astrum:magic"
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_phys_defence_area",
+      "triggerParams": {
+        "skill": "floral_aegis"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0,
+        "radius": 8.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "全体治愈",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 0.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "heal_area",
+          "effectParams": {
+            "tier": 1,
+            "radius": 8.0
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "花开治愈",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 0.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "heal_area",
+          "effectParams": {
+            "tier": 1,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_phys_defence_area",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "shield_phys",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 8.0,
+            "radius": 8.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "haste",
+          "effectParams": {
+            "tier": 3,
+            "seconds": 18.0,
+            "radius": 8.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/yui_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "petal_shot",
+        "baseName": "花瓣射击",
+        "tier2": {
+          "name": "花瓣射击+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "petal_shot"
+              },
+              "effectParams": {
+                "amount": 6.7,
+                "damageType": "astrum:magic"
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "apply_effect",
+              "triggerParams": {
+                "skill": "petal_shot"
+              },
+              "effectParams": {
+                "effect": "minecraft:weakness",
+                "duration": 240,
+                "amplifier": 1
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/yui_main1.png"
+      },
+      {
+        "skill": "floral_aegis",
+        "baseName": "花之庇护",
+        "icon": "astrum:textures/gui/skillicon/yui_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "花之灵息",
+        "tier2": {
+          "name": "花之灵息+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_magic_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                },
+                {
+                  "effect": "buff_magic_defence_area",
+                  "effectParams": {
+                    "tier": 1,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/yui_ex.png"
+      }
+    ]
+  }
+}

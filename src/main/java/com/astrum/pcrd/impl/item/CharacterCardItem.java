@@ -78,6 +78,9 @@ public class CharacterCardItem extends Item {
     public static final String KEY_ALREADY_OWNED = "astrum.card.already_owned";
     public static final String KEY_QUARANTINED = "astrum.card.quarantined";
     public static final String KEY_NO_CHARACTER = "astrum.card.no_character";
+
+    /** Second line of an unnamed card: why it names nobody, and that it is still worth keeping. */
+    public static final String KEY_NO_CHARACTER_HINT = "astrum.card.no_character_hint";
     public static final String KEY_UNKNOWN_CHARACTER = "astrum.card.unknown_character";
     public static final String KEY_NO_REGISTRY = "astrum.card.no_registry";
 
@@ -94,7 +97,7 @@ public class CharacterCardItem extends Item {
     public static Set<String> langKeys() {
         Set<String> keys = new java.util.LinkedHashSet<>(Set.of(KEY_NAME, KEY_TOOLTIP, KEY_ENROLLED,
                 KEY_ALREADY_OWNED, KEY_QUARANTINED, KEY_NO_CHARACTER, KEY_UNKNOWN_CHARACTER,
-                KEY_NO_REGISTRY));
+                KEY_NO_REGISTRY, KEY_NO_CHARACTER_HINT));
         return Set.copyOf(keys);
     }
 
@@ -208,13 +211,23 @@ public class CharacterCardItem extends Item {
         if (characterId == null) {
             tooltip.add(Component.translatable(KEY_NO_CHARACTER)
                     .withColor(COLOR_HINT));
+            // A card that names nobody is a card whose roll did not happen (an empty pack, or a quarantined
+            // book at craft time). Saying so beats leaving a player holding a ticket they cannot use.
+            tooltip.add(Component.translatable(KEY_NO_CHARACTER_HINT).withColor(COLOR_HINT));
         } else {
             CharacterDef def = AstrumApi.characters().map(registry -> registry.get(characterId))
                     .orElse(null);
             String name = def == null ? characterId.toString() : def.displayName();
             tooltip.add(Component.translatable(KEY_TOOLTIP, name)
                     .withColor(COLOR_HINT));
+            // What to do with a card of a character you already have: the lottery can hand out duplicates
+            // (「已经有的角色也能抽到」), and a player who does not know about the token recipe would throw them
+            // away. The line names the recipe rather than the item because the item is what they will look
+            // for, and the key lives on the token (which is what the sentence is about).
+            tooltip.add(Component.translatable(
+                    com.astrum.pcrd.impl.item.MemoryTokenItem.recycleHintKey()).withColor(COLOR_HINT));
         }
     }
 }
+
 

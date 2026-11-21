@@ -53,31 +53,54 @@ __pycache__/
 /src/main/resources/assets/astrum/textures/particle/ub_spark.png
 
 # 角色头像：官方 icon_unit_*
-/src/main/resources/assets/astrum/textures/gui/portrait/djeeta.png
-/src/main/resources/assets/astrum/textures/gui/portrait/djeeta_1.png
-/src/main/resources/assets/astrum/textures/gui/portrait/djeeta_3.png
-/src/main/resources/assets/astrum/textures/gui/portrait/djeeta_6.png
+# Per-character art: whole directories, so adding a character needs no edit here.
+/src/main/resources/assets/astrum/textures/gui/portrait/**
+# task 42：雪菲（astrum:sheffy）。6★ 立绘文件按她的真名「阿贺斗_紫布菜6星.png」命名，所以生成时按
+# 文件夹匹配而不是按文件名。
 
 # 角色立绘：官方 still_unit_*
-/src/main/resources/assets/astrum/textures/gui/still/djeeta_3.png
-/src/main/resources/assets/astrum/textures/gui/still/djeeta_6.png
+/src/main/resources/assets/astrum/textures/gui/still/**
 
 # 大招切入立绘：官方 6★ 卡面 card/full/105761
 /src/main/resources/assets/astrum/textures/gui/ub_cutin_djeeta.png
 
-# 技能图标：官方 icon_skill_*（attack_buff=3010，stack=3015，九个效果各一张、互不相同）
-/src/main/resources/assets/astrum/textures/gui/skill/apply_effect.png
-/src/main/resources/assets/astrum/textures/gui/skill/area_charge.png
-/src/main/resources/assets/astrum/textures/gui/skill/attack_buff.png
-/src/main/resources/assets/astrum/textures/gui/skill/detonate.png
-/src/main/resources/assets/astrum/textures/gui/skill/extra_damage.png
-/src/main/resources/assets/astrum/textures/gui/skill/gain_charge.png
-/src/main/resources/assets/astrum/textures/gui/skill/lifesteal.png
-/src/main/resources/assets/astrum/textures/gui/skill/splash.png
-/src/main/resources/assets/astrum/textures/gui/skill/stack.png
+# 技能图标：官方 icon_skill_*（攻击提升全部 = 3001，自buff = 3010 + 边框色，stack = 3015）
+/src/main/resources/assets/astrum/textures/gui/skill/**
+/src/main/resources/assets/astrum/textures/gui/skillicon/**
+# task 52 的例外，写在这里以免下一个人以为漏了：雪菲的特殊技能1「冰龙之印」的图标**不是**官方图 ——
+# bwiki 的「技能图标」文件夹里没有特殊技能的图标（只有 EX / UB / 技能1 / 技能2）。它是自绘的
+# gui/effect_icon.png（程序绘制的那一张）的 64x64 拷贝，也就是「这枚印记自己的图」，所以和通用效果的
+# HUD 图同一条口径：自产、随 jar 发布，用否定规则留在仓库里。它也不会进 build_asset_pack.py 的清单
+# （那份清单只读本文件以 / 开头的行）。
+!/src/main/resources/assets/astrum/textures/gui/skillicon/sheffy_sp1.png
+/src/main/resources/assets/astrum/textures/item/card_*.png
+# 通用效果内核的分层效果：单图自用的由 tools/gen_skill_icons.py 产出，
+# 共用一张图 + 边框色的六个由 tools/gen_tinted_icons.py 产出
+# task 35 的两个通用效果：护盾（3010 + 金边）与魔法防御下降（3011 + 紫边），
+# 由 tools/gen_tinted_icons.py 从官方 icon_skill_* 产出，所以同样是派生美术、同样外置。
+# 两个文件也因此在 tools/build_asset_pack.py 的清单里 —— 那份清单读的就是本文件这一节。
+# task 38 的魔法攻击力 buff：与护盾同一套做法（3011 上的魔法紫边），同样由 gen_tinted_icons.py 产出
+# task 39 的两个固定值 EX 效果：3001/3003 上的铜边/深紫边，同样由 gen_tinted_icons.py 从官方图标产出，
+# 所以同样是派生美术、同样外置。两者都没有 HUD 图（不是 MobEffect，不进效果栏）。
+# task 42 的三个新通用效果：召唤精灵 / 计数 / 消耗计数。同样由 gen_tinted_icons.py 从官方
+# icon_skill_3010 产出、只差边框色，所以同样是派生美术、同样外置。消耗计数没有 HUD 图（不是 MobEffect）。
 
-# 状态图标：官方 icon_skill_3010 缩到 64x64（HUD 仍按 18x18 画，源越大越清晰）
-/src/main/resources/assets/astrum/textures/mob_effect/attack_buff.png
+# 通用效果的 HUD 图：**不进这里，随 jar 一起发布。**
+#
+# 历史：这一节曾经逐个列出 13 个效果贴图，因为它们是 gen_tinted_icons.py / gen_effect_icons.py
+# 从官方 icon_skill_* 派生出来的美术。task 49 改变了它们是什么：通用效果不再有自己的图，
+# 全部共用一张**自绘**的 gui/effect_icon.png，由 tools/gen_effect_icon_copies.py 复制成
+# 每个注册名一个 18x18 的文件（vanilla 的 mob_effects 图集按注册名查）。
+#
+# 为什么必须进仓库：JEI 与效果栏都按注册名从图集取图，取不到就是紫黑格。而 build.gradle 会把
+# 本文件里每一条 /src/main/resources/... 从 jar 里排除 —— 一旦列在这里，没装资源包的玩家就又会
+# 看到紫黑格，而那正是这次要修的缺陷。所以它们既不进本文件，也不进 build_asset_pack.py 的清单。
+# 五个 party_*.png 本来就留在仓库里（纯自产程序符文），现在通用效果和它们一样了。
+# 计数与精灵的图标是角色头像的衍生品（雪菲 / 千歌 的 6★ 头像缩到 64x64），
+# 所以和头像本身一样属于官方美术派生物，外置、随资源包发布。
+# 代价是人类已知并接受的：不装资源包时这两个效果显示紫黑格。
+/src/main/resources/assets/astrum/textures/mob_effect/counter.png
+/src/main/resources/assets/astrum/textures/mob_effect/spirit.png
 
 # 角色册边框：官方 fx_ui_gachabutton_frame_tex
 /src/main/resources/assets/astrum/textures/gui/book_panel.png
@@ -88,8 +111,15 @@ __pycache__/
 
 # 角色卡图标：官方 icon_unit_105731
 /src/main/resources/assets/astrum/textures/item/character_card.png
-
+# 记忆结晶与选择券：自绘（tools/gen_token_texture.py），随其它派生贴图一并外置
+/src/main/resources/assets/astrum/textures/item/memory_token.png
 # 轮盘底板：AI 生成后用 prepare_textures.py 加工（也是经由内容生成流程，一并外置以示一致）
 /src/main/resources/assets/astrum/textures/gui/wheel_plate.png
 /src/main/resources/assets/astrum/textures/gui/ub_frame.png
 
+# 设计文档：随时更新，只在本机，不上传
+/DESIGN.md
+
+# 内部工作记录：给人类和代理看的、不是项目文档，也不该随仓库发布。
+# 它们记录的是“谁在什么时候为什么这么做”，包含本机路径与内部推理，属于仓库外的东西。
+/task-*-report.md

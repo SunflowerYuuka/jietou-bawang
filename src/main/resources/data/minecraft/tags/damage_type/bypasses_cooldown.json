@@ -2,6 +2,7 @@
   "replace": false,
   "values": [
     "astrum:hook_damage",
-    "astrum:ub_damage"
+    "astrum:ub_damage",
+    "astrum:magic"
   ]
 }

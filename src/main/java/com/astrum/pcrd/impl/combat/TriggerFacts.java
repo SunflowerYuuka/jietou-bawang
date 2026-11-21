@@ -7,17 +7,17 @@ import net.minecraft.resources.ResourceLocation;
 import org.jetbrains.annotations.ApiStatus;
 
 /**
- * What just happened, as the yes/no questions the eight {@link Trigger} values ask (spec §4.2, §5.3).
+ * What just happened, as the yes/no questions the ten {@link Trigger} values ask (spec §4.2, §5.3).
  *
  * <h2>Why every trigger has an answer, and why they share one switch</h2>
- * {@code api.v1} publishes eight triggers, so a data author may write any of them. An arm that answers
+ * {@code api.v1} publishes ten triggers, so a data author may write any of them. An arm that answers
  * {@code false} unconditionally is not "not implemented yet" from the author's side — it is silence
  * with no diagnostic, and the only shipped character demonstrated it: two of djeeta's three hooks sat
  * on {@code combo_n: 3} and never fired. The {@link #observes} switch below is therefore exhaustive
- * (no {@code default}), which means a ninth trigger **stops compiling** instead of quietly joining the
- * silent set.
+ * (no {@code default}), which means an eleventh trigger **stops compiling** instead of quietly joining
+ * the silent set.
  *
- * <h2>The three families, and why they are not one event</h2>
+ * <h2>The four families, and why they are not one event</h2>
  * <ul>
  *   <li><b>Hit-shaped</b> ({@link Trigger#MELEE_HIT}, {@link Trigger#PROJECTILE_HIT},
  *       {@link Trigger#CRIT}, {@link Trigger#COMBO_N}, {@link Trigger#LOW_HEALTH}) — answered on
@@ -32,6 +32,14 @@ import org.jetbrains.annotations.ApiStatus;
  *       is the actor and the incoming damage source is what the hit was.</li>
  *   <li><b>{@link Trigger#STACK_FULL}</b> — answered at the moment a {@code stack} hook drives a count
  *       to its cap, which is the only moment that fact exists.</li>
+ *   <li><b>{@link Trigger#BATTLE_START}</b> — answered on the <b>one</b> landed hit that opens a fight
+ *       ({@link TriggerRuntime#noteBattleStart}), not on every hit of it: the boundary is the player's own
+ *       first blow after a lull, and the hit that carries the fact is also that fight's first
+ *       {@link Trigger#MELEE_HIT} / {@link Trigger#PROJECTILE_HIT} event. Firing it from a login or a
+ *       respawn would be a second definition of "a fight began" and an easy refill, so no such path exists.</li>
+ *   <li><b>{@link Trigger#UB_LAND}</b> — answered by the ultimate's own settlement ({@code UbLandHooks}),
+ *       once per body its damage really landed on. It is not reachable from a swing: the hook lists live in
+ *       {@code ub.landHooks}, and {@code UbHooks.mismatch()} refuses a hook there with any other trigger.</li>
  * </ul>
  *
  * <h2>The two counters, and their conventions</h2>
@@ -54,8 +62,8 @@ import org.jetbrains.annotations.ApiStatus;
  */
 @ApiStatus.Internal
 public record TriggerFacts(boolean meleeHit, boolean projectileHit, boolean crit, boolean kill,
-                           boolean block, boolean lowHealth, int comboHits,
-                           Optional<ResourceLocation> stackReachedMax) {
+                           boolean block, boolean lowHealth, int comboHits, boolean battleStart,
+                           boolean ubLand, Optional<ResourceLocation> stackReachedMax) {
 
     /**
      * At or below this fraction of the attacker's maximum health, the attacker counts as low.
@@ -72,26 +80,58 @@ public record TriggerFacts(boolean meleeHit, boolean projectileHit, boolean crit
         comboHits = Math.max(0, comboHits);
     }
 
-    /** {@return the facts of one landed hit} */
+    /**
+     * {@return the facts of one landed hit that does <b>not</b> open a fight}
+     *
+     * <p>The five-argument form every pre-{@code battle_start} caller uses: an ordinary swing in a fight
+     * that is already running. Production passes the gate's answer through the six-argument overload
+     * instead, so "this hit is an ordinary one" here can never be mistaken for "this hit opened a fight".
+     */
     public static TriggerFacts forHit(boolean meleeHit, boolean projectileHit, boolean crit, int comboHits,
             boolean lowHealth) {
+        return forHit(meleeHit, projectileHit, crit, comboHits, lowHealth, false);
+    }
+
+    /**
+     * {@return the facts of one landed hit, which may also be the blow that opened a fight}
+     *
+     * @param battleStart whether this blow is the first of a fight, from {@link TriggerRuntime#noteBattleStart}
+     */
+    public static TriggerFacts forHit(boolean meleeHit, boolean projectileHit, boolean crit, int comboHits,
+            boolean lowHealth, boolean battleStart) {
         return new TriggerFacts(meleeHit, projectileHit, crit, false, false, lowHealth, comboHits,
-                Optional.empty());
+                battleStart, false, Optional.empty());
     }
 
     /** {@return the facts of a kill, where only {@link Trigger#KILL} applies} */
     public static TriggerFacts forKill() {
-        return new TriggerFacts(false, false, false, true, false, false, 0, Optional.empty());
+        return new TriggerFacts(false, false, false, true, false, false, 0, false, false,
+                Optional.empty());
     }
 
     /** {@return the facts of a shield block, where only {@link Trigger#BLOCK} applies} */
     public static TriggerFacts forBlock() {
-        return new TriggerFacts(false, false, false, false, true, false, 0, Optional.empty());
+        return new TriggerFacts(false, false, false, false, true, false, 0, false, false,
+                Optional.empty());
     }
 
     /** {@return the facts of a stack reaching its cap, where only {@link Trigger#STACK_FULL} applies} */
     public static TriggerFacts forStackFull(ResourceLocation stackId) {
-        return new TriggerFacts(false, false, false, false, false, false, 0, Optional.of(stackId));
+        return new TriggerFacts(false, false, false, false, false, false, 0, false, false,
+                Optional.of(stackId));
+    }
+
+    /**
+     * {@return the facts of one landed ultimate body, where only {@link Trigger#UB_LAND} applies}
+     *
+     * <p>The ultimate's settlement calls this once per body a hit really landed on, after {@code hurt()}
+     * answered true. Nothing else is true here on purpose: the swing-shaped facts describe a <em>swing</em>,
+     * and copying them onto an ultimate would let a {@code melee_hit} hook in {@code ub.landHooks} fire as if
+     * the cast had swung a sword — which is why {@code UbHooks.mismatch()} refuses that declaration outright.
+     */
+    public static TriggerFacts forUbLand() {
+        return new TriggerFacts(false, false, false, false, false, false, 0, false, true,
+                Optional.empty());
     }
 
     /**
@@ -127,6 +167,8 @@ public record TriggerFacts(boolean meleeHit, boolean projectileHit, boolean crit
             case BLOCK -> block;
             case LOW_HEALTH -> lowHealth;
             case COMBO_N -> params.hits() >= 1 && comboHits > 0 && comboHits % params.hits() == 0;
+            case BATTLE_START -> battleStart;
+            case UB_LAND -> ubLand;
             case STACK_FULL -> stackReachedMax.isPresent()
                     && (params.stackId().isEmpty() || params.stackId().get().equals(stackReachedMax.get()));
         };

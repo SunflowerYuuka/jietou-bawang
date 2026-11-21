@@ -1,0 +1,199 @@
+{
+  "schemaVersion": 1,
+  "displayName": "未奏希",
+  "skillName": "捣蛋之心",
+  "avatar": "astrum:textures/gui/portrait/misogi.png",
+  "icon1st": "astrum:textures/gui/portrait/misogi_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/misogi_3.png",
+  "icon6th": "astrum:textures/gui/portrait/misogi_6.png",
+  "still": "astrum:textures/gui/still/misogi_3.png",
+  "still6th": "astrum:textures/gui/still/misogi_6.png",
+  "dimension": "control",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-b.md §2（参考等级 208、参考物理攻击力 2000、锚点 22140 → 20.0）。她是物理角色，所有伤害都是默认的 astrum:hook_damage。UB 捣蛋炸弹 1.62*物攻+20.4+20.4L = 7503.6 → 6.8（以第二近的敌人为中心、范围 300 → radius 3.0）；6★UB 捣蛋之心 2.16*物攻+27+27L = 9963 → 9.0（敌方全体 → radius 6.0）。技能1 墨水射击 0.6*物攻+8+8L = 2872 → 2.6；专属（技能1 的 tier2）1.6*物攻+20+20L = 7380 → 6.7。技能2 水球投掷 0.8*物攻+10+10L = 3690 → 3.3，自身物攻 5.55+5.55L = 1160 → buff_attack_area 3 档，降敌物攻 3.75+3.75L = 783.75 → apply_effect weakness 1 级（『小幅』）。EX 陷阱专家 物理防御力 2+2L = 418 → buff_phys_defence_area 2 档；EX+ 追加的 225 物理攻击力是常数 → flat_attack_up base 225 / perLevel 0。已记录的缺口（不静默丢弃）：(1) 技能1 / 专属的『黑暗状态』（物理攻击 30% 概率不命中，8 秒）在原版没有对应机制 —— minecraft:blindness 只是屏幕变暗、不改变命中率，用它就等于 HUD 上写着『看不见』而判定不变，所以不实现；(2) 6★UB 的『降低敌方全体【30+30*技能等级】物理攻击力 18 秒』已由 ub.landHooks 的 apply_effect 承载：trigger 是新加的 ub_land（大招命中每个真正吃到伤害的身体时求值一次），weakness 4 级 = 本节 §1.2 的『特大幅度』；(3) 6★UB 的『降低敌方全体【100+1.25*技能等级】物理暴击』与『暴击时造成的伤害降低 25%』：本 mod 的 crit 属性只在我们自己的伤害路径上读玩家侧，没有给受害者写暴击率 / 暴击伤害的通道。（task 62 收尾：6★UB 的「降低敌方全体【100+1.25*技能等级】物理暴击 18 秒」与「暴击时造成的伤害降低 25% 18 秒」已落盘 —— 前者 100+1.25*208 = 360 点，按本 build 的 1 点 = 0.05 个百分点换算成 **18 个百分点**，由 `crit_chance_down` 承载（写在受害者身上的负数 `astrum:crit_chance` 修正）；后者按原文 25% 写进 `crit_damage_down`（`ADD_MULTIPLIED_TOTAL` 的 -0.25，1.5 → 1.125）。两者都是真实的 MobEffect，到期由原版移除修正，没有 tick 监听。已记录的掩蔽限制：`Crit.chanceOf` / `damageOf` 遵循「取最高」，因此更高的外部暴击属性会盖过这个减益（本 pack 没有此类 mod）。）",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "ink_shot"
+      },
+      "effectParams": {
+        "amount": 2.6
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "water_ball"
+      },
+      "effectParams": {
+        "amount": 3.3
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "apply_effect",
+      "triggerParams": {
+        "skill": "water_ball"
+      },
+      "effectParams": {
+        "effect": "minecraft:weakness",
+        "duration": 1980,
+        "amplifier": 1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_attack_area",
+      "triggerParams": {
+        "skill": "water_ball"
+      },
+      "effectParams": {
+        "tier": 3,
+        "seconds": 99.0,
+        "radius": 0.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "捣蛋炸弹",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 6.8,
+      "radius": 3.0
+    },
+    "enhanced": {
+      "name": "捣蛋之心",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 9.0,
+      "radius": 6.0,
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "crit_chance_down",
+          "percent": 18.0,
+          "effectParams": {
+            "seconds": 18.0
+          }
+        },
+        {
+          "scope": "victim",
+          "effect": "crit_damage_down",
+          "percent": 25.0,
+          "effectParams": {
+            "seconds": 18.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/misogi_ub.png",
+    "landHooks": {
+      "enhanced": [
+        {
+          "trigger": "ub_land",
+          "effect": "apply_effect",
+          "effectParams": {
+            "effect": "minecraft:weakness",
+            "duration": 360,
+            "amplifier": 4
+          }
+        }
+      ]
+    }
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "ink_shot",
+        "baseName": "墨水射击",
+        "tier2": {
+          "name": "墨水射击+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "ink_shot"
+              },
+              "effectParams": {
+                "amount": 6.7
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "apply_effect",
+              "triggerParams": {
+                "skill": "ink_shot"
+              },
+              "effectParams": {
+                "effect": "minecraft:weakness",
+                "duration": 3600,
+                "amplifier": 1
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/misogi_main1.png"
+      },
+      {
+        "skill": "water_ball",
+        "baseName": "水球投掷",
+        "icon": "astrum:textures/gui/skillicon/misogi_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "陷阱专家",
+        "tier2": {
+          "name": "陷阱专家+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "buff_phys_defence_area",
+                  "effectParams": {
+                    "tier": 2,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "buff_phys_defence_area",
+                  "effectParams": {
+                    "tier": 2,
+                    "radius": 0.0
+                  }
+                },
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 225,
+                    "perLevel": 0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/misogi_ex.png"
+      }
+    ]
+  }
+}

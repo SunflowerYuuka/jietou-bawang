@@ -1,0 +1,205 @@
+{
+  "schemaVersion": 1,
+  "displayName": "克莉丝提娜",
+  "skillName": "极值圣域",
+  "avatar": "astrum:textures/gui/portrait/christina.png",
+  "icon1st": "astrum:textures/gui/portrait/christina_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/christina_3.png",
+  "icon6th": "astrum:textures/gui/portrait/christina_6.png",
+  "still": "astrum:textures/gui/still/christina_3.png",
+  "still6th": "astrum:textures/gui/still/christina_6.png",
+  "dimension": "output",
+  "_notes": "数值全部由 bwiki 公式推导，见 docs/derivations-batch-c.md §C5（锚点与 docs/balance-derivation.md §14.1 相同：Lv208 / A2000 / 22140 → 20.0）。**她的 6★UB 在 bwiki 里是两行**：「アルティマスアヴァロン<br>极值圣域」—— 第一行是日文名，第二行才是中文名，所以 skillName 与 ub.enhanced.name 都只取中文「极值圣域」。UB 乱数圣域 3.6A+45+45L = 16605 → 15.0；6★UB 是**同一条式子打两段**（bwiki 写了两遍【3.2*物理攻击力+40+40*技能等级】），每段 14760 → 13.3，所以 hits 2；6★UB 还多一条「降低最近的敌人【0.2+0.2L】物理防御力 18 秒」= 41.6 → 减益档位 round(41.6/(0.20*2000)) = 0 → 夹到 1 档。技能1 OVERLAY 自身物攻【15+15L】= 3135 → 攻击档位 round(3135/400) = 封顶 5 档，15 秒；「提升自身 15 技能值上升 15 秒」→ CHARGE_RATE_UP 1 档（本 mod 的阶梯是每档 +25%，游戏里的技能值上升是百分比，15/25 = 0.6 → 1 档）。技能1 的专属：物攻【36+36L】= 7524 → 5 档、技能值上升 30（30/25 = 1.2 → 仍是 1 档）、「恢复自身【150+1.5L】技能值」= 462 TP → gain_charge 46.2（§14.5 的单位换算：1 充能点 = 10 TP）。技能2 INJECTION 1.2A+15+15L = 5535 → 5.0 + 物防下降【0.6+0.6L】= 124.8 → round(124.8/400) = 0 → 1 档。EX IGNITE EXE【15+15L】物攻 → flat_attack_up base 15 / perLevel 15；EX+【240+15L】→ base 240 / perLevel 15（与姬塔的 剑圣的天赋 同一形状，系数照抄不预先乘等级）。已记录的缺口（不静默丢弃）：(1) 两档 UB 的「使自身免疫物理伤害」已由 ub.effects 的 `phys_immunity` 承载：单独开一条物理免疫通道（只挡物理、不挡魔法），tier 1、5.08 秒、radius 0 = 只给自己。时长按 bwiki 公式【3+0.01×技能等级】在 Lv208 的值 5.08 秒落盘 —— 早先 ub.extra 里的「1 秒」是错的，以公式为准；(2) 两档 UB 的「无法躲闪 / 必定命中」「必定暴击」，以及 6★UB 的「无视 50 物理防御力」仍然没有写入通道；(3) 专属的「提升自身 10% 物理暴击伤害 180 秒」没有对应效果类型。（task 62 收尾：**必暴** 与 **无视 50 物理防御力** 已落盘 —— 两档 UB 都写 `forcedCrit: true`，6★ 再加 `armourPierce: 0.5`；「无法躲闪 / 必定命中」**没有可实现的通道，也不需要**：Minecraft 没有命中判定，唯一能让一次合法命中落空的机制是无敌判定（原文自己就写了「除非目标无敌」）与受击冷却窗口，而后者的 `minecraft:bypasses_cooldown` 标签里已经包含 `astrum:ub_damage` 与 `astrum:hook_damage`（见 src/main/resources/data/minecraft/tags/damage_type/bypasses_cooldown.json， UbDeathCooldownResourceTest 钉住）—— 所以这一条是**已成立的事实**，不是缺口。）",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_attack_area",
+      "triggerParams": {
+        "skill": "overlay"
+      },
+      "effectParams": {
+        "tier": 5,
+        "seconds": 15.0,
+        "radius": 0.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "charge_rate_up",
+      "triggerParams": {
+        "skill": "overlay"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 15.0,
+        "radius": 0.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "injection"
+      },
+      "effectParams": {
+        "amount": 5.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "defence_down",
+      "triggerParams": {
+        "skill": "injection"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "乱数圣域",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 15.0,
+      "forcedCrit": true,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "phys_immunity",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 5.08,
+            "radius": 0.0
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "极值圣域",
+      "animation": "ub_cast",
+      "hits": 2,
+      "damage": 13.3,
+      "forcedCrit": true,
+      "armourPierce": 0.5,
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "defence_down",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 18.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "phys_immunity",
+          "effectParams": {
+            "tier": 1,
+            "seconds": 5.08,
+            "radius": 0.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/christina_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.25,
+    "skills": [
+      {
+        "skill": "overlay",
+        "baseName": "OVERLAY",
+        "tier2": {
+          "name": "OVERLAY+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_attack_area",
+              "triggerParams": {
+                "skill": "overlay"
+              },
+              "effectParams": {
+                "tier": 5,
+                "seconds": 15.0,
+                "radius": 0.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "charge_rate_up",
+              "triggerParams": {
+                "skill": "overlay"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 15.0,
+                "radius": 0.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "gain_charge",
+              "triggerParams": {
+                "skill": "overlay"
+              },
+              "effectParams": {
+                "amount": 46.2
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/christina_main1.png"
+      },
+      {
+        "skill": "injection",
+        "baseName": "INJECTION",
+        "icon": "astrum:textures/gui/skillicon/christina_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "IGNITE EXE",
+        "tier2": {
+          "name": "IGNITE EXE+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/christina_ex.png"
+      }
+    ]
+  }
+}

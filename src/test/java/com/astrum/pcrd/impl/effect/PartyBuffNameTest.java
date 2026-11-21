@@ -66,8 +66,7 @@ class PartyBuffNameTest {
      * does not exercise are the smallest values that satisfy the codec's types.
      */
     private static CharacterDef definition(Optional<String> skillName) {
-        UbTier tier = new UbTier("tempest_blade", 4, 20.0, OptionalDouble.empty(),
-                Optional.empty(), OptionalDouble.empty(), Optional.empty());
+        UbTier tier = new UbTier("tempest_blade", 4, 20.0, OptionalDouble.empty(), List.of());
         return new CharacterDef(1, DISPLAY_NAME, Dimension.CHARGE, Optional.empty(), Optional.empty(),
                 List.of(), new UbDef(tier, tier), new GrowthDef(100, 1.15, 30),
                 new AffectionDef(3, 8, List.of()), skillName, Optional.empty(), Optional.empty(),

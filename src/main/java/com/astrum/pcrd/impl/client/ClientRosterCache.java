@@ -2,6 +2,7 @@ package com.astrum.pcrd.impl.client;
 
 import com.astrum.pcrd.impl.network.RosterSyncPayload;
 import com.astrum.pcrd.impl.network.RosterSyncPayload.Entry;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
@@ -32,16 +33,46 @@ public final class ClientRosterCache {
     /** "Nothing known yet": a readable, empty book. */
     private static volatile RosterSyncPayload latest = RosterSyncPayload.EMPTY;
 
+    /** Rows of the parts already received for the book currently being reassembled, in arrival order. */
+    private static final List<Entry> assembled = new ArrayList<>();
+
+    /** Which part index {@link #assembled} is expecting next. */
+    private static int nextPart;
+
     private ClientRosterCache() {
     }
 
     /**
-     * Records a push from the server.
+     * Records a push from the server, reassembling a book that arrived in several parts.
      *
-     * @param payload the book the server just sent
+     * <h2>Why the receiver accumulates instead of the server sending one bigger frame</h2>
+     * A book can hold more rows than one frame may carry — a large character pack, plus the rows this build
+     * deliberately keeps for characters the current pack no longer defines, which are still owned and still shown.
+     * The server therefore cuts the book into {@code parts} frames and this method glues them back together, so
+     * the screen keeps showing the <b>whole</b> book rather than the prefix that fit in a buffer.
+     *
+     * <p><b>Part 0 starts a new book</b>, which is what makes a dropped or reordered run harmless: the next sync
+     * begins from scratch instead of appending to a half-book. A part that arrives out of order is discarded
+     * rather than stored, because a book with a hole in it is worse than a book that updates one tick later —
+     * the server re-syncs on change, and a reconnect sends the whole thing again.
+     *
+     * @param payload one part of the book the server just sent
      */
-    public static void accept(RosterSyncPayload payload) {
-        latest = payload;
+    public static synchronized void accept(RosterSyncPayload payload) {
+        if (payload.part() == 0) {
+            assembled.clear();
+            nextPart = 0;
+        } else if (payload.part() != nextPart) {
+            // Out of order, or a part from a run this client never saw begin: drop it and wait for part 0.
+            return;
+        }
+        assembled.addAll(payload.entries());
+        nextPart++;
+        if (nextPart >= payload.parts()) {
+            latest = new RosterSyncPayload(List.copyOf(assembled), payload.quarantined());
+            assembled.clear();
+            nextPart = 0;
+        }
     }
 
     /** {@return the last book the server pushed, never {@code null}} */

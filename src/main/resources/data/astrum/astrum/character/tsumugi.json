@@ -1,0 +1,265 @@
+{
+  "schemaVersion": 1,
+  "displayName": "茧宫纺希",
+  "skillName": "登峰造艺",
+  "avatar": "astrum:textures/gui/portrait/tsumugi.png",
+  "icon1st": "astrum:textures/gui/portrait/tsumugi_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/tsumugi_3.png",
+  "icon6th": "astrum:textures/gui/portrait/tsumugi_6.png",
+  "still": "astrum:textures/gui/still/tsumugi_3.png",
+  "still6th": "astrum:textures/gui/still/tsumugi_6.png",
+  "dimension": "control",
+  "_notes": "数值全部由 bwiki 公式推导，见 docs/derivations-batch-c.md §C3（锚点与 docs/balance-derivation.md §14.1 相同：Lv208 / A2000 / 22140 → 20.0）。**她的 6★UB 在 bwiki 里是两行**：「エンドドレステーラー<br>登峰造艺」—— 第一行是日文名，第二行才是中文名，所以 skillName 与 ub.enhanced.name 都只取中文「登峰造艺」（日文行不进数据，见报告）。UB 致死束缚 1.44A+18+18L = 6642 → 6.0，范围半径 900（本 mod 的最大档半径 6.0，与凯露的全体 UB 同一个值）；6★UB 2.2A+27.5+27.5L = 10147.5 → 9.2，外加「+0.5A×目标数量」这一项：该式对 n 个目标是 9.2 + 0.9n，写成 damage 10.1（n=1 时）+ perExtraTarget 0.9（每多一个目标加 0.9），与公式逐点相同。「束缚」= PANIC 1 档（本 mod 的恐慌固定 1.5 秒，bwiki 是 2.5 / 4 秒，差的那部分是记录的缺口）。技能1 捕捉线绳 1.2A+15+15L = 5535 → 5.0。技能1 的专属：同一伤害式 + 眩晕 1.5 秒（PANIC，精确）+ 自身物攻【12+12L】= 2508 → 攻击档位 round(2508/(0.20*2000)) = 封顶 5 档 + 自身物防【0.4+0.4L】= 83.2 → 防御档位 round(83.2/(0.12*2000)) = 1 档（12 秒）。技能2 螺旋纱网 0.18A+2.25+2.25L = 830.25 → 0.8（`extra_damage` + `splash`，原文是「范围内的敌人」）。EX 裁缝的勇气【2+2L】= 418 → 2 档；EX+【32+2L】= 448 → 仍是 2 档（round(448/240) = 1.87 → 2），这是算术结果，不是笔误。已记录的缺口：(1) 位移按 bwiki 的选择规则实施：两档 UB 各有一个 farthest 子句把最远的那个拉近 3 格（PULL 3 档），各有一个 nearest 子句把最近的那个击退（KNOCKBACK 1 档 = 原版一击的力度）；技能1 的「吸引 100」仍是 1 格的 PULL；(2) 6★UB 的「范围的敌人越多该技能伤害越高」（+0.5*物理攻击力*目标数量）由子句的 perExtraTarget 承担：10.1 + 0.9×(目标数-1)；(3) 束缚 2.5 / 4 秒被恐慌固定的 1.5 秒替代；(4) 技能2 的「使目标的行动速度降低至 90%，持续 12 秒」没有减速机制（HASTE 只有加速方向），所以技能2 只有伤害；(5) 技能1 的「将目标向前吸引 100 距离」同上。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "capture_thread"
+      },
+      "effectParams": {
+        "amount": 5.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "pull",
+      "triggerParams": {
+        "skill": "capture_thread"
+      },
+      "effectParams": {
+        "tier": 1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "spiral_net"
+      },
+      "effectParams": {
+        "amount": 0.8
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "splash",
+      "triggerParams": {
+        "skill": "spiral_net"
+      },
+      "effectParams": {
+        "radius": 4.0,
+        "damage": 0.8
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "致死束缚",
+      "animation": "ub_cast",
+      "segments": [
+        {
+          "target": "all_in_radius",
+          "radius": 6.0,
+          "damage": 6.0
+        },
+        {
+          "target": "farthest",
+          "effects": [
+            {
+              "scope": "victim",
+              "effect": "pull",
+              "effectParams": {
+                "tier": 3
+              }
+            }
+          ]
+        },
+        {
+          "target": "nearest",
+          "effects": [
+            {
+              "scope": "victim",
+              "effect": "knockback",
+              "effectParams": {
+                "tier": 1
+              }
+            }
+          ]
+        }
+      ],
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "panic",
+          "effectParams": {
+            "tier": 1
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "登峰造艺",
+      "animation": "ub_cast",
+      "segments": [
+        {
+          "target": "all_in_radius",
+          "radius": 6.0,
+          "damage": 10.1,
+          "perExtraTarget": 0.9
+        },
+        {
+          "target": "farthest",
+          "effects": [
+            {
+              "scope": "victim",
+              "effect": "pull",
+              "effectParams": {
+                "tier": 3
+              }
+            }
+          ]
+        },
+        {
+          "target": "nearest",
+          "effects": [
+            {
+              "scope": "victim",
+              "effect": "knockback",
+              "effectParams": {
+                "tier": 1
+              }
+            }
+          ]
+        }
+      ],
+      "effects": [
+        {
+          "scope": "victim",
+          "effect": "panic",
+          "effectParams": {
+            "tier": 1
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/tsumugi_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "capture_thread",
+        "baseName": "捕捉线绳",
+        "tier2": {
+          "name": "捕捉线绳+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "capture_thread"
+              },
+              "effectParams": {
+                "amount": 5.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "pull",
+              "triggerParams": {
+                "skill": "capture_thread"
+              },
+              "effectParams": {
+                "tier": 1
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "panic",
+              "triggerParams": {
+                "skill": "capture_thread"
+              },
+              "effectParams": {
+                "tier": 1
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_attack_area",
+              "triggerParams": {
+                "skill": "capture_thread"
+              },
+              "effectParams": {
+                "tier": 5,
+                "seconds": 12.0,
+                "radius": 0.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_phys_defence_area",
+              "triggerParams": {
+                "skill": "capture_thread"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0,
+                "radius": 0.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/tsumugi_main1.png"
+      },
+      {
+        "skill": "spiral_net",
+        "baseName": "螺旋纱网",
+        "icon": "astrum:textures/gui/skillicon/tsumugi_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "裁缝的勇气",
+        "tier2": {
+          "name": "裁缝的勇气+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "buff_phys_defence_area",
+                  "effectParams": {
+                    "tier": 2,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "buff_phys_defence_area",
+                  "effectParams": {
+                    "tier": 2,
+                    "radius": 0.0
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/tsumugi_ex.png"
+      }
+    ]
+  }
+}

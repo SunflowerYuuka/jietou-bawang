@@ -86,10 +86,13 @@ class RosterSyncPayloadTest {
     }
 
     @Test
-    void anEmptyBookIsTwoBytes() {
+    void anEmptyBookIsFourBytes() {
         FriendlyByteBuf buf = new FriendlyByteBuf(Unpooled.buffer());
         RosterSyncPayload.STREAM_CODEC.encode(buf, RosterSyncPayload.EMPTY);
-        assertEquals(2, buf.readableBytes(), "one boolean plus a zero var-int");
+        // Two bytes before batching existed. The two extra are `part` (0) and `parts` (1) — the fields that let a
+        // book larger than one frame be reassembled instead of refused. Four var-ints of overhead for an empty
+        // book is the price of never refusing a full one.
+        assertEquals(4, buf.readableBytes(), "a boolean, part, parts, and a zero entry count");
     }
 
     /**

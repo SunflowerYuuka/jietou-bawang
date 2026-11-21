@@ -49,18 +49,26 @@ class AstrumCreativeTabTest {
 
     /** Every item this build registers, in the order the tab must show them. */
     private static final List<String> EXPECTED_ORDER = List.of(
-            // One card for every character, then the one book, then the dish.
+            // The card family, then the book, then the exchange loop and the dish.
             "astrum:character_card",
             "astrum:character_book",
+            "astrum:memory_token",
             "astrum:rice_bowl");
 
     /**
-     * The seven items, in this exact order: cards, then books, then the dish.
+     * The four items, in this exact order: the card, then the book, then the exchange loop, then the dish.
      *
-     * <p>Three claims in one assertion, and each is the reason the order exists: a card comes first because
-     * a card is the only way a character gets into the book; the books follow because the book is the
-     * screen used afterwards; the dish is last because it is spent on a character that is already in the
-     * book.
+     * <p>Each position is the reason the order exists: a card comes first because a card is the only way a
+     * character gets into the book; the book follows because it is the screen used afterwards; the
+     * <b>token</b> and the dish are last because both are spent on a character that is already in the book,
+     * and the token is the earlier half of that loop (a duplicate card becomes a token, a hundred tokens
+     * become another card) so it comes before the dish that feeds her.
+     *
+     * <p><b>The voucher is gone.</b> It used to sit between the card and the book — its path
+     * {@code character_card_voucher} starts with {@code character_card}, so the prefix rule sorted it into
+     * the card family by construction. The human removed the item (「100个，又不是放在合成台，是背包里右键直接
+     * 使用的东西」 + 「直接随机获取一个没有的角色」): the crystal is clicked directly, so there is nothing left
+     * to register and this list lost one entry.
      */
     @Test
     void theTabHoldsEveryItemInCardsThenBooksThenDishOrder() {
@@ -168,7 +176,7 @@ class AstrumCreativeTabTest {
     }
 
     /**
-     * The seven ids are exactly the themed items plus the dish — no eighth item has crept in unasserted.
+     * The four ids are exactly the themed items plus the dish — no fifth item has crept in unasserted.
      *
      * <p>Cross-checked against {@link AstrumItems#themedItemIds()} rather than retyped: if a fourth theme
      * is added, that map grows and this fails with a message saying the tab's order needs a decision,
@@ -178,9 +186,10 @@ class AstrumCreativeTabTest {
     void thePinnedListIsStillTheRegistersWholeContent() {
         Set<String> themed = new LinkedHashSet<>(AstrumItems.themedItemIds().keySet());
         themed.add("astrum:rice_bowl");
-        // `themedItemIds()` holds the three themed books; the single shared card and the dish are
-        // registered under their own plain ids and must be added by hand.
-        themed.add("astrum:character_card");
+        // `themedItemIds()` holds the card, the book and the token; only the dish lives under an id its own
+        // map does not carry, so it is the one added by hand. The card used to be added by hand too, back
+        // when that map held books only — the other ids moved in there instead of here, so an item can never
+        // be forgotten by both.
         assertEquals(themed, new LinkedHashSet<>(EXPECTED_ORDER),
                 "the tab's pinned order must list every item the mod registers, and nothing else — "
                         + "extend EXPECTED_ORDER deliberately when adding an item");
@@ -204,3 +213,5 @@ class AstrumCreativeTabTest {
         }
     }
 }
+
+

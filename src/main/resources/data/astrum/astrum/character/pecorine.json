@@ -1,0 +1,202 @@
+{
+  "schemaVersion": 1,
+  "displayName": "佩可莉姆",
+  "skillName": "公主勇袭",
+  "avatar": "astrum:textures/gui/portrait/pecorine.png",
+  "icon1st": "astrum:textures/gui/portrait/pecorine_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/pecorine_3.png",
+  "icon6th": "astrum:textures/gui/portrait/pecorine_6.png",
+  "still": "astrum:textures/gui/still/pecorine_3.png",
+  "still6th": "astrum:textures/gui/still/pecorine_6.png",
+  "dimension": "output",
+  "_notes": "数值推导见 docs/balance-derivation.md §14（bwiki 公式 + Lv208/参考攻击力 2000 + 锚点 20.0）。技能1 午餐时间 原作「自身魔防【0.8+0.8*等级】12s + 恢复自身【物理攻击力+5+5*等级】HP」，所以 buff_magic_defence_area 1 档 + heal_self 3 档（中回復）。专属版（tier2）是【1+等级】魔防 + 【1.2*物理攻击力+10+10*等级】HP + **可吸收【22.5+22.5*等级】物理魔法伤害的护盾 8s** —— 护盾这一条就是 SHIELD 效果的第一个真实用例，档位由 §14.3 的换算得到。技能2 沉重一击 1.6A+20+20L = 7380 -> 6.7。UB 公主突袭 2.4A+30+30L = 11070 -> 10.0 + 自身物魔防大アップ（2 档）；6★ 公主勇袭 4.8A+60+60L = 22140 -> 20.0 + 魔防更深（3 档）+ 攻击力大アップ（4 档，含 0.05*生命值 那一项，§14.2）。好感阶梯：tier2 = EX+ 与 技能1 专属，tier3 = UB 公主勇袭（改名压过 +）。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "heal_self",
+      "triggerParams": {
+        "skill": "lunch_time"
+      },
+      "effectParams": {
+        "tier": 1
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_magic_defence_area",
+      "triggerParams": {
+        "skill": "lunch_time"
+      },
+      "effectParams": {
+        "tier": 1,
+        "seconds": 12.0,
+        "radius": 0.0
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "heavy_blow"
+      },
+      "effectParams": {
+        "amount": 6.7
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "公主突袭",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 10.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "buff_phys_defence_area",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 18.0,
+            "radius": 0.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_magic_defence_area",
+          "effectParams": {
+            "tier": 2,
+            "seconds": 18.0,
+            "radius": 0.0
+          }
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "公主勇袭",
+      "animation": "ub_cast",
+      "hits": 1,
+      "damage": 20.0,
+      "effects": [
+        {
+          "scope": "ally",
+          "effect": "buff_phys_defence_area",
+          "effectParams": {
+            "tier": 3,
+            "seconds": 18.0,
+            "radius": 0.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_magic_defence_area",
+          "effectParams": {
+            "tier": 3,
+            "seconds": 18.0,
+            "radius": 0.0
+          }
+        },
+        {
+          "scope": "ally",
+          "effect": "buff_attack_area",
+          "effectParams": {
+            "tier": 5,
+            "seconds": 18.0,
+            "radius": 0.0
+          }
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/pecorine_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "lunch_time",
+        "baseName": "午餐时间",
+        "tier2": {
+          "name": "午餐时间+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "buff_magic_defence_area",
+              "triggerParams": {
+                "skill": "lunch_time"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 12.0,
+                "radius": 0.0
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "heal_self",
+              "triggerParams": {
+                "skill": "lunch_time"
+              },
+              "effectParams": {
+                "tier": 1
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "shield",
+              "triggerParams": {
+                "skill": "lunch_time"
+              },
+              "effectParams": {
+                "tier": 1,
+                "seconds": 8.0,
+                "radius": 0.0
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/pecorine_main1.png"
+      },
+      {
+        "skill": "heavy_blow",
+        "baseName": "沉重一击",
+        "icon": "astrum:textures/gui/skillicon/pecorine_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "公主之力",
+        "tier2": {
+          "name": "公主之力+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "vanillaEffect": "minecraft:health_boost",
+                  "amplifier": 4
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "vanillaEffect": "minecraft:health_boost",
+                  "amplifier": 4
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/pecorine_ex.png"
+      }
+    ]
+  }
+}

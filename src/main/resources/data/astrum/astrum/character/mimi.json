@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "displayName": "茜美美",
+  "skillName": "兔兔革命",
+  "avatar": "astrum:textures/gui/portrait/mimi.png",
+  "icon1st": "astrum:textures/gui/portrait/mimi_1.png",
+  "icon3rd": "astrum:textures/gui/portrait/mimi_3.png",
+  "icon6th": "astrum:textures/gui/portrait/mimi_6.png",
+  "still": "astrum:textures/gui/still/mimi_3.png",
+  "still6th": "astrum:textures/gui/still/mimi_6.png",
+  "dimension": "output",
+  "_notes": "数值全部由 bwiki 的公式推导，见 docs/derivations-batch-a.md §5（锚点口径 = docs/balance-derivation.md §14.1）。UB 兔兔斩击 打两个目标：最近 1.8A+24+24L = 8616 → 7.8，第二近 3.6A+45+45L = 16605 → 15.0。两段写成 ub.base.segments 的两条子句（nearest 7.8 / second_nearest 15.0），两条都会结算。6★UB 兔兔革命 前方范围900内 2.4A+30+30L = 11070 → 10.0（radius 6，段内全吃这一值），另以『前方第2名角色为中心、范围275内』造成 4.5A+54+54L = 20286 → 18.3 —— 写成 around_second_nearest 子句（爆心是第二近的那名角色，半径 2.75）。「前方」的方向判定本 mod 没有，锚点取距离意义上的第二近，与本体「第二近」同一口径。技能1 跳跳攻击 1.6A+20+20L = 7380 → 6.7。技能2 兔兔应援 提升我方全体【3+3*技能等级】= 627 物理攻击力 12 秒 → 627/(0.20*2000) = 1.57 → buff_attack_area 2 档。好感阶梯：tier2 = 专属（前方范围500内【2.1*物理攻击力+27+27*技能等级】= 9843 → 8.9，范围伤害所以写成 extra_damage + splash 同值），tier3 = 6★ 改名 ぴょんぴょんアタック++（bwiki 技能图标目录的 技能1_强化2 标签）；bwiki 没给 6★ 技能1 公式，tier3 沿用 tier2 的数，只换名字。EX 兔兔力量 15+15L → flat_attack_up 15/15，兔兔力量+ 240+15L → 240/15；没有 EX 改名，tier3 与 tier2 同名。",
+  "effects": [
+    {
+      "trigger": "melee_hit",
+      "effect": "extra_damage",
+      "triggerParams": {
+        "skill": "hop_attack"
+      },
+      "effectParams": {
+        "amount": 6.7
+      }
+    },
+    {
+      "trigger": "melee_hit",
+      "effect": "buff_attack_area",
+      "triggerParams": {
+        "skill": "bunny_cheer"
+      },
+      "effectParams": {
+        "tier": 2,
+        "seconds": 12.0,
+        "radius": 8.0
+      }
+    }
+  ],
+  "ub": {
+    "base": {
+      "name": "兔兔斩击",
+      "animation": "ub_cast",
+      "segments": [
+        {
+          "target": "nearest",
+          "damage": 7.8
+        },
+        {
+          "target": "second_nearest",
+          "damage": 15.0
+        }
+      ]
+    },
+    "enhanced": {
+      "name": "兔兔革命",
+      "animation": "ub_cast",
+      "segments": [
+        {
+          "target": "all_in_radius",
+          "radius": 6.0,
+          "damage": 10.0
+        },
+        {
+          "target": "around_second_nearest",
+          "radius": 2.75,
+          "damage": 18.3
+        }
+      ]
+    },
+    "icon": "astrum:textures/gui/skillicon/mimi_ub.png"
+  },
+  "growth": {
+    "expBase": 100,
+    "expPerLevel": 1.04,
+    "maxLevel": 100
+  },
+  "affection": {
+    "tier2Threshold": 3,
+    "tier3Threshold": 8,
+    "critChance": 0.22,
+    "skills": [
+      {
+        "skill": "hop_attack",
+        "baseName": "跳跳攻击",
+        "tier2": {
+          "name": "跳跳攻击+",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "hop_attack"
+              },
+              "effectParams": {
+                "amount": 8.9
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "hop_attack"
+              },
+              "effectParams": {
+                "radius": 5.0,
+                "damage": 8.9
+              }
+            }
+          ]
+        },
+        "tier3": {
+          "name": "ぴょんぴょんアタック++",
+          "effects": [
+            {
+              "trigger": "melee_hit",
+              "effect": "extra_damage",
+              "triggerParams": {
+                "skill": "hop_attack"
+              },
+              "effectParams": {
+                "amount": 8.9
+              }
+            },
+            {
+              "trigger": "melee_hit",
+              "effect": "splash",
+              "triggerParams": {
+                "skill": "hop_attack"
+              },
+              "effectParams": {
+                "radius": 5.0,
+                "damage": 8.9
+              }
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/mimi_main1.png"
+      },
+      {
+        "skill": "bunny_cheer",
+        "baseName": "兔兔应援",
+        "icon": "astrum:textures/gui/skillicon/mimi_main2.png"
+      },
+      {
+        "skill": "ex",
+        "baseName": "兔兔力量",
+        "tier2": {
+          "name": "兔兔力量+"
+        },
+        "tier3": {
+          "name": "兔兔力量+"
+        },
+        "passive": {
+          "rungs": [
+            {
+              "tier": 1,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 15,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 2,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            },
+            {
+              "tier": 3,
+              "clauses": [
+                {
+                  "effect": "flat_attack_up",
+                  "effectParams": {
+                    "base": 240,
+                    "perLevel": 15
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        "icon": "astrum:textures/gui/skillicon/mimi_ex.png"
+      }
+    ]
+  }
+}

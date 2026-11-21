@@ -57,10 +57,11 @@ class AstrumItemsTest {
     @Test
     void everyThemedItemHasAModelThatPointsAtARealTexture() {
         Map<String, String> ids = AstrumItems.themedItemIds();
-        // Two ids: the one card and the one book. The two re-skinned books and their ids were deleted
-        // (「将2个皮肤版本的角色册道具删除，仅保留最开始的那个」), so this number going up is a change of feature,
-        // not an accident.
-        assertEquals(2, ids.size(), "one card and one book: " + ids.keySet());
+        // Three ids: the one card, the one book, and the token. The two re-skinned books and their ids were
+        // deleted (「将2个皮肤版本的角色册道具删除，仅保留最开始的那个」), and the 选择券 was deleted with the
+        // pick flow (「直接随机获取一个没有的角色」) — so this number going <b>down</b> is a change of feature,
+        // not a lost file.
+        assertEquals(3, ids.size(), "card, book and token: " + ids.keySet());
 
         for (Map.Entry<String, String> entry : ids.entrySet()) {
             ResourceLocation id = ResourceLocation.parse(entry.getKey());

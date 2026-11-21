@@ -2,6 +2,7 @@ package com.astrum.pcrd.api.v1;
 
 import com.google.gson.JsonParser;
 import com.mojang.serialization.JsonOps;
+import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Optional;
@@ -15,10 +16,13 @@ class CharacterDefCodecTest {
            {"trigger":"melee_hit","effect":"gain_charge","effectParams":{"amount":2.0}},
            {"trigger":"combo_n","triggerParams":{"hits":3},"effect":"splash","effectParams":{"radius":3.0,"damage":4.0}},
            {"trigger":"combo_n","triggerParams":{"hits":3},"effect":"area_charge","effectParams":{"radius":8.0,"amount":3.0,"includeSelf":true}}],
-         "ub":{"base":{"animation":"tempest_blade","hits":1,"damage":20.0,"selfAtkBuff":1.3,"buffTicks":360},
+         "ub":{"base":{"animation":"tempest_blade","hits":1,"damage":20.0,"effects":[]},
                "enhanced":{"animation":"seiga_itten","hits":4,"damage":20.0,"teamChargeBonus":0.2}},
          "growth":{"expBase":100,"expPerLevel":1.15,"maxLevel":30},
-         "affection":{"tier2Threshold":3,"tier3Threshold":8,"tier2HookModifiers":[{"hookIndex":1,"mult":1.5}]}}""";
+         "affection":{"tier2Threshold":3,"tier3Threshold":8,
+           "skills":[{"skill":"wide_slash","baseName":"广域斩击",
+             "tier2":{"name":"广域斩击+","effects":[
+               {"trigger":"melee_hit","effect":"extra_damage","effectParams":{"amount":9.4}}]}}]}}""";
 
     @Test
     void decodesDjeetaFromSpec() {
@@ -32,7 +36,14 @@ class CharacterDefCodecTest {
         assertEquals(3, def.effects().get(1).triggerParams().hits());
         assertEquals("tempest_blade", def.ub().base().animation());
         assertEquals(4, def.ub().enhanced().hits());
-        assertEquals(1, def.affection().tier2HookModifiers().size());
+        // The tier ladder is DATA now: one SkillLadder, with its tier-2 rung carrying both a name and the
+        // hooks that rung runs. It used to be a (hookIndex, mult) pair — see AffectionKernelTest for why
+        // that model could not express the real game's 専武 / 6★ versions.
+        assertEquals(1, def.affection().skills().size());
+        SkillLadder ladder = def.affection().skills().get(0);
+        assertEquals("wide_slash", ladder.skill());
+        assertEquals("广域斩击+", ladder.nameAt(2));
+        assertEquals(1, ladder.tier2().orElseThrow().effects().size());
     }
 
     @Test
@@ -84,28 +95,190 @@ class CharacterDefCodecTest {
         assertEquals(0.5, EffectHook.CODEC.parse(JsonOps.INSTANCE, reEncoded).getOrThrow().chance());
     }
 
+    /**
+     * The ultimate tier's optional tail, <b>including the generic effect list</b>, round-trips.
+     *
+     * <h2>What this replaced, and why</h2>
+     * This test used to pin {@code UbTier.AttackBuffDef} / {@code AllyEffectDef} / {@code VictimEffectDef} /
+     * {@code HealDef} — four bespoke shapes, one per clause of an ultimate's text. They are now one
+     * {@link UbEffect} list: a scope, a generic {@link EffectType} and the same {@link TieredParams} a hook
+     * carries. So the assertion is that a tier's effects survive encode-then-decode with their
+     * <b>tiers</b> intact, which is the property the old four fields each had separately.
+     *
+     * <p>It also pins {@code damageType}, because that is what makes ｷｬﾙ's ultimate magical and therefore
+     * what the magic defence buff sees — a field whose loss would be invisible until somebody measured
+     * damage against a buffed target.
+     */
+    /**
+     * <b>A tier's damage clause list round-trips through the codec, every clause field intact.</b>
+     *
+     * <p>Three clauses of the three shapes the six recorded gaps needed: a plain damage clause on the nearest body,
+     * a blast with its own reach, and an <b>effect clause</b> with no amount at all (紬希's 「将最远的敌人拉近 300」
+     * states a distance, so a damage clause would have to invent a number the wiki never gave). The last one is
+     * also what pins the optional {@code damage}: a codec that required an amount would refuse the shape the
+     * mechanic actually has.
+     */
     @Test
-    void ubDefRoundTripsOptionalBridges() {
-        var full = new UbTier("tempest_blade", 4, 20.0, OptionalDouble.of(4.0),
-                Optional.of(new UbTier.AttackBuffDef(1.5, 18.0)), OptionalDouble.of(0.2),
-                Optional.of("armor_break"));
-        var bare = new UbTier("seiga_itten", 4, 20.0, OptionalDouble.empty(), Optional.empty(),
-                OptionalDouble.empty(), Optional.empty());
-        var def = new UbDef(full, bare);
+    void ubTierRoundTripsItsDamageClauses() {
+        var pull = new UbEffect(UbEffect.Scope.VICTIM, EffectType.PULL, TieredParams.ofTier(3));
+        var clauses = List.of(
+                new UbSegment(10.0, 1, UbTargetRule.NEAREST, OptionalDouble.empty()),
+                new UbSegment(OptionalDouble.of(4.5), 2, UbTargetRule.ALL_IN_RADIUS, OptionalDouble.of(4.0),
+                        List.of(), Optional.of(ResourceLocation.parse("astrum:magic")),
+                        OptionalDouble.of(4.0), 0.5, false, OptionalDouble.empty()),
+                new UbSegment(UbTargetRule.FARTHEST, OptionalDouble.empty(), List.of(pull)));
+        var tier = new UbTier("ub_cast", clauses, List.of());
 
-        var enc = UbDef.CODEC.encodeStart(JsonOps.INSTANCE, def).getOrThrow();
-        assertEquals(Optional.of(def), UbDef.CODEC.parse(JsonOps.INSTANCE, enc).result(), enc.toString());
+        var encoded = UbTier.CODEC.encodeStart(JsonOps.INSTANCE, tier).getOrThrow();
+        var decoded = UbTier.CODEC.parse(JsonOps.INSTANCE, encoded).getOrThrow();
 
+        assertEquals(clauses, decoded.segments(), "clause order, rule, amount, reach, effects and scaling survive");
+        assertEquals(UbTargetRule.NEAREST, decoded.segments().get(0).target());
+        assertEquals(2, decoded.segments().get(1).hits());
+        assertEquals(0.5, decoded.segments().get(1).perExtraTarget(), 1e-9);
+        assertEquals(ResourceLocation.parse("astrum:magic"), decoded.segments().get(1).damageType().orElseThrow());
+        assertTrue(decoded.segments().get(2).damage().isEmpty(), "an effect clause carries no amount");
+        assertEquals(1, decoded.segments().get(2).effects().size());
+    }
+
+    /**
+     * <b>A tier that lists clauses needs no top-level {@code hits} or {@code damage}.</b>
+     *
+     * <p>They became optional in the same change, because their numbers live in the clauses now: requiring a
+     * top-level copy would make a pack state one of the amounts twice, and a reader guess which one the cast uses
+     * (the segments do — {@code UbTier.damageSegments()} never reads the shorthand when a list is present).
+     */
+    @Test
+    void aClauseListedTierDecodesWithoutTopLevelDamage() {
+        var json = JsonParser.parseString("""
+                {"animation":"ub_cast","segments":[
+                  {"target":"nearest","damage":10.0},
+                  {"target":"all_in_radius","radius":4.0,"damage":4.5}]}""");
+        var tier = UbTier.CODEC.parse(JsonOps.INSTANCE, json).getOrThrow();
+
+        assertEquals(2, tier.segments().size());
+        assertEquals(10.0, tier.segments().get(0).damage().orElseThrow(), 1e-9);
+        assertEquals(1, tier.segments().get(0).hits(), "hits defaults to one application");
+        assertEquals(4.0, tier.segments().get(1).radius().orElseThrow(), 1e-9);
+        // And the shorthand is untouched for a pack that writes no clauses: it still decodes, exactly as before.
+        var shorthand = UbTier.CODEC.parse(JsonOps.INSTANCE,
+                JsonParser.parseString("{\"animation\":\"ub_cast\",\"hits\":4,\"damage\":20.0}"))
+                .getOrThrow();
+        assertEquals(4, shorthand.hits());
+        assertEquals(20.0, shorthand.damage(), 1e-9);
+        assertTrue(shorthand.segments().isEmpty());
+    }
+
+    /**
+     * <b>A clause's rules are its own: an unknown target is a decode error, not a silent default.</b>
+     *
+     * <p>The enum's names are the wire format, so a pack that writes {@code "secondNearest"} (or a rule this build
+     * does not have) must fail loudly. Reading it as {@code NEAREST} would apply a 15.0 clause to the wrong body
+     * and look like a balance bug.
+     */
+    @Test
+    void anUnknownTargetRuleIsAnError() {
+        var bad = JsonParser.parseString("""
+                {"animation":"ub_cast","segments":[{"target":"almost_nearest","damage":1.0}]}""");
+        assertTrue(UbTier.CODEC.parse(JsonOps.INSTANCE, bad).error().isPresent());
+    }
+
+    @Test
+    void aClauseWithoutATargetIsAnError() {
+        var bad = JsonParser.parseString("""
+                {"animation":"ub_cast","segments":[{"damage":1.0}]}""");
+        assertTrue(UbTier.CODEC.parse(JsonOps.INSTANCE, bad).error().isPresent());
+    }
+
+    /**
+     * <b>{@code UbTier} grew by one component and is still under the codec's ceiling of sixteen.</b>
+     *
+     * <p>Same constraint {@code ExPassiveTest} pins for {@code CharacterDef} (which is <b>at</b> sixteen and may not
+     * grow), asserted here because this is the record that grew: a seventeenth component would not compile, and the
+     * next author deserves to know how much room is left before designing around it.
+     */
+    @Test
+    void ubTierStaysUnderTheCodecComponentCeiling() {
+        assertTrue(UbTier.class.getRecordComponents().length <= 16,
+                "RecordCodecBuilder.group takes at most sixteen components; UbTier has "
+                        + UbTier.class.getRecordComponents().length);
+    }
+
+    @Test
+    void ubTierRoundTripsItsEffectsAndDamageType() {
+        var effects = List.of(
+                new UbEffect(UbEffect.Scope.ALLY, EffectType.BUFF_ATTACK_AREA,
+                        TieredParams.of(3, 18.0, 8.0)),
+                new UbEffect(UbEffect.Scope.VICTIM, EffectType.DEFENCE_DOWN,
+                        TieredParams.ofTier(2)));
+        var full = new UbTier("grim_burst", 1, 8.4, OptionalDouble.of(6.0),
+                Optional.of(ResourceLocation.parse("astrum:magic")), effects, OptionalDouble.of(0.2),
+                Optional.of("barrier_break"), Optional.of("深渊炸裂"));
+        var bare = new UbTier("seiga_itten", 4, 20.0, OptionalDouble.empty(), List.of());
+
+        var enc = UbDef.CODEC.encodeStart(JsonOps.INSTANCE, new UbDef(full, bare)).getOrThrow();
         var decoded = UbDef.CODEC.parse(JsonOps.INSTANCE, enc).getOrThrow();
-        assertEquals(4.0, decoded.base().radius().getAsDouble());
-        assertEquals(1.5, decoded.base().attackBuff().orElseThrow().multiplier());
-        assertEquals(18.0, decoded.base().attackBuff().orElseThrow().seconds());
+
+        assertEquals(6.0, decoded.base().radius().getAsDouble());
+        assertEquals(Optional.of(ResourceLocation.parse("astrum:magic")), decoded.base().damageType(),
+                "a magical ultimate must keep its damage type through the codec, or the magic defence "
+                        + "buff cannot see it");
+        assertEquals(2, decoded.base().effects().size());
+        assertEquals(UbEffect.Scope.ALLY, decoded.base().effects().get(0).scope());
+        assertEquals(EffectType.BUFF_ATTACK_AREA, decoded.base().effects().get(0).type());
+        assertEquals(3, decoded.base().effects().get(0).params().tier(),
+                "the tier is the whole strength of the effect; losing it silently means tier 1 forever");
+        assertEquals(18.0, decoded.base().effects().get(0).params().seconds().getAsDouble());
+        assertEquals(8.0, decoded.base().effects().get(0).params().radius().getAsDouble());
+        assertEquals(EffectType.DEFENCE_DOWN, decoded.base().effects().get(1).type());
+        assertEquals(2, decoded.base().effects().get(1).params().tier());
         assertEquals(0.2, decoded.base().teamChargeBonus().getAsDouble());
-        assertEquals("armor_break", decoded.base().extra().orElseThrow());
+        assertEquals("barrier_break", decoded.base().extra().orElseThrow());
+        assertEquals(Optional.of("深渊炸裂"), decoded.base().name(),
+                "the ultimate's own name survives the codec: it is what the roster shows at that tier");
+        assertEquals("深渊炸裂", decoded.base().nameOr("(unnamed)"));
+
         assertTrue(decoded.enhanced().radius().isEmpty());
-        assertTrue(decoded.enhanced().attackBuff().isEmpty());
+        assertTrue(decoded.enhanced().effects().isEmpty(),
+                "a tier that declares no effects decodes to an empty list, not to null");
+        assertTrue(decoded.enhanced().damageType().isEmpty(),
+                "no damageType means the ultimate's own type; the field never invents one");
         assertTrue(decoded.enhanced().teamChargeBonus().isEmpty());
         assertTrue(decoded.enhanced().extra().isEmpty());
+        assertTrue(decoded.enhanced().name().isEmpty(), "a tier with no name stays nameless");
+    }
+
+    /**
+     * A scope and an effect that contradict each other are a <b>named</b> error, not a wrong-sided buff.
+     *
+     * <p>The codec cannot catch this — both halves are individually valid — so the rule is
+     * {@link UbEffect#mismatch()}, and the two failures worth pinning are the ones a pack author would
+     * actually write: a party buff declared on the victims, and a debuff declared on the party. The third
+     * case is a type that is neither, which the message answers with the eligible list.
+     */
+    @Test
+    void aScopeThatContradictsItsEffectIsReportedWithTheFix() {
+        var partyBuffOnVictims = new UbEffect(UbEffect.Scope.VICTIM, EffectType.BUFF_ATTACK_AREA,
+                TieredParams.ofTier(1));
+        String first = partyBuffOnVictims.mismatch().orElseThrow();
+        assertTrue(first.contains("\"ally\""), "the message must name the scope to write: " + first);
+        assertFalse(first.isBlank());
+
+        var debuffOnParty = new UbEffect(UbEffect.Scope.ALLY, EffectType.PANIC,
+                TieredParams.ofTier(1));
+        String second = debuffOnParty.mismatch().orElseThrow();
+        assertTrue(second.contains("\"victim\""), second);
+
+        // Damage is not an effect: the fix is to put it on the tier's hits, so the message has to say so.
+        var damageAsEffect = new UbEffect(UbEffect.Scope.VICTIM, EffectType.EXTRA_DAMAGE,
+                TieredParams.ofTier(1));
+        assertTrue(damageAsEffect.mismatch().orElseThrow().contains("hits"));
+
+        // And the two legal pairs say nothing.
+        assertTrue(new UbEffect(UbEffect.Scope.ALLY, EffectType.BUFF_ATTACK_AREA,
+                TieredParams.ofTier(1)).mismatch().isEmpty());
+        assertTrue(new UbEffect(UbEffect.Scope.VICTIM, EffectType.PANIC,
+                TieredParams.ofTier(1)).mismatch().isEmpty());
     }
 
     /**

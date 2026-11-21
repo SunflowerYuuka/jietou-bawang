@@ -201,9 +201,36 @@ neoForge.ideSyncTask generateModMetadata
 // assets/ — so the committed banner (one copy, in the texture tree where the art lives) is also placed
 // at the jar root. Copying it in the build rather than committing a second identical PNG keeps one file
 // as the source of truth for the art; the two cannot drift because neither is hand-edited.
+// ---------------------------------------------------------------- the art we do not ship
+//
+// `.gitignore` keeps the official-art textures out of git; it does NOT keep them out of the jar.
+// That distinction shipped once already: the jar was built from a working tree that still had the
+// generated art on disk, so all 88 PNGs went into it and removing the resource pack changed nothing.
+//
+// So one list drives both: every path `.gitignore` marks under src/main/resources is excluded from the
+// packaged resources. Add an art file to .gitignore and it stops being shipped in the same commit.
+def packOnlyResources = file('.gitignore').readLines()
+        .collect { it.trim() }
+        .findAll { it.startsWith('/src/main/resources/') }
+        .collect { it.substring('/src/main/resources/'.length()) }
+
 tasks.named('processResources', ProcessResources).configure {
     from("src/main/resources/assets/astrum/textures/logo.png") {
         rename { "logo.png" }
+    }
+}
+
+// The exclusion belongs on `jar`, not on `processResources`.
+//
+// processResources feeds three things: the jar, `runClient`, and the test runtime classpath. Excluding there
+// took the art away from all three, which broke 31 resource tests that assert the textures' size, alpha and
+// palette — and those tests still need to run, because the generators are what produce the resource pack.
+// Excluding on `jar` alone leaves development and testing untouched and removes the art from the one artefact
+// that gets published.
+tasks.named('jar', Jar).configure {
+    packOnlyResources.each { exclude(it) }
+    doFirst {
+        logger.lifecycle("astrum: excluding ${packOnlyResources.size()} pack-only art file(s) from the jar")
     }
 }
 

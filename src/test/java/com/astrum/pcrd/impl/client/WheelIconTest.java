@@ -1,5 +1,7 @@
 package com.astrum.pcrd.impl.client;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.Optional;
 import net.minecraft.resources.ResourceLocation;
 import org.junit.jupiter.api.Test;
@@ -7,6 +9,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -147,4 +150,97 @@ class WheelIconTest {
             }
         }
     }
+
+    // -----------------------------------------------------------------------------------------
+    // No avatar ring anywhere — the wheel and the cast pad, not just the book
+    // -----------------------------------------------------------------------------------------
+
+    /**
+     * <b>The wheel and the cast pad draw the same square frame as the book — no circle.</b>
+     *
+     * <h2>Why this is a structural test and not a screenshot</h2>
+     * The fix is the <em>absence</em> of a shape, and this project cannot render: there is no client to draw
+     * into. What can be asserted is the draw path — that the only avatar primitive left is the square one, that
+     * it reaches every surface, and that nothing in it emits a circle.
+     *
+     * <h2>What the human saw, three times</h2>
+     * 「角色册里面头像的那个圆圈」 (the book), 「编队槽也有这个问题」 (the party slots), then
+     * 「按B呼出的轮盘菜单，还是原来的带圆圈的头像，把圆圈删除。」 — the wheel kept the old circular ring for two
+     * releases after the book was fixed, because the two drew through <em>different</em> methods: {@code draw}
+     * drew {@code GuiShapes.outline} rings, {@code drawSquare} drew four {@code fill} edges. Undoing that split
+     * is the fix, so the test pins the split's absence rather than the pixels.
+     *
+     * <h2>How the assertions work</h2>
+     * <ol>
+     *   <li>{@code WheelIconDraw} declares exactly one avatar entry point, {@code drawCentred}, and it is the
+     *       square one plus a centre→corner conversion. A resurrected circular {@code draw} would be a second
+     *       method and would fail {@link #theCircularAvatarPrimitiveIsGone}.</li>
+     *   <li>The source of {@code WheelIconDraw}, {@code WheelOverlay} and {@code CastPadOverlay} contains no
+     *       {@code GuiShapes.outline} / {@code GuiShapes.disc} call. That is the exact code shape of the ring,
+     *       so its absence is the property that matters; the read is of the <em>production</em> sources, which
+     *       are on the test classpath as files next to the compiled classes' project.</li>
+     *   <li>The square geometry itself is already asserted above ({@code clears}, {@code inside}), so "no
+     *       circle" does not have to re-derive what a square frame is.</li>
+     * </ol>
+     */
+    @Test
+    void theCircularAvatarPrimitiveIsGone() {
+        List<String> methods = Arrays.stream(WheelIconDraw.class.getDeclaredMethods())
+                .filter(method -> java.lang.reflect.Modifier.isStatic(method.getModifiers()))
+                .filter(method -> !method.isSynthetic())
+                .map(java.lang.reflect.Method::getName)
+                .filter(name -> !name.startsWith("lambda$"))
+                .toList();
+        assertTrue(methods.contains("drawCentred"),
+                "the centred entry point must exist: " + methods);
+        assertTrue(methods.contains("drawSquare"),
+                "and it must delegate to the square form: " + methods);
+        assertFalse(methods.contains("draw"),
+                "the circular primitive must be gone, not merely unused — a method named 'draw' is exactly "
+                        + "how the wheel kept its ring after the book lost its own: " + methods);
+    }
+
+    /**
+     * <b>No avatar surface calls {@code GuiShapes.outline} or {@code GuiShapes.disc}.</b>
+     *
+     * <p>Those are the two calls that draw a ring, so their absence from the three files that draw avatars is
+     * the property. The one legitimate ring left in the mod is the UB gauge's cooldown arc in {@code UbHud} —
+     * it is a <em>timer</em> around a picture, it is the widget's own geometry rather than a frame on an
+     * avatar, and the human has never reported it. It is deliberately not covered here.
+     *
+     * <p>Read as text, because the assertion is about which calls exist in the file, not about values: a
+     * reflection test would pass on a file whose ring was merely behind a false branch.
+     */
+    @Test
+    void noAvatarSurfaceDrawsARing() throws java.io.IOException {
+        for (String name : List.of("WheelIconDraw.java", "WheelOverlay.java", "CastPadOverlay.java")) {
+            String source = readProductionSource(name);
+            assertFalse(source.contains("GuiShapes.outline"),
+                    name + " must not draw a circular outline round an avatar (「把圆圈删除」)");
+            assertFalse(source.contains("GuiShapes.disc"),
+                    name + " must not draw a disc round an avatar — the picture is a square ("+ name + ")");
+        }
+    }
+
+    /**
+     * {@return the text of one client source file}
+     *
+     * <p>Resolved through {@link TestProjectRoot}, because the unit-test JVM's working directory is
+     * Gradle's scratch directory ({@code build/minecraft-junit}), not the repository — a relative path
+     * would find nothing and the test would pass while asserting nothing. Failing loudly when the file is
+     * still missing is deliberate: a moved package should say so here.
+     *
+     * @param name file name inside the client package, e.g. {@code WheelIconDraw.java}
+     */
+    private static String readProductionSource(String name) throws java.io.IOException {
+        java.nio.file.Path path = TestProjectRoot.resolve(
+                "src/main/java/com/astrum/pcrd/impl/client/" + name);
+        assertNotNull(path, "the project root could not be located, so this test cannot read " + name
+                + " — that is an environment failure, not a passing test");
+        assertTrue(java.nio.file.Files.isRegularFile(path),
+                "the source of " + name + " must be readable at " + path.toAbsolutePath()
+                        + ", otherwise this test proves nothing");
+        return java.nio.file.Files.readString(path);
+    }
 }
+

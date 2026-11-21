@@ -10,8 +10,10 @@ import com.astrum.pcrd.impl.attach.Attachments;
 import com.astrum.pcrd.impl.attach.Party;
 import com.astrum.pcrd.impl.attach.Roster;
 import com.astrum.pcrd.impl.attach.UbState;
+import com.astrum.pcrd.impl.combat.SecondRotationRuntime;
 import com.astrum.pcrd.impl.combat.WarnOnce;
 import com.astrum.pcrd.impl.config.ServerConfig;
+import com.astrum.pcrd.impl.effect.SkillEntryBuffs;
 import java.util.Optional;
 import net.minecraft.core.Registry;
 import net.minecraft.resources.ResourceLocation;
@@ -116,11 +118,15 @@ public final class UbService {
                 def != null,
                 state.charge(),
                 now,
-                state.cdEndTick());
+                // 每个角色UB的CD不共享: the gate is asked about THIS slot's character's own cooldown, not a
+                // wheel-wide deadline. A character the pack no longer defines has no meaningful deadline
+                // (she cannot be cast at all, and CHARACTER_UNKNOWN is reported before the gauge or the
+                // cooldown are even looked at), so she reads as ready rather than borrowing somebody else's.
+                state.cooldownOf(characterId).endTick());
 
         // The decision and the state it pays: a refusal means nothing is written at all.
-        UbTransaction.Outcome outcome =
-                UbTransaction.decide(facts, ServerConfig.UB.ubGlobalCooldownTicks.get());
+        UbTransaction.Outcome outcome = UbTransaction.decide(facts,
+                ServerConfig.UB.ubGlobalCooldownTicks.get(), characterId, state);
         if (outcome.refusal().isPresent()) {
             CastGate.Reason reason = outcome.refusal().get();
             Astrum.LOGGER.debug("astrum: UB cast refused for {} slot {} ({})",
@@ -139,6 +145,18 @@ public final class UbService {
                 next -> player.setData(Attachments.UB_STATE, next),
                 () -> announce(new UbActivatedEvent(characterId, slot, enhanced)),
                 () -> settle(player, characterId, def, tier, enhanced));
+        // 在药水栏上显示的图标也只有一个技能图标: the cast's own row, wearing the ultimate's name and picture and
+        // lasting as long as its longest ALLY effect. After commit() so a refused cast shows nothing, and
+        // outside settle() so a failing showcase sink cannot cost the row (and vice versa).
+        SkillEntryBuffs.applyUltimate(player, characterId, tier);
+        // 两套独立的循环: a character whose pack declares ub.secondRotation enters her second skill loop here —
+        // after the cast has been paid for and settled, so a refused ultimate starts nothing. The gauge is
+        // already empty (commit wrote charge 0), so this is the deadlined half of 「直接消耗掉全部」, not a
+        // second spend. A character with no declared loop is unaffected and this is one no-op.
+        if (SecondRotationRuntime.activate(player, characterId, def)) {
+            Astrum.LOGGER.debug("astrum: {} switched {} into her second rotation", characterId,
+                    player.getGameProfile().getName());
+        }
         Astrum.LOGGER.debug("astrum: UB {} fired by {} from slot {}{}",
                 characterId, player.getGameProfile().getName(), slot, enhanced ? " (enhanced)" : "");
 
