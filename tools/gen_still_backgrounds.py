@@ -62,9 +62,17 @@ import sys
 
 from PIL import Image
 
+def _dump_root() -> str:
+    """素材提取目录的根。用 ASTRUM_DUMP 指向你自己机器上的位置，默认取仓库上两级的 ``assets``。
+
+    这里原来写的是一个绝对路径（维护者本机的盘符），既泄露了本机布局，也让脚本在别人的机器上必然失效。
+    """
+    return os.environ.get("ASTRUM_DUMP", os.path.join("..", ".."))
+
+
 #: The bwiki per-character tree. Each character is a folder ``<id>_<name>`` holding ``角色数据.json``,
 #: ``立绘\\`` (the 3★ still) and ``六星立绘\\`` (the 6★ still).
-DEFAULT_SOURCE = os.path.join("K:\\", "AI", "Minecraft", "assets", "bwiki_按角色")
+DEFAULT_SOURCE = os.path.join(_dump_root(), "assets", "bwiki_按角色")
 
 #: Character id (the datapack file name) -> the folder under :data:`DEFAULT_SOURCE`.
 #:

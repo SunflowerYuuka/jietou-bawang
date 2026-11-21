@@ -1,7 +1,7 @@
 """从官方 6★ 卡面派生 mod 内使用的姬塔 UB cut-in 图。
 
 为什么是「裁剪 + 缩放」而不是 AI 重绘：
-  `K:\\AI\\Minecraft\\assets\\pcr\\card\\full\\105761.webp` 是官方 6★ 卡面（1408x792，金发姬塔、
+  官方 6★ 卡面文件 是官方 6★ 卡面（1408x792，金发姬塔、
   白金配色），是唯一「画对了」的源。把它交给图像模型重绘过一次，结果把头发改成了粉色、并且留住了
   背景——即「人物不对、构图不对」。所以这里只做几何操作：裁一块 4:3，Lanczos 缩放，量化压体积。
   像素内容一个字都不改。
@@ -20,8 +20,14 @@ from pathlib import Path
 
 from PIL import Image
 
-SRC = Path(r"K:\AI\Minecraft\assets\pcr\card\full\105761.webp")
-OUT = Path(r"K:\AI\Minecraft\PrincessConnet\src\main\resources\assets\astrum\textures\gui")
+
+def _dump_root() -> str:
+    """素材提取目录的根。用 ASTRUM_DUMP 指向你自己机器上的位置，默认取仓库上两级。"""
+    return os.environ.get("ASTRUM_DUMP", os.path.join("..", ".."))
+
+
+SRC = Path(_dump_root(), "assets", "pcr", "card", "full", "105761.webp")
+OUT = Path("src", "main", "resources", "assets", "astrum", "textures", "gui")
 
 # 裁剪窗口（源图像素，左、上、右、下）。选它的理由：
 #   · 4:3，与 UbEffectOverlay.CUTIN_ASPECT 一致 —— 否则 overlay 会把它拉变形

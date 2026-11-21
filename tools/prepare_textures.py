@@ -1,7 +1,7 @@
 """把 AI 生成的原始大图处理成 Minecraft 可用贴图。
 
 原始图（1254x1254 或 1536x1024，RGBA 透明底）放在仓库**外**的
-`K:\\AI\\Minecraft\\dsh-image-gen\\`，它们体积大且运行期不需要，所以不进 git。
+图片生成工具的临时目录，它们体积大且运行期不需要，所以不进 git。
 本脚本负责裁边、缩放、命名，输出到 `src/main/resources/assets/astrum/textures/`。
 
 为什么不能直接把大图丢进游戏：
@@ -24,8 +24,8 @@ from pathlib import Path
 
 from PIL import Image
 
-SRC = Path(r"K:\AI\Minecraft\dsh-image-gen")
-REPO = Path(r"K:\AI\Minecraft\PrincessConnet")
+SRC = Path(os.environ.get("ASTRUM_IMAGE_GEN", os.path.join("..", "..", "dsh-image-gen")))
+REPO = Path(__file__).resolve().parent.parent
 OUT = REPO / "src" / "main" / "resources" / "assets" / "astrum" / "textures"
 
 # (源文件名, 目标相对路径, 尺寸, 是否像素画, 边距比例)

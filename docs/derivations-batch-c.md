@@ -3,7 +3,7 @@
 本文件只记录本批次五名角色的推导。全 mod 的**规则**没有新开一套：锚点、参考点、四条换算全部照抄
 `docs/balance-derivation.md` §14.1–§14.5，一字未改；`docs/balance-derivation.md` 本身**没有改动**（那是共享文件）。
 
-权威数据：`K:\AI\Minecraft\assets\bwiki_按角色\<id>_<name>\角色数据.json`。
+权威数据：`（本机素材目录，见 ASTRUM_DUMP）`。
 
 ---
 

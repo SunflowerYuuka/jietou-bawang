@@ -20,8 +20,8 @@ from pathlib import Path
 
 from PIL import Image
 
-SRC = Path(r"K:\AI\Minecraft\dsh-image-gen")
-OUT = Path(r"K:\AI\Minecraft\PrincessConnet\src\main\resources\assets\astrum\textures\effect")
+SRC = Path(os.environ.get("ASTRUM_IMAGE_GEN", os.path.join("..", "..", "dsh-image-gen")))
+OUT = Path("src", "main", "resources", "assets", "astrum", "textures", "effect")
 
 # (源文件, 目标名, 边长, 裁掉的边缘比例(左,上,右,下), 热色, gamma)
 JOBS = [

@@ -154,7 +154,7 @@
 7. **工作区有 4 个未跟踪文件，发布前必须定去留。**
    `src/main/resources/assets/astrum/textures/effect/ub_burst.png`（223 KB）、`ub_flare.png`（124 KB）、`ub_strike.png`（138 KB）、`tools/fx_from_ai.py`。
    已开箱核对 `astrum-0.1.0-FINAL.jar`：**这三张 png 不在 jar 里**，所以现有发布物是干净的。但它们躺在 `src/main/resources` 下，`build.gradle` 的 `sourceSets.main.resources` 会把它们打进任何**未来**重新构建的 jar（合计 +486 KB，与 `b6deb87`「352 KB → 57 KB」的瘦身意图相反）。
-   后果：要么提交（那就同时把 `fx_from_ai.py` 里写死的 `K:\AI\Minecraft\dsh-image-gen` 绝对路径改成相对路径，否则脚本对别人不可用），要么删掉/加进 `.gitignore`。不能就这么留着——下一个构建者会以为它们是已交付资产。
+   后果：要么提交（那就同时把 `fx_from_ai.py` 里写死的 `（本机素材目录，见 ASTRUM_DUMP）` 绝对路径改成相对路径，否则脚本对别人不可用），要么删掉/加进 `.gitignore`。不能就这么留着——下一个构建者会以为它们是已交付资产。
 
 ---
 

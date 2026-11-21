@@ -2,7 +2,7 @@
 
 The card used to be a hand-drawn 16x16 placeholder (tools/gen_character_card_texture.py), because
 this slice had no art pipeline for item icons. The official art *is* available now: the unpacked PCR
-resources at ``K:\\AI\\Minecraft\\assets\\pcr\\extracted\\图片`` hold one 128x128 avatar per unit,
+resources at 官方素材的图片目录 hold one 128x128 avatar per unit,
 and Djeeta's 3-star avatar is ``icon_unit_105731.png``.
 
 The card is the player's first contact with a character, so it should show her, not a drawn stand-in:
@@ -34,9 +34,15 @@ import sys
 
 from PIL import Image
 
+
+def _dump_root() -> str:
+    """素材提取目录的根。用 ASTRUM_DUMP 指向你自己机器上的位置，默认取仓库上两级。"""
+    return os.environ.get("ASTRUM_DUMP", os.path.join("..", ".."))
+
+
 #: Where the official, unpacked PCR art lives on this machine. Not part of the repository.
 DEFAULT_SOURCE = os.path.join(
-    "K:\\", "AI", "Minecraft", "assets", "pcr", "extracted", "图片", "icon_unit_105731.png"
+    _dump_root(), "assets", "pcr", "extracted", "图片", "icon_unit_105731.png"
 )
 
 #: The unit whose avatar the card shows: Djeeta, 3-star (105731; 105761 is the 6-star art).

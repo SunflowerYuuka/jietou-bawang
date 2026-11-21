@@ -1,6 +1,6 @@
 # 数值推导 — 批次 A（`astrum:hiyori` / `rei` / `kurumi` / `saren` / `mimi` / `muimi`）
 
-本文是 task 43a 的推导记录。权威数据是 `K:\AI\Minecraft\assets\bwiki_按角色\<id>_<name>\角色数据.json`，
+本文是 task 43a 的推导记录。权威数据是 `（本机素材目录，见 ASTRUM_DUMP）`，
 每一招都是一条**公式**；本文把每条公式算到本 mod 的一个数，并逐条说明它落到哪个效果、为什么，以及哪些
 从句**没有承载机制**（记录，不静默丢弃）。
 

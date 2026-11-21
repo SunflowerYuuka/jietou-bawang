@@ -54,7 +54,13 @@ from pathlib import Path
 
 from PIL import Image
 
-SRC = Path(r"K:\AI\Minecraft\assets\pcr\extracted\图片")
+
+def _dump_root() -> str:
+    """素材提取目录的根。用 ASTRUM_DUMP 指向你自己机器上的位置，默认取仓库上两级。"""
+    return os.environ.get("ASTRUM_DUMP", os.path.join("..", ".."))
+
+
+SRC = Path(_dump_root(), "assets", "pcr", "extracted", "图片")
 OUT = Path(__file__).resolve().parent.parent / "src" / "main" / "resources" / "assets" / "astrum" / "textures" / "particle"
 
 TILE = 64

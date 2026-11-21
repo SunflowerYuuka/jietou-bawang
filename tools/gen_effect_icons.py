@@ -57,8 +57,16 @@ import sys
 
 from PIL import Image
 
+def _dump_root() -> str:
+    """素材提取目录的根。用 ASTRUM_DUMP 指向你自己机器上的位置，默认取仓库上两级的 ``assets``。
+
+    这里原来写的是一个绝对路径（维护者本机的盘符），既泄露了本机布局，也让脚本在别人的机器上必然失效。
+    """
+    return os.environ.get("ASTRUM_DUMP", os.path.join("..", ".."))
+
+
 #: The unpacked official PCR art; not part of the repository.
-DEFAULT_SOURCE = os.path.join("K:\\", "AI", "Minecraft", "assets", "pcr", "extracted", "图片")
+DEFAULT_SOURCE = os.path.join(_dump_root(), "assets", "pcr", "extracted", "图片")
 
 #: Registry path of each mechanic effect -> the official ``icon_skill_<n>`` its art comes from.
 #:

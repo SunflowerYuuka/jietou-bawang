@@ -146,7 +146,7 @@ class TierAvatarSourceTest {
             String source = read(generator);
             assertTrue(source.contains("pcr\", \"icon\", \"unit\""),
                     generator + " must read assets/pcr/icon/unit — the atlas the human named "
-                            + "(「使用角色头像的时候用 K:\\AI\\Minecraft\\assets\\pcr\\icon\\unit」)");
+                            + "(「使用角色头像的时候用 素材提取目录」)");
             assertTrue(source.contains("SOURCE_SUFFIX = \".webp\""),
                     generator + " must state the atlas's extension: reading a .png of the same stem is the "
                             + "bug this pins");
@@ -245,7 +245,8 @@ class TierAvatarSourceTest {
             throw new AssertionError("the generators must be readable", failure);
         }
 
-        Path sourceDir = Path.of("K:\\", "AI", "Minecraft", "assets", "pcr", "icon", "unit");
+        Path sourceDir = Path.of(System.getProperty("astrum.source",
+                    Path.of("..", "..", "assets", "pcr", "icon", "unit").toString()));
         boolean sourceAvailable = Files.isDirectory(sourceDir);
         if (!sourceAvailable) {
             System.out.println("[TierAvatarSourceTest] " + sourceDir + " is not on this machine, so the "
